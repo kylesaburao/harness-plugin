@@ -6,22 +6,22 @@ import os = require('node:os');
 import path = require('node:path');
 import { withDirectoryLock, writeJsonAtomic } from '../../../shared/node/config-store.js';
 export const FAMILIES = ['luna', 'terra', 'sol', 'astra', 'haiku', 'sonnet', 'opus', 'fable'] as const;
-export type ModelFamily = typeof FAMILIES[number];
-export type AdvisorHost = 'codex' | 'claude';
+type ModelFamily = typeof FAMILIES[number];
+type AdvisorHost = 'codex' | 'claude';
 export const BUILTIN: Record<AdvisorHost, Partial<Record<ModelFamily, ModelFamily>>> = {
   codex: { luna: 'astra', terra: 'astra', sol: 'astra', astra: 'astra' },
   claude: { haiku: 'opus', sonnet: 'opus', opus: 'opus', fable: 'fable' },
 };
 export const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
-export type ReasoningEffort = typeof EFFORTS[number];
+type ReasoningEffort = typeof EFFORTS[number];
 interface AdvisorDefault { host: AdvisorHost; advisor: ModelFamily; reasoning_effort?: ReasoningEffort | undefined; primary?: never }
 interface AdvisorRoute extends Omit<AdvisorDefault, 'primary'> { primary: ModelFamily }
-export interface AdvisorConfig { schema_version: 1; defaults: AdvisorDefault[]; routes: AdvisorRoute[] }
-export type RouteSource = 'explicit-user' | 'user-route' | 'user-default' | 'built-in';
-export interface ResolvedAdvisorRoute { host: AdvisorHost; primary_family: ModelFamily; advisor_family: ModelFamily; reasoning_effort: ReasoningEffort; route_source: RouteSource; consultation_mode: 'fresh-review' | 'escalation' }
+interface AdvisorConfig { schema_version: 1; defaults: AdvisorDefault[]; routes: AdvisorRoute[] }
+type RouteSource = 'explicit-user' | 'user-route' | 'user-default' | 'built-in';
+interface ResolvedAdvisorRoute { host: AdvisorHost; primary_family: ModelFamily; advisor_family: ModelFamily; reasoning_effort: ReasoningEffort; route_source: RouteSource; consultation_mode: 'fresh-review' | 'escalation' }
 type Flags = { help?: false; json?: boolean; preflight?: boolean };
 type EffortOption = { 'reasoning-effort'?: ReasoningEffort | undefined };
-export type AdvisorCommand = Flags & (
+type AdvisorCommand = Flags & (
   { command: 'show' } |
   ({ command: 'resolve'; host: AdvisorHost; primary: ModelFamily; advisor?: ModelFamily | undefined } & EffortOption) |
   ({ command: 'set-default'; host: AdvisorHost; advisor: ModelFamily } & EffortOption) |

@@ -8,7 +8,7 @@ const { spawnSync } = childProcess;
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 type ClaudeEffort = typeof EFFORTS[number];
 
-export type ClaudeAdvisorOptions =
+type ClaudeAdvisorOptions =
 {
     'native-absent': true;
     model: string;
@@ -20,7 +20,7 @@ export type ClaudeAdvisorOptions =
 };
 type ParsedOptions = Record<string, string | boolean | undefined>;
 type HelpOptions = ParsedOptions & { help: true };
-export interface ClaudeInvocation
+interface ClaudeInvocation
 {
     command: string;
     args: string[];
@@ -35,12 +35,12 @@ interface AdvisorReport
     tools: string[];
     runtime_controls: 'unverified';
 }
-export interface AdvisorPreflightReport extends AdvisorReport
+interface AdvisorPreflightReport extends AdvisorReport
 {
     status: 'preflight_passed';
     checks: string[];
 }
-export interface AdvisorConsultationReport extends AdvisorReport
+interface AdvisorConsultationReport extends AdvisorReport
 {
     status: 'consulted';
     advice: string;
