@@ -158,7 +158,7 @@ function main(argv: string[])
         }
         if (Number(process.versions.node.split('.')[0]) < 22)
         {
-            fail('node_unsupported', 'Node.js 22.0.0 or newer is required', 'nvm install 22');
+            fail('node_version_unsupported', 'Node.js 22.0.0 or newer is required', 'nvm install 22');
         }
         let prompt;
         try

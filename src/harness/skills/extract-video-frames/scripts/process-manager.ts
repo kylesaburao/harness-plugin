@@ -1,7 +1,6 @@
 import fs = require('node:fs');
 import path = require('node:path');
 import childProcess = require('node:child_process');
-import { childDetails } from '../../../shared/node/media-result.js';
 import { DraftError, spoolStorageError, SIGNAL_EXIT } from './errors.js';
 import type { ExtractionSignal } from './errors.js';
 import type { ChildProcess } from 'node:child_process';
@@ -11,6 +10,8 @@ const STDERR_TAIL_BYTES = 64 * 1024;
 type OwnedChild = ChildProcess & { closed?: Promise<void> };
 
 export interface ProcessOptions {
+  // Human-readable step name reported as `task` when the child cannot launch or spool.
+  task?: string;
   stdoutFile?: string;
   progress?: (chunk: string) => void;
   stderrTailBytes?: number;
@@ -76,8 +77,9 @@ class ProcessManager {
         if (settled) return;
         settled = true;
         this.active.delete(child);
-        if (closeError) { reject(spoolStorageError(options.stdoutFile!, closeError, childDetails(command, { code, signal, stderr: stderr.toString() }))); return; }
-        if (launchError) { reject(Object.assign(launchError, { task: command, childExitCode: code, childSignal: signal, stderr: stderr.toString() })); return; }
+        const evidence = { task: options.task, childExitCode: code, childSignal: signal, stderr: stderr.toString() };
+        if (closeError) { reject(spoolStorageError(options.stdoutFile!, closeError, evidence)); return; }
+        if (launchError) { reject(Object.assign(launchError, evidence)); return; }
         resolve({ code, signal, ...(stdout ? { stdout: Buffer.concat(stdout).toString() } : {}), stderr: stderr.toString() });
       });
       if (closeError) child.kill('SIGKILL');

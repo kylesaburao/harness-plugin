@@ -45,7 +45,7 @@ src/harness/skills/<skill>/
 
 A deterministic module used by two or more production skills can live under `src/harness/shared/` only when it implements the same non-trivial operation, has a narrow API, and all consumers need coordinated changes. Every imported production module remains under `src/harness/` so plugin installation includes it. Do not create a shared module for superficial structural similarity.
 
-Shared production code does not relax the requirement that every `SKILL.md` contains its own complete instructions and contract. The GIF runner is skill-local because only one skill consumes it. The backup helper is test-only because production never imports it.
+Shared production code does not relax the requirement that every `SKILL.md` contains its own complete instructions and contract. The GIF runner is skill-local because only one skill consumes it. `src/harness/shared/node/media-result.ts` is shared because `create-discord-emoji-gif` and `extract-video-frames` both use it identically: `mediaFailed` judges a media child's result, and `childDetails` reports it under the step name as `task`, so a change to that evidence shape must reach both skills together. The backup helper is test-only because production never imports it.
 
 ## Bundled resource paths
 
@@ -136,7 +136,7 @@ Every script a skill runs must let a calling agent find out whether it can work,
 - `--preflight` runs the environment and dependency checks, does no work, and exits.
 - `--json` reports machine-readably. `--help` prints usage. Both are accepted everywhere.
 - Exit `0` is success or a passed preflight. Exit `2` means the work never started: bad usage, a missing dependency, an unsupported platform, or invalid input. Any other non-zero status means the work started and failed. `back-up-directories` keeps its pre-existing `EXIT` values, where `3` is configuration validation, so for that script both `2` and `3` mean nothing was written.
-- Failures go to stderr as `ERROR [code]: condition` followed by `Remedy: command`, or as `{"error":{"code","condition","remedy"}}` under `--json`. The `code` is a stable identifier an agent can branch on. The `remedy` is the exact thing that fixes it.
+- Failures go to stderr as `ERROR [code]: condition` followed by `Remedy: command`, or as `{"error":{"code","condition","remedy"}}` under `--json`. The `code` is a stable identifier an agent can branch on. The `remedy` is the exact thing that fixes it. When a failure carries child-process evidence, its `task` field is the human-readable name of the step that ran the child, such as `decode-probe` or `extraction`, never the error code or the command path.
 - Arguments are validated before the environment, so a typo is never reported as a missing dependency.
 - A normal run performs the same preflight before touching anything, so the probe and the real run cannot disagree.
   - Because of that, a calling agent dispatches the real command directly by default, not `--preflight` first. A failure from the real run carries the identical diagnosis `--preflight` would have given, so relay it rather than re-running `--preflight` to double-check. A `SKILL.md` gives `--preflight` its own dispatch only for a concrete reason it names, such as the real run being user-interactive and unanswerable on the user's behalf (`back-up-directories`), or the real run being materially expensive or side-effecting to attempt blind.

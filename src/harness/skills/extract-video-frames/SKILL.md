@@ -146,5 +146,5 @@ Node.js 20.6.0 is the supported runtime floor. The script has no npm dependencie
 
 Media processing fails on a child signal, a nonzero exit, or any FFmpeg/ffprobe error-level diagnostic, including exit zero.
 Capability listings are exempt. FFmpeg progress uses stdout internally and does not count as a media diagnostic.
-On failure, also relay `task`, `childExitCode`, `childSignal`, and captured `stderr` when present.
+On failure, also relay `task` (the name of the failed step, such as `decode-probe` or `extraction`), `childExitCode`, `childSignal`, and captured `stderr` when present.
 Preserve zero exit codes and null signal values in the diagnosis. Reported decode errors prevent publication.

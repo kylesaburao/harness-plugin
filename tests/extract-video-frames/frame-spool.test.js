@@ -66,7 +66,7 @@ test('stdout spool is exclusive mode 0600, uncaptured, and stream stdout still c
   assert.equal((await manager.run(process.execPath, ['-e', 'process.stdout.write("small")'])).stdout, 'small');
   const failed = await manager.run(process.execPath, ['-e', 'process.stderr.write("evidence"); process.exit(7)'], { stdoutFile: path.join(root, 'failed.json') });
   assert.deepEqual(failed, { code: 7, signal: null, stderr: 'evidence' });
-  await assert.rejects(manager.run('/no/such/executable', [], { stdoutFile: path.join(root, 'launch.json') }), error => error.code === 'ENOENT' && error.task === '/no/such/executable' && error.childSignal === null);
+  await assert.rejects(manager.run('/no/such/executable', [], { task: 'inspect-input', stdoutFile: path.join(root, 'launch.json') }), error => error.code === 'ENOENT' && error.task === 'inspect-input' && error.childSignal === null);
   assert.equal(manager.active.size, 0);
 });
 
@@ -104,12 +104,14 @@ test('frame child failures and deterministic ENOSPC preserve child evidence and 
   const { root } = fixture(t);
   for (const result of [{ code: 7, signal: null, stderr: 'failed' }, { code: null, signal: 'SIGTERM', stderr: '' }, { code: 0, signal: null, stderr: 'error-level warning' }, { code: 1, signal: null, stderr: 'write: ENOSPC: no space left on device' }]) {
     const manager = { assertRunning() {}, run: async (_command, args, settings) => {
-      if (!args.includes('-show_frames')) { assert.equal(settings, undefined); return { stdout: JSON.stringify(metadata), code: 0, stderr: '' }; }
+      if (!args.includes('-show_frames')) { assert.deepEqual(settings, { task: 'inspect-input' }); return { stdout: JSON.stringify(metadata), code: 0, stderr: '' }; }
       assert.equal(settings.stdoutFile, path.join(root, 'frame-metadata.json'));
+      assert.equal(settings.task, 'inspect-input');
       return result;
     } };
     await assert.rejects(subject.inspectInput(manager, inspectionState(root), options), error => {
       assert.equal(error.code, result.stderr.includes('ENOSPC') ? 'frame_metadata_storage_failed' : 'input_unusable');
+      assert.equal(error.task, 'inspect-input');
       assert.equal(error.childExitCode, result.code);
       assert.equal(error.childSignal, result.signal);
       assert.equal(error.stderr, result.stderr);

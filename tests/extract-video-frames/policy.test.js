@@ -252,7 +252,7 @@ for (const result of [
 ]) test(`representative decode retains child evidence for ${result.signal || 'exit zero'}`, async () => {
   await assert.rejects(subject.representativeDecodePreflight({ run: async () => result }, fixtureState()), error => {
     assert.equal(error.exitCode, 2);
-    assert.equal(error.task, 'input_decode_failed');
+    assert.equal(error.task, 'decode-probe');
     assert.equal(error.childExitCode, result.code);
     assert.equal(error.childSignal, result.signal);
     assert.equal(error.stderr, result.stderr);

@@ -102,7 +102,7 @@ test('array values preserve original positions and arbitrary JSON', () => {
 
 
 test('runtime failures, validation precedence, and no entropy on rejected requests', () => {
-  for (const [mode, code] of [['old','UNSUPPORTED_NODE'], ['old-json','UNSUPPORTED_NODE'], ['missing','CRYPTO_UNAVAILABLE'], ['import','CRYPTO_UNAVAILABLE']]) {
+  for (const [mode, code] of [['old','node_version_unsupported'], ['old-json','node_version_unsupported'], ['missing','CRYPTO_UNAVAILABLE'], ['import','CRYPTO_UNAVAILABLE']]) {
     for (const [input,args] of [[{ op: 'boolean' },['--json']], [{ op: 'integer', min: 1, maxExclusive: 2 },['--json']], ['', ['--preflight','--json']]]) {
       const result = run(input,args,mode);
       fail(result,code);

@@ -298,12 +298,12 @@ subject.representativeDecodePreflight(manager, state).catch(error => { subject.e
   assert.equal(result.status, 2, result.stderr);
   if (json) {
     const error = JSON.parse(result.stderr).error;
-    assert.equal(error.task, 'input_decode_failed');
+    assert.equal(error.task, 'decode-probe');
     assert.equal(error.childExitCode, null);
     assert.equal(error.childSignal, 'SIGTERM');
     assert.equal(error.stderr, 'decoder evidence');
   } else {
-    assert.match(result.stderr, /task: "input_decode_failed"/);
+    assert.match(result.stderr, /task: "decode-probe"/);
     assert.match(result.stderr, /childExitCode: null/);
     assert.match(result.stderr, /childSignal: "SIGTERM"/);
     assert.match(result.stderr, /stderr: "decoder evidence"/);
@@ -355,6 +355,7 @@ childProcess.spawn = function(command, args, options) {
     assert.equal(error.stderr, 'extraction crash');
   } else {
     assert.match(result.stderr, /ERROR \[extraction_failed\]/);
+    assert.match(result.stderr, /task: "extraction"/);
     assert.match(result.stderr, /childExitCode: null/);
     assert.match(result.stderr, /childSignal: "SIGTERM"/);
     assert.match(result.stderr, /stderr: "extraction crash"/);

@@ -73,7 +73,7 @@ cp.spawn = function(command, args, options) {
         if (phase === 'publication') assert.equal(report.frames, 2);
         if (phase === 'preflight failure' || phase === 'extraction') {
           assert.equal(report.code, phase === 'extraction' ? 'extraction_failed' : 'input_decode_failed');
-          assert.equal(report.task, phase === 'extraction' ? 'extraction' : 'input_decode_failed');
+          assert.equal(report.task, phase === 'extraction' ? 'extraction' : 'decode-probe');
           assert.equal(report.childExitCode, phase === 'extraction' ? null : 7);
           assert.equal(report.childSignal, phase === 'extraction' ? 'SIGTERM' : null);
           assert.equal(report.stderr, phase === 'extraction' ? 'extraction evidence' : 'preflight evidence');

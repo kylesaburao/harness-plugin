@@ -63,7 +63,7 @@ function argumentsFor(argv: string[]) {
 }
 async function prerequisites(): Promise<RandomIntSource> {
   if (Number(process.versions.node.split('.')[0]) < 22) {
-    reject('UNSUPPORTED_NODE', `Node.js 22.0.0 or newer is required, found ${process.versions.node}.`, runtimeRemedy);
+    reject('node_version_unsupported', `Node.js 22.0.0 or newer is required, found ${process.versions.node}.`, runtimeRemedy);
   }
   try {
     const crypto = await import('node:crypto');
