@@ -2,16 +2,18 @@ import fs = require('node:fs');
 import path = require('node:path');
 import childProcess = require('node:child_process');
 import { DraftError, spoolStorageError, SIGNAL_EXIT } from './errors.js';
+import mediaResult = require('../../../shared/node/media-result.js');
 import type { ExtractionSignal } from './errors.js';
 import type { ChildProcess } from 'node:child_process';
 const { spawn } = childProcess;
+const { childDetails } = mediaResult;
 const STDERR_TAIL_BYTES = 64 * 1024;
 
 type OwnedChild = ChildProcess & { closed?: Promise<void> };
 
 export interface ProcessOptions {
   // Human-readable step name reported as `task` when the child cannot launch or spool.
-  task?: string;
+  task: string;
   stdoutFile?: string;
   progress?: (chunk: string) => void;
   stderrTailBytes?: number;
@@ -36,8 +38,9 @@ class ProcessManager {
   }
 
   run(command: string, args: string[], options: ProcessOptions & { stdoutFile: string }): Promise<SpooledResult>;
-  run(command: string, args: string[], options?: ProcessOptions & { stdoutFile?: never }): Promise<CapturedResult>;
-  async run(command: string, args: string[], options: ProcessOptions = {}): Promise<CapturedResult | SpooledResult> {
+  run(command: string, args: string[], options: ProcessOptions & { stdoutFile?: never }): Promise<CapturedResult>;
+  // Typed callers always name the task; the default only serves untyped test callers.
+  async run(command: string, args: string[], options: Partial<ProcessOptions> = {}): Promise<CapturedResult | SpooledResult> {
     this.assertRunning();
     return new Promise<CapturedResult | SpooledResult>((resolve, reject) => {
       let child: OwnedChild;
@@ -77,7 +80,7 @@ class ProcessManager {
         if (settled) return;
         settled = true;
         this.active.delete(child);
-        const evidence = { task: options.task, childExitCode: code, childSignal: signal, stderr: stderr.toString() };
+        const evidence = childDetails(options.task!, { code, signal, stderr: stderr.toString() });
         if (closeError) { reject(spoolStorageError(options.stdoutFile!, closeError, evidence)); return; }
         if (launchError) { reject(Object.assign(launchError, evidence)); return; }
         resolve({ code, signal, ...(stdout ? { stdout: Buffer.concat(stdout).toString() } : {}), stderr: stderr.toString() });

@@ -204,6 +204,15 @@ test('representative decode probe uses the selected frame and a null sink', () =
   assert.deepEqual(args.slice(args.indexOf('-c:v'), args.indexOf('-f')), ['-c:v', 'png', '-compression_level', '6']);
 });
 
+test('HDR representative decode probe writes one literal TIFF through image2 -update 1', () => {
+  const state = fixtureState();
+  state.media.color = { ...state.media.color, codec: 'heic', dynamicRange: 'hdr-hlg', primaries: 'bt2020', transfer: 'arib-std-b67', matrix: 'bt2020nc', range: 'tv', intermediatePixelFormat: 'rgb48le', intermediateExtension: 'tiff', outputPixelFormat: 'rgb48le' };
+  state.encoderDirectory = '/tmp/50%d/encoder';
+  const args = subject.decodeProbeArguments(state);
+  assert.deepEqual(args.slice(args.indexOf('-f'), args.indexOf('-f') + 4), ['-f', 'image2', '-update', '1']);
+  assert.equal(args.at(-1), '/tmp/50%d/encoder/preflight-frame.tiff');
+});
+
 test('HDR extraction writes TIFF intermediates with the source transfer intact', () => {
   const color = { codec: 'heic', dynamicRange: 'hdr-hlg', primaries: 'bt2020', transfer: 'arib-std-b67', matrix: 'bt2020nc', range: 'tv', intermediatePixelFormat: 'rgb48le', intermediateExtension: 'tiff' };
   assert.deepEqual(subject.codecArguments(color), ['-c:v', 'tiff']);

@@ -454,6 +454,26 @@ for (const [transfer, dynamicRange] of [['smpte2084', 'hdr-pq'], ['arib-std-b67'
   });
 }
 
+// The HDR decode probe and the synthetic HEIC preflight each write one TIFF
+// through image2 under TMPDIR; -update 1 keeps a % in that path literal.
+test('native HDR preflight and extraction succeed when TMPDIR contains an image2 pattern', { skip: process.platform !== 'darwin' || !realFfmpeg }, t => {
+  const root = temporaryRoot(t);
+  const input = path.join(root, 'hdr.mov');
+  const generated = spawnSync(realFfmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=64x64:r=2:d=1', '-c:v', 'libx265', '-pix_fmt', 'yuv420p10le', '-x265-params', 'log-level=error:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc', '-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc', '-color_range', 'tv', input], { encoding: 'utf8' });
+  assert.equal(generated.status, 0, generated.stderr);
+  const temporary = path.join(root, 'tmp%d');
+  fs.mkdirSync(temporary);
+  const env = { ...process.env, HOME: root, TMPDIR: temporary };
+  const script = require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js'));
+  const preflight = spawnSync(process.execPath, [script, '--preflight', '--json', input], { encoding: 'utf8', env });
+  assert.equal(preflight.status, 0, preflight.stderr);
+  assert.equal(JSON.parse(preflight.stdout).status, 'ready');
+  const result = spawnSync(process.execPath, [script, '--json', input], { encoding: 'utf8', env });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).result.frames, 2);
+  assert.deepEqual(fs.readdirSync(temporary).filter(name => name.startsWith('extract-video-frames-encoder-')), []);
+});
+
 // Wraps the real swiftc so a test can count compilations, and isolates HOME and TMPDIR
 // so the helper cache is written under the test root instead of the user's home.
 function countingCompilerEnvironment(root) {

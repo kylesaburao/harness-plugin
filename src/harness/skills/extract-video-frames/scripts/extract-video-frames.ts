@@ -301,8 +301,10 @@ function decodeProbeArguments(state: PreparedExtraction) {
   const media = state.media;
   const conversion = colorConversionFilter(media.color);
   const output = media.color.dynamicRange === 'sdr' ? '-' : path.join(state.encoderDirectory, 'preflight-frame.tiff');
-  const format = media.color.dynamicRange === 'sdr' ? 'null' : 'image2';
-  return ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-noautorotate', '-progress', 'pipe:1', '-nostats', '-i', state.paths.supplied, '-map', `0:${media.stream.index}`, '-an', '-sn', '-dn', '-vf', `${filterGraph(media, media.firstTick, media.firstTick)},${conversion}`, '-frames:v', '1', ...codecArguments(media.color), '-f', format, '-n', output];
+  // -update 1 makes image2 write the literal filename, so a % in TMPDIR is not
+  // expanded as a sequence pattern.
+  const format = media.color.dynamicRange === 'sdr' ? ['-f', 'null'] : ['-f', 'image2', '-update', '1'];
+  return ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-noautorotate', '-progress', 'pipe:1', '-nostats', '-i', state.paths.supplied, '-map', `0:${media.stream.index}`, '-an', '-sn', '-dn', '-vf', `${filterGraph(media, media.firstTick, media.firstTick)},${conversion}`, '-frames:v', '1', ...codecArguments(media.color), ...format, '-n', output];
 }
 
 async function representativeDecodePreflight(manager: Manager, state: PreparedExtraction) {
@@ -328,7 +330,7 @@ async function syntheticEncoderPreflight(manager: Manager, state: ToolchainPrepa
   const syntheticState = { ...state, media: { color, width: 64, height: 64 } };
   const filters = `format=yuv420p10le,setparams=range=limited:color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc,${colorConversionFilter(color)}`;
   const task = 'heic-preflight';
-  const result = await manager.run(state.commands.ffmpeg, ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-f', 'lavfi', '-i', 'color=c=white:s=64x64:d=0.04', '-vf', filters, '-frames:v', '1', '-c:v', 'tiff', '-f', 'image2', '-n', tiff], { task });
+  const result = await manager.run(state.commands.ffmpeg, ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-f', 'lavfi', '-i', 'color=c=white:s=64x64:d=0.04', '-vf', filters, '-frames:v', '1', '-c:v', 'tiff', '-f', 'image2', '-update', '1', '-n', tiff], { task });
   if (mediaFailed(result)) throw new DraftError('heic_encoder_unavailable', `ffmpeg could not create the synthetic HLG preflight frame${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair ffmpeg-full and run the same command again', EXIT.CANNOT_START, childDetails(task, result));
   await encodeHeic(manager, syntheticState, tiff, heic, EXIT.CANNOT_START);
   await inspectHeic(manager, syntheticState, heic, path.basename(heic), EXIT.CANNOT_START);
