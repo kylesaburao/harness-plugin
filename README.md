@@ -13,11 +13,13 @@ See [DEPENDENCIES.md](DEPENDENCIES.md) for the authoritative runtime, tool, and 
 
 | Skill | Purpose |
 | --- | --- |
+| `harness-advisor` | Consult a read-only advisor at consequential decisions or on explicit request, with bounded calls and curated context. |
 | `back-up-directories` | Archive a directory to a dated ZIP and replicate it to configured destinations. |
 | `create-discord-emoji-gif` | Convert a clip into a looping, under-256KB, 128x128 Discord emoji GIF. |
 | `diagnose-environment` | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. |
 | `extract-video-frames` | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. |
 | `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. |
+| `install-harness-plugin-capabilities` | Install or repair Harness host integration, including the Claude native-first Advisor gate and fallback support. |
 | `record-decision` | Capture a consequential technical decision, its constraints, and its reversibility. |
 | `research-precedent` | Research whether a proposed approach has precedent, internally or in the wider industry. |
 | `wake-desktop` | Manage named LAN wake targets and send a magic packet, optionally waiting for a ping response. |
@@ -52,6 +54,45 @@ codex plugin add harness@harness-plugin
 ```
 
 Some skills generate data on first use and store it under `~/.harness-plugin/`. That directory survives plugin upgrades and is shared by both harnesses. Uninstalling the plugin does not remove it, so delete `~/.harness-plugin/` by hand if you want the space back.
+
+## Using Advisor
+
+After plugin installation, use `install-harness-plugin-capabilities` for each
+host you want to configure. Codex gets a small managed `AGENTS.md` block under
+`CODEX_HOME` (default `~/.codex`). Claude Code gets a managed `CLAUDE.md` gate
+under `CLAUDE_CONFIG_DIR` (default
+`~/.claude`). Existing user content and settings are preserved. Start a new host
+session after installation, and rerun the installer to update integration. Neither
+CLI is needed for installation. Legacy role files remain untouched.
+
+Claude sessions with native Advisor use it exclusively and do not load the
+Harness Advisor Skill, including after native execution errors. Claude fallback
+is installed regardless, for later sessions without native Advisor. Codex uses
+Harness Advisor. Explicit native-only requests do not authorize fallback.
+
+Ask the Advisor for guidance, name a family for one call, or request an independent
+review. Harness built-ins route Luna/Terra/Sol/Astra to Astra, Haiku/Sonnet/Opus to
+Opus, and Fable to Fable. Matching families get fresh peer review. Automatic calls
+are capped at three per substantial task, with new information required between
+calls. Explicit user calls have separate accounting. Context follows relevance and actual capacity, with no global Advisor transcript memory.
+
+To save an alternative, say “Use Sol as my Harness Advisor” or “Map Sonnet to Opus
+for Harness fallback.” The Skill uses `advisor-config.js` to manage sparse
+`defaults[]` and `routes[]` in `~/.harness-plugin/harness-advisor/config.json`. Exact user
+routes override host defaults, which override built-ins. A named family for one
+consultation overrides routing without saving it. Missing config uses built-ins.
+Exact callable models and availability are resolved only on invocation, without
+silent family substitution.
+
+Codex uses an ordinary fresh subagent with explicit model/effort and the canonical
+Advisor contract. No-tools and no-changes instructions are distinct from enforced
+permissions, and additional child controls are used when available. Claude fallback
+passes that contract through `--system-prompt` in a separate tool-free print session
+with saved settings excluded. Preflight proves neither authentication nor model
+access. Claude is installed but not logged in, so live inference and full runtime
+qualification are skipped. See [evaluation](tests/harness-advisor/EVALUATION.md).
+Unavailable execution is reported honestly. See the [Harness Advisor skill](plugins/harness/skills/harness-advisor/SKILL.md)
+and [installer skill](plugins/harness/skills/install-harness-plugin-capabilities/SKILL.md).
 
 ## Using wake-desktop
 
