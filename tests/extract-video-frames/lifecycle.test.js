@@ -133,7 +133,7 @@ for (const kind of ['sdr', 'hdr', 'synthetic']) {
       if (path.basename(command) === 'swiftc') return { code: 1, stdout: '', stderr: 'intentional compilation sentinel' };
       return realManager.run(command, args, options);
     } };
-    const preparing = subject.prepare(manager, { input, start: null, end: null }, root);
+    const preparing = subject.prepare(manager, { input, start: null, end: null }, root, { root: path.join(root, 'encoder-cache') });
     if (kind === 'sdr') {
       const state = await preparing;
       assert.equal(state.media.color.dynamicRange, 'sdr');
@@ -171,7 +171,8 @@ for (const [signal, exitCode, phase] of [['SIGTERM', 143, 'encoding'], ['SIGTERM
     writeExecutable(path.join(bin, 'sw_vers'), '#!/bin/sh\necho 26.0\n');
     const fakeEncoder = path.join(bin, 'fake-encoder');
     writeExecutable(fakeEncoder, fakeEncoderScript(started, terminated, phase === 'verification'));
-    writeExecutable(path.join(bin, 'swiftc'), `#!/bin/sh\ncp ${JSON.stringify(fakeEncoder)} "$3"\nchmod +x "$3"\n`);
+    // A failed version report keeps this fake helper out of the encoder cache.
+    writeExecutable(path.join(bin, 'swiftc'), `#!/bin/sh\n[ "$1" = --version ] && exit 1\ncp ${JSON.stringify(fakeEncoder)} "$3"\nchmod +x "$3"\n`);
     writeExecutable(path.join(bin, 'sips'), `#!/bin/sh\necho "$6"\necho '  pixelWidth: 16'\necho '  pixelHeight: 16'\necho '  bitsPerSample: 10'\necho '  profile: Rec. ITU-R BT.2100 HLG'\n`);
     if (phase === 'verification') writeExecutable(path.join(bin, 'sips'), `#!${process.execPath}
 const fs = require('node:fs');
@@ -183,7 +184,7 @@ if (file.includes('.partial-') && file.endsWith('frame-000002.heic')) {
 }
 `);
     const script = require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js');
-    const child = spawn(process.execPath, [script, '--json', input], { env: { ...process.env, TMPDIR: root, PATH: `${bin}${path.delimiter}${process.env.PATH}` }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [script, '--json', input], { env: { ...process.env, HOME: root, TMPDIR: root, PATH: `${bin}${path.delimiter}${process.env.PATH}` }, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', chunk => { stderr += chunk; });
     if (phase === 'encoding') try { await waitForPath(started); } catch (error) {
@@ -428,7 +429,15 @@ for (const [transfer, dynamicRange] of [['smpte2084', 'hdr-pq'], ['arib-std-b67'
     const input = path.join(root, 'hdr.mov');
     const generated = spawnSync(realFfmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=64x64:r=2:d=1', '-c:v', 'libx265', '-pix_fmt', 'yuv420p10le', '-x265-params', `log-level=error:colorprim=bt2020:transfer=${transfer}:colormatrix=bt2020nc`, '-color_primaries', 'bt2020', '-color_trc', transfer, '-colorspace', 'bt2020nc', '-color_range', 'tv', input], { encoding: 'utf8' });
     assert.equal(generated.status, 0, generated.stderr);
-    const result = spawnSync(process.execPath, [require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js')), '--json', input], { encoding: 'utf8' });
+    const { env, compilations, cacheRoot } = countingCompilerEnvironment(root);
+    const script = require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js'));
+    const preflight = spawnSync(process.execPath, [script, '--preflight', '--json', input], { encoding: 'utf8', env });
+    assert.equal(preflight.status, 0, preflight.stderr);
+    assert.equal(JSON.parse(preflight.stdout).preflight.dynamicRange, dynamicRange);
+    const [key] = fs.readdirSync(cacheRoot);
+    assert.deepEqual(fs.readdirSync(cacheRoot), [key]);
+    assert.deepEqual(fs.readdirSync(path.join(cacheRoot, key)).sort(), ['manifest.json', 'tiff-to-heic']);
+    const result = spawnSync(process.execPath, [script, '--json', input], { encoding: 'utf8', env });
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout).result;
     assert.equal(report.dynamicRange, dynamicRange);
@@ -437,7 +446,26 @@ for (const [transfer, dynamicRange] of [['smpte2084', 'hdr-pq'], ['arib-std-b67'
     assert.equal(report.frames, 2);
     assert.deepEqual(fs.readdirSync(report.outputDirectory), ['frame-000001.heic', 'frame-000002.heic']);
     assert.equal(report.checks.find(check => check.probes).probes.length, 2);
+    assert.equal(compilations(), 1, 'the second invocation reuses the cached helper');
+    assert.deepEqual(fs.readdirSync(cacheRoot), [key]);
+    assert.deepEqual(fs.readdirSync(root).filter(name => name.startsWith('extract-video-frames-encoder-')), []);
   });
+}
+
+// Wraps the real swiftc so a test can count compilations, and isolates HOME and TMPDIR
+// so the helper cache is written under the test root instead of the user's home.
+function countingCompilerEnvironment(root) {
+  // The /usr/bin shim supplies the SDK through xcrun; the bare toolchain binary does not.
+  const realSwiftc = '/usr/bin/swiftc';
+  const bin = path.join(root, 'counting-bin');
+  const log = path.join(root, 'swiftc-calls.log');
+  fs.mkdirSync(bin);
+  writeExecutable(path.join(bin, 'swiftc'), `#!/bin/sh\nprintf '%s\\n' "$1" >> ${JSON.stringify(log)}\nexec ${JSON.stringify(realSwiftc)} "$@"\n`);
+  return {
+    env: { ...process.env, HOME: root, TMPDIR: root, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+    cacheRoot: path.join(root, '.harness-plugin', 'extract-video-frames', 'encoder'),
+    compilations: () => fs.readFileSync(log, 'utf8').split('\n').filter(line => line && line !== '--version').length,
+  };
 }
 
 // Same Codex sandbox constraint as the native HDR tests above: real HEIC encoding
@@ -467,7 +495,7 @@ test('native HEIC10 encoder drops TIFF alpha and HDR alpha CLI rejects during pr
   const input = path.join(root, 'alpha.mov');
   const video = spawnSync(realFfmpeg, ['-v', 'error', '-loop', '1', '-i', tiff, '-vf', 'setparams=range=limited:color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc', '-frames:v', '2', '-c:v', 'prores_ks', '-profile:v', '4', '-pix_fmt', 'yuva444p10le', '-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc', '-color_range', 'pc', input], { encoding: 'utf8' });
   assert.equal(video.status, 0, video.stderr);
-  const result = spawnSync(process.execPath, [require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js')), '--json', input], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js')), '--json', input], { encoding: 'utf8', env: { ...process.env, HOME: root } });
   assert.equal(result.status, 2, result.stderr);
   assert.equal(JSON.parse(result.stderr).error.code, 'hdr_alpha_unsupported');
   assert.equal(fs.existsSync(path.join(root, 'alpha-frames')), false);

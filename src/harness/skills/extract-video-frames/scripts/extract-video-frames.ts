@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+import crypto = require('node:crypto');
 import fs = require('node:fs');
 import os = require('node:os');
 import path = require('node:path');
@@ -58,6 +59,9 @@ export type ExtractionResult = ReturnType<typeof resultPayload> & { cleanupFailu
 type StructuralChecks = Awaited<ReturnType<typeof structuralChecks>>;
 
 const MINIMUM_NODE = Object.freeze([20, 6, 0]);
+const ENCODER_NAME = 'tiff-to-heic';
+const ENCODER_MANIFEST = 'manifest.json';
+const ENCODER_MANIFEST_SCHEMA = 1;
 const MINIMUM_MACOS = Object.freeze([26, 0, 0]);
 const MACOS_PUBLISH_SCRIPT = 'ObjC.import("Foundation"); function run(argv) { const manager = $.NSFileManager.defaultManager; const ok = manager.moveItemAtPathToPathError(argv[0], argv[1], null); if (ok) return "published"; return manager.fileExistsAtPath(argv[1]) ? "collision" : "failed"; }';
 function versionAtLeast(actual: string, minimum: readonly number[]) {
@@ -503,16 +507,82 @@ function usage(basename = 'extract-video-frames.js') {
   return `Usage: ${basename} [OPTIONS] INPUT_VIDEO\n\nOptions:\n  --start TIME       Inclusive start, decimal seconds or HH:MM:SS[.fraction]\n  --end TIME         Inclusive end, decimal seconds or HH:MM:SS[.fraction]\n  --preflight        Check readiness and input without creating frames\n  --json             Emit machine-readable readiness, result, or error data\n  -h, --help         Print this message\n  --                 Stop option parsing\n\nOutput:\n  <input-stem>-frames/frame-000001.png   for SDR\n  <input-stem>-frames/frame-000001.heic  for PQ or HLG HDR\n\nExit status:\n  0 success or passed preflight; 2 work did not start; 1 work or cleanup failed\n  129 SIGHUP; 130 SIGINT; 143 SIGTERM\n`;
 }
 
-async function compileEncoder(manager: Manager, state: Toolchain & { encoderDirectory: string }, encoderDirectory: string) {
-  const source = path.join(__dirname, 'tiff-to-heic.swift');
-  const encoder = path.join(encoderDirectory, 'tiff-to-heic');
+interface EncoderCacheOptions { root?: string; source?: string }
+
+function encoderCacheRoot() {
+  return path.join(os.homedir(), '.harness-plugin', 'extract-video-frames', 'encoder');
+}
+
+function sha256(bytes: Buffer | string) {
+  return crypto.createHash('sha256').update(bytes).digest('hex');
+}
+
+// The helper binary is a deterministic function of its source and the compiler, so the key
+// hashes both. A failed or empty version report disables caching rather than guessing a key.
+async function encoderCacheKey(manager: Manager, swiftc: string, sourceBytes: Buffer) {
+  const result = await manager.run(swiftc, ['--version']);
+  if (result.code !== 0 || !`${result.stdout}${result.stderr}`.trim()) return null;
+  return sha256(Buffer.concat([Buffer.from(`${ENCODER_MANIFEST_SCHEMA}\0`), sourceBytes, Buffer.from(`\0${result.stdout}\0${result.stderr}`)]));
+}
+
+function validCachedEncoder(directory: string, key: string) {
+  try {
+    const encoder = path.join(directory, ENCODER_NAME);
+    const manifest = JSON.parse(fs.readFileSync(path.join(directory, ENCODER_MANIFEST), 'utf8'));
+    if (!fs.statSync(encoder).isFile()) return null;
+    fs.accessSync(encoder, fs.constants.X_OK);
+    const bytes = fs.readFileSync(encoder);
+    const valid = manifest?.schema_version === ENCODER_MANIFEST_SCHEMA && manifest.key === key && manifest.encoder?.bytes === bytes.length && manifest.encoder?.sha256 === sha256(bytes);
+    return valid ? encoder : null;
+  } catch { return null; }
+}
+
+async function encoderSelfCheck(manager: Manager, encoder: string) {
+  const result = await manager.run(encoder, ['--preflight']);
+  return result.code === 0 && result.stdout.trim() === 'READY';
+}
+
+// Best effort: any filesystem failure leaves the cache unchanged and this run keeps its
+// per-run helper. A directory rename never replaces an existing non-empty destination.
+function publishCachedEncoder(root: string, key: string, encoder: string) {
+  let stage: string | null = null;
+  try {
+    fs.mkdirSync(root, { recursive: true });
+    stage = fs.mkdtempSync(path.join(root, `.${key}.stage-`));
+    const staged = path.join(stage, ENCODER_NAME);
+    fs.copyFileSync(encoder, staged);
+    fs.chmodSync(staged, 0o755);
+    const bytes = fs.readFileSync(staged);
+    fs.writeFileSync(path.join(stage, ENCODER_MANIFEST), `${JSON.stringify({ schema_version: ENCODER_MANIFEST_SCHEMA, key, encoder: { name: ENCODER_NAME, bytes: bytes.length, sha256: sha256(bytes) } }, null, 2)}\n`);
+    fs.renameSync(stage, path.join(root, key));
+    stage = null;
+  } catch {
+    // An unwritable home or a concurrent publisher is not an extraction failure.
+  } finally {
+    if (stage) try { fs.rmSync(stage, { recursive: true, force: true }); } catch {}
+  }
+}
+
+async function compileEncoder(manager: Manager, state: Toolchain & { encoderDirectory: string }, encoderDirectory: string, cache: EncoderCacheOptions = {}) {
+  const source = cache.source || path.join(__dirname, 'tiff-to-heic.swift');
+  const root = cache.root || encoderCacheRoot();
+  state.encoderDirectory = encoderDirectory;
+  const key = await encoderCacheKey(manager, state.commands.swiftc, fs.readFileSync(source));
+  if (key) {
+    const cached = validCachedEncoder(path.join(root, key), key);
+    if (cached && await encoderSelfCheck(manager, cached)) {
+      state.commands.encoder = cached;
+      return;
+    }
+  }
+  const encoder = path.join(encoderDirectory, ENCODER_NAME);
   const result = await manager.run(state.commands.swiftc, [source, '-o', encoder]);
   if (result.code !== 0) throw new DraftError('heic_encoder_unavailable', `Swift HEIC helper could not compile${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'install or repair the macOS Command Line Tools with xcode-select --install', EXIT.CANNOT_START, childDetails('heic_encoder_unavailable', result));
   state.commands.encoder = encoder;
-  state.encoderDirectory = encoderDirectory;
+  if (key && await encoderSelfCheck(manager, encoder)) publishCachedEncoder(root, key, encoder);
 }
 
-async function prepare(manager: Manager, options: ExtractionOptions, encoderDirectory: string): Promise<PreparedExtraction | ToolchainPrepared> {
+async function prepare(manager: Manager, options: ExtractionOptions, encoderDirectory: string, encoderCache: EncoderCacheOptions = {}): Promise<PreparedExtraction | ToolchainPrepared> {
   try {
     const paths = options.input ? validateInputAndOutput(options.input) : null;
     const platform = await platformPreflight(manager);
@@ -521,11 +591,11 @@ async function prepare(manager: Manager, options: ExtractionOptions, encoderDire
     if (paths) {
       const inputState = { ...state, paths };
       const prepared = { ...inputState, media: await inspectInput(manager, inputState, options) };
-      if (prepared.media.color.dynamicRange !== 'sdr') await compileEncoder(manager, prepared, encoderDirectory);
+      if (prepared.media.color.dynamicRange !== 'sdr') await compileEncoder(manager, prepared, encoderDirectory, encoderCache);
       await representativeDecodePreflight(manager, prepared);
       return prepared;
     } else {
-      await compileEncoder(manager, state, encoderDirectory);
+      await compileEncoder(manager, state, encoderDirectory, encoderCache);
       await syntheticEncoderPreflight(manager, state);
     }
     // Synthetic preparation historically leaves this own property present.
@@ -610,4 +680,4 @@ async function main(argv: string[]) {
 
 if (require.main === module) main(process.argv.slice(2)).then(code => { process.exitCode = code; }, error => { emitError(error, process.argv.includes('--json')); process.exitCode = EXIT.FAILED; });
 
-export { cleanupPaths, descriptorMap, pixelProperties, emitError, ProcessManager, analyzeFrameSpool, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, inspectInput, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };
+export { cleanupPaths, compileEncoder, descriptorMap, pixelProperties, emitError, ProcessManager, analyzeFrameSpool, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, inspectInput, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };

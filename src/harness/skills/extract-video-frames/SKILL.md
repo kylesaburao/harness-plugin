@@ -65,7 +65,8 @@ containing no frame fails during preflight with `window_empty` and creates nothi
    matrix. For HDR it converts one representative frame through the same TIFF-to-HEIC
    path used by extraction, validates its 10-bit BT.2100 profile with `sips`, and removes
    both files. For SDR it decodes one representative frame to a null sink. It creates no
-   output artifact.
+   output artifact. It can populate the Swift helper cache described under
+   [Persistence](#persistence).
 
 2. If preflight succeeds, dispatch the same request without `--preflight`:
 
@@ -90,6 +91,25 @@ containing no frame fails during preflight with `window_empty` and creates nothi
 
 Use `--preflight --json` without an input to check the complete toolchain with a synthetic
 HLG TIFF-to-HEIC conversion. Window flags require an input.
+
+## Persistence
+
+HDR extraction and the synthetic preflight need the bundled Swift HEIC helper. The
+script compiles it once and caches the binary at
+`~/.harness-plugin/extract-video-frames/encoder/<sha256>/tiff-to-heic` with a
+`manifest.json` that records its byte count and SHA-256. The key is the SHA-256 of the
+helper source and the `swiftc --version` output, so a source or compiler change uses a
+new entry and a plugin upgrade with the same source reuses the existing one. A cached
+helper is reused only when its manifest matches and `tiff-to-heic --preflight` passes.
+A new entry is staged beside the cache and published with one directory rename, and an
+existing entry is never replaced.
+
+The cache is regenerable, not an initialization artifact. An unwritable home directory,
+an unusable compiler version report, or an invalid entry is not an error: the script
+compiles into its per-invocation temporary directory instead, as it does without a
+cache. Nothing prunes old entries. Deleting the `extract-video-frames` directory is
+always safe and forces one recompilation. SDR extraction never compiles or reads the
+cache.
 
 ## Result contract
 
