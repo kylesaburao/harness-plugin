@@ -1,0 +1,20 @@
+✔ modes and invalid flags finish with stdin held open (142.570417ms)
+✔ exact preflight and help contracts (92.959541ms)
+✔ request validation and strict operation fields (541.898584ms)
+✔ integer boundaries and normal schemas (364.605083ms)
+✔ array values preserve original positions and arbitrary JSON (102.192875ms)
+✔ runtime failures, validation precedence, and no entropy on rejected requests (608.109167ms)
+✔ forced outcomes and preflight use zero entropy calls (313.075875ms)
+✔ Fisher-Yates draw bounds, draw order, duplicate positions, and exact mappings (154.940291ms)
+✔ candidate numeric tokens survive choice, sample, and shuffle without precision loss (177.660917ms)
+✔ operation numeric arguments reject rounding and accept exact alternate integer notation (587.462292ms)
+✔ portable automatic routing and complete instructions (0.622417ms)
+✔ entropy boundary stays in built-in crypto with no fallback or randomized sorting (0.228917ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3118.163417

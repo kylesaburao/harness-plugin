@@ -1,0 +1,20 @@
+TAP version 13
+# Subtest: candidate numeric tokens survive choice, sample, and shuffle without precision loss
+ok 1 - candidate numeric tokens survive choice, sample, and shuffle without precision loss
+  ---
+  duration_ms: 249.8265
+  ...
+# Subtest: operation numeric arguments reject rounding and accept exact alternate integer notation
+ok 2 - operation numeric arguments reject rounding and accept exact alternate integer notation
+  ---
+  duration_ms: 825.419792
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1118.40975

@@ -1,0 +1,92 @@
+[
+  {
+    "command": [
+      "node",
+      "plugins/harness/skills/random-sampler/scripts/sample.mjs",
+      "--help"
+    ],
+    "request": null,
+    "status": 0,
+    "stdout": "Usage: sample.mjs [--help | --preflight] [--json]\n\nRead one complete JSON object from stdin, then output one JSON object.\n  integer: {\"op\":\"integer\",\"min\":1,\"maxExclusive\":101} -> op, value\n    Safe integer endpoints, min inclusive, maxExclusive exclusive.\n    Require 0 < maxExclusive - min < 2^48.\n  boolean: {\"op\":\"boolean\"} -> op, value\n  choice:  {\"op\":\"choice\",\"values\":[\"heads\",\"tails\"]} -> op, index, value\n    Nonempty array, uniform original position, duplicates preserved.\n  sample:  {\"op\":\"sample\",\"values\":[\"A\",\"B\"],\"count\":2} -> op, indices, values\n    Ordered sampling without replacement, safe integer count in 0..length.\n  shuffle: {\"op\":\"shuffle\",\"values\":[\"A\",\"B\"]} -> op, indices, values\n    Uniform permutation. Empty and singleton arrays are valid.\nOnly the fields shown are accepted. Array entries may be any JSON values.\nSystem cryptographic randomness via node:crypto randomInt. Node.js >=22.0.0.\n--help prints usage without reading stdin or checking the runtime.\n--preflight checks runtime/crypto without reading stdin or drawing randomness.\n--json selects JSON stderr diagnostics and JSON preflight output.\nNormal success is always JSON. No automatic retries.\nExit: 0 success, 2 work not started (usage/input/runtime), 1 sampling failed.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "node",
+      "plugins/harness/skills/random-sampler/scripts/sample.mjs",
+      "--preflight",
+      "--json"
+    ],
+    "request": null,
+    "status": 0,
+    "stdout": "{\"preflight\":{\"status\":\"passed\",\"node\":\"26.5.0\",\"crypto\":\"available\"}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "node",
+      "plugins/harness/skills/random-sampler/scripts/sample.mjs"
+    ],
+    "request": {
+      "op": "choice",
+      "values": [
+        "red",
+        "green",
+        "blue"
+      ]
+    },
+    "status": 0,
+    "stdout": "{\"op\":\"choice\",\"index\":2,\"value\":\"blue\"}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "node",
+      "plugins/harness/skills/random-sampler/scripts/sample.mjs"
+    ],
+    "request": {
+      "op": "integer",
+      "min": 1,
+      "maxExclusive": 11
+    },
+    "status": 0,
+    "stdout": "{\"op\":\"integer\",\"value\":4}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "node",
+      "plugins/harness/skills/random-sampler/scripts/sample.mjs"
+    ],
+    "request": {
+      "op": "sample",
+      "values": [
+        "A",
+        "B",
+        "C"
+      ],
+      "count": 2
+    },
+    "status": 0,
+    "stdout": "{\"op\":\"sample\",\"indices\":[1,0],\"values\":[\"B\",\"A\"]}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "node",
+      "plugins/harness/skills/random-sampler/scripts/sample.mjs"
+    ],
+    "request": {
+      "op": "shuffle",
+      "values": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    },
+    "status": 0,
+    "stdout": "{\"op\":\"shuffle\",\"indices\":[2,0,1,3],\"values\":[\"C\",\"A\",\"B\",\"D\"]}\n",
+    "stderr": ""
+  }
+]

@@ -1,0 +1,35 @@
+[
+  {
+    "command": [
+      "node",
+      "plugins/harness/skills/random-sampler/scripts/sample.mjs",
+      "--json"
+    ],
+    "request": "{\"op\":\"choice\",\"values\":[1e400]}",
+    "status": 0,
+    "stdout": "{\"op\":\"choice\",\"index\":0,\"value\":1e400}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "node",
+      "plugins/harness/skills/random-sampler/scripts/sample.mjs",
+      "--json"
+    ],
+    "request": "{\"op\":\"choice\",\"values\":[9007199254740993]}",
+    "status": 0,
+    "stdout": "{\"op\":\"choice\",\"index\":0,\"value\":9007199254740993}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "node",
+      "plugins/harness/skills/random-sampler/scripts/sample.mjs",
+      "--json"
+    ],
+    "request": "{\"op\":\"choice\",\"values\":[{\"x\":1e-400}]}",
+    "status": 0,
+    "stdout": "{\"op\":\"choice\",\"index\":0,\"value\":{\"x\":1e-400}}\n",
+    "stderr": ""
+  }
+]
