@@ -9,20 +9,14 @@ The two `.claude-plugin/` and `.codex-plugin/` directories are thin packaging la
 
 | Skill | Purpose | Setup |
 | --- | --- | --- |
-| `agentic-loop` | Run a bounded build/adversarial-review/revise loop for multi-step implementation work. | |
 | `back-up-directories` | Archive a directory to a dated ZIP and replicate it to configured destinations. | `npm install --omit=dev --prefix plugins/harness/skills/back-up-directories` (needs `archiver`); see its `INSTALL.md` |
-| `brief-source` | Read a long source and separate what it claims from what it actually establishes. | |
 | `create-discord-emoji-gif` | Convert a clip into a looping, under-256KB, 128x128 Discord emoji GIF. | Node ≥22, `ffmpeg` built with `libvmaf`, `ffprobe`, and `gifski` or `gifsicle` |
 | `diagnose-environment` | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. | |
-| `encode-for-llms` | Compress prose, technical material, or code into a compact LLM-decodable notation. | |
 | `extract-video-frames` | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. | Node ≥20.6, macOS ≥26.0 or Linux/WSL2, `ffmpeg` and `ffprobe` with `zscale`, PNG, and OpenEXR |
-| `hello-world` | Print the exact text "Hello world" as an installation smoke test. | |
 | `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. | |
 | `natural-style` | Rewrite supplied text into natural, conversational technical prose. | |
 | `record-decision` | Capture a consequential technical decision, its constraints, and its reversibility. | |
 | `research-precedent` | Research whether a proposed approach has precedent, internally or in the wider industry. | |
-| `triage-dependency` | Decide whether to add, keep, replace, or remove a third-party dependency. | |
-| `wake-desktop` | Send a Wake-on-LAN packet to a LAN host, then poll until it answers. | |
 | `write-asd-ste100` | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. | `python3`, plus a locally generated reference bundle; see its `INSTALL.md` |
 
 ### Output styles

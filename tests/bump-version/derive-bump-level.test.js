@@ -96,7 +96,7 @@ test('deriveFromLog: a docs-only range is "none"', () => {
 
 test('deriveFromLog: a tests-only range is "none"', () => {
   const entries = [
-    commit('cover the wake-desktop retry path', ['tests/wake-desktop/wake-desktop.test.js']),
+    commit('cover the GIF CLI contract', ['tests/create-discord-emoji-gif/cli-contract.test.js']),
     commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'none');
@@ -119,7 +119,7 @@ test('deriveFromLog: changes to this repo\'s own tooling are "none"', () => {
 test('deriveFromLog: one relevant commit among docs commits still bumps', () => {
   const entries = [
     commit('fix a README typo', ['README.md']),
-    commit('add the agentic-loop skill', ['plugins/harness/skills/agentic-loop/SKILL.md']),
+    commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
     commit('rework the test layout', ['tests/bump-version/derive-bump-level.test.js']),
     commit('chore: bump version to 1.0.2'),
   ];
@@ -131,7 +131,7 @@ test('deriveFromLog: a tag on an irrelevant commit is honored when the range is 
   // commit, but the range contains a real plugin change, so the human signal stands.
   const entries = [
     commit('note the new skill in the readme [bump:minor]', ['README.md']),
-    commit('add the agentic-loop skill', ['plugins/harness/skills/agentic-loop/SKILL.md']),
+    commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
     commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'minor');
@@ -167,13 +167,13 @@ test('deriveFromLog: a merge commit contributes no paths of its own', () => {
   assert.equal(deriveFromLog([commit('Merge pull request #7 from foo/bar', [])]), 'none');
   const withMergedCommits = [
     commit('Merge pull request #7 from foo/bar', []),
-    commit('add the agentic-loop skill', ['plugins/harness/skills/agentic-loop/SKILL.md']),
+    commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
   ];
   assert.equal(deriveFromLog(withMergedCommits), 'patch');
 });
 
 test('isRelevantPath: everything shipped inside the plugin tree counts', () => {
-  assert.equal(isRelevantPath('plugins/harness/skills/hello-world/SKILL.md'), true);
+  assert.equal(isRelevantPath('plugins/harness/skills/natural-style/SKILL.md'), true);
   assert.equal(isRelevantPath('plugins/harness/.claude-plugin/plugin.json'), true);
   assert.equal(isRelevantPath('plugins/harness/.codex-plugin/plugin.json'), true);
   assert.equal(isRelevantPath('plugins/harness/output-styles/natural.md'), true);
@@ -202,9 +202,9 @@ test('isRelevantPath: development-only trees and root docs do not count', () => 
 
 test('parseLog: reads the sentinel format git is asked to produce', () => {
   const text = [
-    'commit\tabc123\tadd the agentic-loop skill',
+    'commit\tabc123\tadd the natural-style skill',
     '',
-    'plugins/harness/skills/agentic-loop/SKILL.md',
+    'plugins/harness/skills/natural-style/SKILL.md',
     'README.md',
     'commit\tdef456\tchore: bump version to 1.0.1',
     '',
@@ -214,8 +214,8 @@ test('parseLog: reads the sentinel format git is asked to produce', () => {
   assert.deepEqual(parseLog(text), [
     {
       hash: 'abc123',
-      subject: 'add the agentic-loop skill',
-      paths: ['plugins/harness/skills/agentic-loop/SKILL.md', 'README.md'],
+      subject: 'add the natural-style skill',
+      paths: ['plugins/harness/skills/natural-style/SKILL.md', 'README.md'],
     },
     {
       hash: 'def456',
