@@ -57,7 +57,7 @@ test('setup initializes only volume ownership and propagates installer failure',
   assert.equal(runs.length, 2);
   assert.ok(runs[0].includes('0:0'));
   assert.ok(!runs[0].some(arg => arg.includes('type=bind')));
-  assert.deepEqual(runs[1].slice(-3), ['sh', '-c', 'npm ci --include=dev && npm run build && node scripts/setup-tests.js']);
+  assert.deepEqual(runs[1].slice(-3), ['sh', '-c', 'npm ci --include=dev && npm run build && npm run test:setup']);
 });
 
 test('candidate mount rejects symlinks and conflicting files before launching a source container', t =>

@@ -77,7 +77,7 @@ test('target selection reaches every setup and prerequisite command without ambi
 test('CLI accepts only the complete gate, --skip-gif, and --help', () => {
   let result = spawnSync(process.execPath, [scriptPath, '--help'], { encoding: 'utf8' });
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /run-tests\.js .*\[--skip-gif\]/);
+  assert.match(result.stdout, /Usage: npm test .*\[--skip-gif \| --help\]/);
   assert.match(result.stdout, /complete local test gate/i);
   assert.match(result.stdout, /omit[\s\S]*create-discord-emoji-gif/i);
 
@@ -88,6 +88,20 @@ test('CLI accepts only the complete gate, --skip-gif, and --help', () => {
   result = spawnSync(process.execPath, [scriptPath, '--skip-gif', '--help'], { encoding: 'utf8' });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /ERROR \[INVALID_ARGUMENTS\]/);
+});
+
+test('npm forwards help, target selection, and invalid usage to the real runner', () => {
+  for (const args of [['--help'], ['--target', 'distribution', '--help'], ['--unknown']]) {
+    const result = spawnSync('npm', ['test', '--', ...args], { cwd: repoRoot, encoding: 'utf8' });
+    assert.equal(result.status, args.includes('--unknown') ? 2 : 0, result.stdout + result.stderr);
+    if (args.includes('--unknown')) {
+      assert.match(result.stderr, /ERROR \[UNKNOWN_ARGUMENT\]/);
+      assert.match(result.stderr, /Remedy: npm test -- --help/);
+    } else {
+      assert.match(result.stdout, /Usage: npm test/);
+      assert.match(result.stdout, /complete local test gate/i);
+    }
+  }
 });
 
 test('successful, failed, and interrupted gates remove the test virtual environment', async t => {
@@ -277,7 +291,13 @@ test('workflow limits credentials and validates each versioned distribution befo
   assert.match(workflow, /ref: \$\{\{ github\.event_name == 'workflow_dispatch' && 'main' \|\| github\.sha \}\}/);
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /bump:\n\s+needs: test\n\s+permissions:\n\s+contents: write/);
-  assert.equal((workflow.match(/node-version: '26'/g) || []).length, 2);
+  const { workflowSteps } = require('../helpers/workflow-steps');
+  for (const job of ['test', 'bump']) {
+    const node = workflowSteps(workflow, job).filter(step => step.uses === 'actions/setup-node@v4');
+    assert.equal(node.length, 1);
+    assert.match(node[0].raw, /node-version-file: '\.nvmrc'/);
+    assert.doesNotMatch(node[0].raw, /node-version:/);
+  }
   assert.equal((workflow.match(/python-version: '3\.12'/g) || []).length, 2);
   const reset = workflow.indexOf('git reset --hard origin/main');
   const bump = workflow.indexOf('HARNESS_RELEASE_WRITE=1 node scripts/bump-version.js', reset);

@@ -17,7 +17,7 @@ test('main routing gates all candidate work after source validation and retains 
   const selection = steps.findIndex(step => step.id === 'candidate');
   assert.ok(policy >= 0 && policy < selection);
   const expensive = steps.filter(step => step.uses === 'actions/setup-python@v6' ||
-    ['npm ci --include=dev', 'npm run build', 'node scripts/setup-tests.js', 'node scripts/run-tests.js --skip-gif'].includes(step.run));
+    ['npm ci --include=dev', 'npm run build', 'npm run test:setup', 'npm test -- --skip-gif'].includes(step.run));
   assert.equal(expensive.length, 5);
   for (const step of expensive)
   {
@@ -90,11 +90,15 @@ test('PR verification cancels obsolete runs for the same PR and still tests its 
   assert.match(verification, /permissions:\n  contents: read/);
   assert.match(verification, /ref: \$\{\{ github.sha \}\}\n          fetch-depth: 0\n          persist-credentials: false/);
   const pr = workflowSteps(verification, 'verify');
+  const node = pr.filter(step => step.uses === 'actions/setup-node@v4');
+  assert.equal(node.length, 1);
+  assert.match(node[0].raw, /node-version-file: '\.nvmrc'/);
+  assert.doesNotMatch(node[0].raw, /node-version:/);
   const policy = pr.findIndex(step => step.run?.includes('check-source-policy.js'));
   const install = pr.findIndex(step => step.run === 'npm ci --include=dev');
   const build = pr.findIndex(step => step.run === 'npm run build');
-  const setup = pr.findIndex(step => step.run === 'node scripts/setup-tests.js');
-  const gate = pr.findIndex(step => step.run === 'node scripts/run-tests.js --skip-gif');
+  const setup = pr.findIndex(step => step.run === 'npm run test:setup');
+  const gate = pr.findIndex(step => step.run === 'npm test -- --skip-gif');
   assert.ok(policy >= 0 && policy < install && install < build && build < setup && setup < gate);
   assert.match(pr[policy].run, /--base "\$SOURCE_BASE" --head "\$SOURCE_HEAD" --integration "\$INTEGRATION"/);
   assert.match(pr[policy].raw, /INTEGRATION: \$\{\{ github.sha \}\}/);

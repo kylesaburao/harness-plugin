@@ -2,7 +2,7 @@
 'use strict';
 
 // Repository test orchestrator. This is development tooling and is not shipped with the plugin.
-// Minimum Node: 22.
+// Repository Node runtime: see .nvmrc.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -13,18 +13,28 @@ const { artifactRoot, parseArtifactTarget, validateTarget } = require('./artifac
 const EXIT = Object.freeze({ OK: 0, FAILED: 1, CANNOT_START: 2 });
 const GIF_GROUP = 'create-discord-emoji-gif';
 
-const USAGE = `Usage: run-tests.js [--target development|distribution] [--skip-gif]
+const USAGE = `Usage: npm test [-- [--target development|distribution] [--skip-gif | --help]]
 
 Run the repository test gate using existing dependencies.
-Prepare a checkout first with: node scripts/setup-tests.js
+Prepare an already-built checkout first with: npm run test:setup
+Pass runner options after npm's -- separator.
 
 With no arguments, run the complete local test gate, including both GIF converter
 preflights and all tests under tests/create-discord-emoji-gif/.
 
 Options:
+  --target development|distribution  Select the artifact (default: development)
   --skip-gif  Omit both GIF converter preflights and all tests under
               tests/create-discord-emoji-gif/
   --help      Print this message
+
+Examples:
+  npm test
+  npm test -- --skip-gif
+  npm test -- --target development --skip-gif
+  npm test -- --target distribution
+  npm test -- --help
+  npm test -- --target distribution --help
 
 Exit status: 0 success, 2 bad usage, prerequisite child status, 1 test failure, or 128 + interruption signal.`;
 
@@ -195,7 +205,7 @@ async function main(argv, {
   try {
     options = parseArguments(argv);
   } catch (error) {
-    stderr.write(`ERROR [${error.code}]: ${error.message}\nRemedy: node scripts/run-tests.js --help\n`);
+    stderr.write(`ERROR [${error.code}]: ${error.message}\nRemedy: npm test -- --help\n`);
     return EXIT.CANNOT_START;
   }
   if (options.help) {

@@ -52,12 +52,22 @@ function main(argv)
   }
   catch (error)
   {
-    process.stderr.write(`ERROR [usage_error]: ${error.message}\nRemedy: node scripts/setup-tests.js --help\n`);
+    process.stderr.write(`ERROR [usage_error]: ${error.message}\nRemedy: npm run test:setup -- --help\n`);
     return 2;
   }
   if (parsed.remaining.includes('--help'))
   {
-    process.stdout.write('Usage: node scripts/setup-tests.js [--target development|distribution] [--check]\nPrepare runtime dependencies for an explicitly built artifact. --check only validates installed dependencies.\n');
+    process.stdout.write(`Usage: npm run test:setup [-- [--target development|distribution] [--check | --help]]
+Prepare runtime dependencies for an already-built artifact (default: development).
+Pass setup options after npm's -- separator. --check only validates installed dependencies.
+
+Examples:
+  npm run test:setup
+  npm run test:setup -- --check
+  npm run test:setup -- --help
+  npm run test:setup -- --target development
+  npm run test:setup -- --target distribution
+`);
     return 0;
   }
   const root = path.resolve(__dirname, '..');
@@ -72,7 +82,7 @@ function main(argv)
   }
   catch (error)
   {
-    process.stderr.write(`ERROR [test_prerequisite_missing]: ${error.message}\nRemedy: build the selected artifact, then node scripts/setup-tests.js --target ${parsed.target}\n`);
+    process.stderr.write(`ERROR [test_prerequisite_missing]: ${error.message}\nRemedy: build the selected artifact, then npm run test:setup -- --target ${parsed.target}\n`);
     return 2;
   }
 }

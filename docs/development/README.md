@@ -6,9 +6,9 @@ Work from the repository root for all commands in these guides. Read [AGENTS.md]
 
 ## Prepare and verify a change
 
-1. Check [dependencies](dependencies.md) for your host and affected skills.
+1. Check [dependencies](dependencies.md) for your host and affected skills, including [Node bootstrap and terminal activation](dependencies.md#node-runtime-bootstrap) for host setup.
 2. On macOS, use the native [testing workflow](testing.md). On Linux or WSL2, prepare the [development container](container.md).
-3. Follow the [build workflow](build.md), then run focused checks during development and the [full gate](testing.md#full-gate) before delivery.
+3. Follow the [build workflow](build.md): `npm run build`, `npm run test:setup`, then `npm test`. Run focused checks during development and the [full gate](testing.md#full-gate) before delivery.
 4. Follow [versioning and commit conventions](versioning.md) when committing or releasing.
 
 Keep Git operations on the host. Enable the repository's commit guards and timestamp hook once per clone:

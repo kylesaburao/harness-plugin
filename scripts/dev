@@ -70,7 +70,7 @@ if [ "$action" = setup ]; then
         --mount "type=volume,source=$root_modules,target=/vol/root-modules,volume-nocopy" \
         --mount "type=volume,source=$home,target=/vol/home,volume-nocopy" \
         "$image" chown "$uid:$gid" /vol/venv /vol/modules /vol/root-modules /vol/home
-    set -- sh -c 'npm ci --include=dev && npm run build && node scripts/setup-tests.js'
+    set -- sh -c 'npm ci --include=dev && npm run build && npm run test:setup'
 else
     for volume in "$venv" "$modules" "$root_modules" "$home"; do
         docker volume inspect "$volume" >/dev/null 2>&1 || fail "Dependency volume is missing: $volume." './scripts/dev setup'

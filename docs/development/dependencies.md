@@ -11,7 +11,7 @@ On macOS, run development commands and tests directly on the host. On Linux, inc
 | Install or provide | Requirement and purpose |
 | --- | --- |
 | Git, POSIX shell, and standard command-line utilities | Checkout operations, shell-based tests, and hooks. Backup integration tests also require `unzip`. `ripgrep` is used for repository searches. |
-| Node.js and npm | Node.js **26.0.0 or newer** satisfies the highest Node minimum across the full test gate, including `wake-desktop`. npm installs the root build toolchain and separate backup dependencies. |
+| Node.js and npm | Node.js **26.x**, declared in the root [`.nvmrc`](../../.nvmrc), satisfies the full development gate, including `wake-desktop`. npm installs the root build toolchain and separate backup dependencies. |
 | Python 3 with `venv` and pip | Creates the repository's `.venv` and runs the ASD-STE100 tests and reference tools. Python and `pypdfium2` versions are not pinned by the setup script. Use an interpreter supported by the installed `pypdfium2` package. |
 | TypeScript and Node type definitions | Root development-only exact pins: `typescript` **7.0.2** and `@types/node` **20.19.43**, installed with `npm ci --include=dev`. They do not ship and do not raise skill runtime floors. |
 | `archiver` | Direct npm dependency `^8.0.0`, with exact resolved packages in the backup skill's `package-lock.json`. Installed by setup in that skill's `node_modules`. |
@@ -26,6 +26,43 @@ Expose the intended `ffmpeg` and its matching `ffprobe` on `PATH` for GIF comman
 After provisioning these tools, follow [test setup and the full gate](testing.md). Root `npm ci --include=dev` and `npm run build` are explicit preparation steps; `setup-tests.js` does not perform either one.
 
 The enabled [commit hooks](build.md#local-commit-policy) use only Git and POSIX shell to inspect the active index. They do not run a build, install dependencies, start Docker, or access the network. Linux/WSL2 therefore needs no host Node, npm, Python, or active container merely to commit an ordinary source change.
+
+### Node runtime bootstrap
+
+The optional host bootstrap uses an existing [nvm installation](https://github.com/nvm-sh/nvm#installing-and-updating). nvm is unnecessary for plugin installation, CI, Docker, or an already-provisioned Node 26 environment. Linux/WSL2 development uses the container workflow below.
+
+From the repository root, execute the Bash helper (compatible with macOS Bash 3.2):
+
+```sh
+./scripts/setup-node
+```
+
+It uses an available nvm shell function first. Otherwise it loads `nvm.sh` from an explicit `NVM_DIR`, then the default `$XDG_CONFIG_HOME/nvm` when XDG is set, or `$HOME/.nvm` otherwise. It runs `nvm install` from the repository root so `.nvmrc` selects the version, then reports `node --version`. It requires no working Node or npm beforehand and does not install nvm, edit shell profiles, or install repository dependencies.
+
+An executed helper cannot activate its parent terminal. If nvm is not already loaded there, initialize it using the same directory selection:
+
+```sh
+if ! command -v nvm >/dev/null 2>&1; then
+    if [ -z "${NVM_DIR:-}" ]; then
+        NVM_DIR="$HOME/.nvm"
+        if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+            NVM_DIR="$XDG_CONFIG_HOME/nvm"
+        fi
+    fi
+    export NVM_DIR
+    . "$NVM_DIR/nvm.sh" --no-use
+fi
+nvm use
+node --version
+```
+
+Run this from the repository root and verify `v26.*`. Then install the locked root toolchain separately:
+
+```sh
+npm ci --include=dev
+```
+
+Continue with [build and test setup](testing.md#setup). The helper's `--help` prints usage without initialization or installation; failures retain a nonzero status.
 
 ### Linux host and container
 

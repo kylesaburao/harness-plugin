@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Execute this helper; terminal activation remains an explicit nvm use.
+
+case "$#:${1-}" in
+    0:) ;;
+    1:--help|1:-h)
+        printf '%s\n' \
+            'Usage: ./scripts/setup-node' \
+            'Install/select the repository .nvmrc runtime using existing nvm.' \
+            'Then load nvm in your terminal and run nvm use from the repository.'
+        exit 0
+        ;;
+    *)
+        printf '%s\n' \
+            'ERROR [INVALID_ARGUMENTS]: Expected no arguments or --help.' \
+            'Remedy: ./scripts/setup-node --help' >&2
+        exit 2
+        ;;
+esac
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P) ||
+    exit "$?"
+cd -- "$repo_root" || exit "$?"
+
+if [ ! -r .nvmrc ] || [ ! -s .nvmrc ]; then
+    printf '%s\n' \
+        'ERROR [NVMRC_MISSING]: The repository .nvmrc is missing, empty, or unreadable.' \
+        'Remedy: restore the repository .nvmrc, then rerun ./scripts/setup-node.' >&2
+    exit 2
+fi
+
+if ! command -v nvm >/dev/null 2>&1; then
+    if [ -z "${NVM_DIR:-}" ]; then
+        NVM_DIR="$HOME/.nvm"
+        if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+            NVM_DIR="$XDG_CONFIG_HOME/nvm"
+        fi
+    fi
+    export NVM_DIR
+    if [ -r "$NVM_DIR/nvm.sh" ]; then
+        . "$NVM_DIR/nvm.sh" --no-use || exit "$?"
+    fi
+fi
+
+if ! command -v nvm >/dev/null 2>&1; then
+    printf '%s\n' \
+        'ERROR [NVM_NOT_FOUND]: nvm is unavailable in this shell.' \
+        'Remedy: install nvm manually from https://github.com/nvm-sh/nvm#installing-and-updating, or set NVM_DIR to an existing installation containing nvm.sh; then rerun ./scripts/setup-node.' >&2
+    exit 2
+fi
+
+nvm install || exit "$?"
+node --version || exit "$?"
+printf 'To activate in your terminal, load nvm, then run: cd %q && nvm use\n' "$repo_root"

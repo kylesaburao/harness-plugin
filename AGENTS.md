@@ -10,10 +10,10 @@ Developers author and commit source, repository tooling, tests, and documentatio
 
 1. Install the locked root toolchain with `npm ci --include=dev` on first setup and after root dependency inputs change.
 2. Edit `src/harness/` or repository tooling. Run `npm run build` after source or build-input changes. This compiles and copies a fresh development candidate into `.build/harness/`; it never writes tracked publication output.
-3. Run `node scripts/setup-tests.js`, then `node scripts/run-tests.js`. Setup requires an already-built fresh candidate and is required before each full gate because the gate removes `.venv`.
+3. Run `npm run test:setup`, then `npm test`. Setup requires an already-built fresh candidate and is required before each full gate because the gate removes `.venv`.
 4. Stage only the intended source, tooling, tests, and documentation. The local commit hooks reject staged changes to `dist/` or the canonical package without rebuilding, unstaging, or otherwise changing the user's work.
 
-On macOS run development commands directly. On Linux/WSL2 use `./scripts/dev exec` for development commands and keep Git operations on the host. Read the [build workflow](docs/development/build.md) for assembly and recovery details.
+The root `.nvmrc` declares the repository development runtime. For host runtime setup, follow [bootstrap and terminal activation](docs/development/dependencies.md#node-runtime-bootstrap). On macOS run development commands directly. On Linux/WSL2 use `./scripts/dev exec` for development commands and keep Git operations on the host. Read the [build workflow](docs/development/build.md) for assembly and recovery details.
 
 Both marketplace catalogs select `./dist/harness`. Claude Code and Codex consume that committed tree without root npm installation or a build. Repository source and README descriptions can therefore be ahead of the currently installable release. Development setup and tests use `.build/harness/` by default; an explicit distribution target is reserved for release validation and deliberate read-only inspection.
 
@@ -109,7 +109,7 @@ The [dependency inventory](docs/development/dependencies.md) is authoritative fo
 
 On macOS hosts, run development commands and tests directly on macOS. On Linux hosts (including WSL2), run them through the development container using `./scripts/dev exec <command> [args...]`.
 
-When building, running, or changing the development container, read [container guide](docs/development/container.md) for launcher commands, dependency volumes, failure remedies, and platform limits. Run the full container gate with `./scripts/dev exec node scripts/run-tests.js`. Keep Git operations on the host.
+When building, running, or changing the development container, read [container guide](docs/development/container.md) for launcher commands, dependency volumes, failure remedies, and platform limits. Run the full container gate with `./scripts/dev exec npm test`. Keep Git operations on the host.
 
 ## Tests
 

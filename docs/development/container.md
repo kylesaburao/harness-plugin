@@ -10,10 +10,12 @@ Commands below run from the repository root. Ordinary macOS development runs nat
 
 Use a normal non-root account with local Docker, a POSIX shell, Git, and the checkout. Host Node, Python, and media tools are not required. On Windows, run these commands inside WSL2 with Docker integration enabled. On macOS, start Docker Desktop.
 
+The image already supplies Node 26, consistent with the repository `.nvmrc`. The host nvm bootstrap is unnecessary for this workflow.
+
 ```sh
 ./scripts/dev build
 ./scripts/dev setup
-./scripts/dev exec node scripts/run-tests.js
+./scripts/dev exec npm test
 ```
 
 Build creates the toolchain image. After initializing its retained volumes, setup explicitly runs these commands inside the development container:
@@ -21,7 +23,7 @@ Build creates the toolchain image. After initializing its retained volumes, setu
 ```sh
 npm ci --include=dev
 npm run build
-node scripts/setup-tests.js
+npm run test:setup
 ```
 
 This cold-start sequence installs the root toolchain, constructs `.build/harness/`, installs the candidate backup skill's npm dependencies, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references. `setup-tests.js` itself does not install the root toolchain or build an artifact. Initial image build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
@@ -35,7 +37,7 @@ Run a focused test or open a shell with the same source and dependency mounts:
 
 `exec` preserves argument boundaries, stdin, stdout, stderr, and command exit status without allocating a TTY. Use `sh -c '...'` explicitly when a command needs shell expansion. `shell` allocates an interactive TTY. Both use attached `docker run --rm --init --sig-proxy=true`, with Docker's [signal forwarding](https://docs.docker.com/reference/cli/docker/container/run/). Containers are removed when commands exit.
 
-Ordinary `exec` commands never build or install implicitly. After source edits, run `./scripts/dev exec npm run build`, then `./scripts/dev exec node scripts/setup-tests.js` before the next gate. Builds preserve the mounted backup dependency directory. Run setup and reset only when no development commands are active. The launcher checks for containers using the volumes, but does not lock out concurrent launches.
+Ordinary `exec` commands never build or install implicitly. After source edits, run `./scripts/dev exec npm run build`, then `./scripts/dev exec npm run test:setup` before the next gate. Builds preserve the mounted backup dependency directory. Run setup and reset only when no development commands are active. The launcher checks for containers using the volumes, but does not lock out concurrent launches.
 
 ## Persistence and reset
 
@@ -75,7 +77,7 @@ Targets are local Linux Docker, macOS Docker Desktop, and Windows through WSL2. 
 - Docker unavailable: start local Docker and check `docker context show`.
 - A failed build or setup download requires restored network access and a retry of the same command.
 
-Relay failures from the command that produced them. A failed setup can leave partial volume state, so fix the reported cause and rerun setup before testing. Run the complete gate with `./scripts/dev exec node scripts/run-tests.js`, including both converter preflights. Run setup again before another gate. Record platform checks separately and mark unavailable platforms as skipped.
+Relay failures from the command that produced them. A failed setup can leave partial volume state, so fix the reported cause and rerun setup before testing. Run the complete gate with `./scripts/dev exec npm test`, including both converter preflights. Run setup again before another gate. Record platform checks separately and mark unavailable platforms as skipped.
 
 ## Recorded verification
 

@@ -11,12 +11,12 @@ Install the host tools in [dependencies](dependencies.md) first. On macOS, prepa
 ```sh
 npm ci --include=dev
 npm run build
-node scripts/setup-tests.js
+npm run test:setup
 ```
 
 The root `npm ci` step is separate from test setup. `npm run build` creates or refreshes `.build/harness/`. Setup first checks that this selected artifact is fresh, then installs its backup npm dependencies, creates `.venv`, installs `pypdfium2`, and initializes the existing user-level ASD-STE100 reference bundle. It does not build either artifact, install root dependencies, install host runtimes or media executables, compile the Swift helper, or modify the published distribution.
 
-Use `node scripts/setup-tests.js --check` to check prerequisites and selected-root dependency resolution without installing, initializing, or building. On Linux/WSL2, use [container setup](container.md), and keep Git operations on the host.
+Use `npm run test:setup -- --check` to check prerequisites and selected-root dependency resolution without installing, initializing, or building. On Linux/WSL2, use [container setup](container.md), and keep Git operations on the host.
 
 ## Selecting the test artifact
 
@@ -30,8 +30,8 @@ distribution -> dist/harness/
 Use `--target distribution` only for release testing or explicit inspection:
 
 ```sh
-node scripts/setup-tests.js --target distribution
-node scripts/run-tests.js --target distribution
+npm run test:setup -- --target distribution
+npm test -- --target distribution
 ```
 
 The runner's explicit target overrides any inherited test-target setting and propagates one authoritative `HARNESS_TEST_TARGET` value to every prerequisite, Node worker, GIF process, Python reporter, Python test, and relevant nested child. Direct focused commands default to `development`; to inspect the published artifact explicitly, set `HARNESS_TEST_TARGET=distribution`. Any other supplied value fails instead of falling back to source or another artifact.
@@ -43,18 +43,31 @@ Backup's `archiver` dependency must resolve from the selected artifact's own `sk
 On macOS, after setup:
 
 ```sh
-node scripts/run-tests.js
+npm test
 ```
 
 On Linux/WSL2, after `./scripts/dev setup`:
 
 ```sh
-./scripts/dev exec node scripts/run-tests.js
+./scripts/dev exec npm test
 ```
 
 The gate checks selected-artifact freshness and static validity before behavioral tests. It validates existing dependencies and does not install them. After all test processes finish, it removes the repository `.venv`; run setup before each complete gate. Backup `node_modules` and user-level reference bundles remain. A parent shell may still display `(.venv)` until deactivated or closed.
 
 Use `--skip-gif` for a hosted-style partial gate that omits GIF tests and both converter preflights. Report that exclusion. Linux platform skips do not establish native macOS frame-extraction coverage, and the hosted subset is not the complete local gate.
+
+Pass runner options after npm's `--` separator. The existing runner accepts one `--target development|distribution` and at most one of `--skip-gif` or `--help`. The default includes GIF tests. Setup must precede each gate invocation below; help does no work and does not remove `.venv`:
+
+```sh
+npm test
+npm test -- --skip-gif
+npm test -- --target development --skip-gif
+npm test -- --target distribution
+npm test -- --help
+npm test -- --target distribution --help
+```
+
+Distribution tests still require target-specific setup and freshness. npm forwards the options to the existing parser; it does not add arbitrary Node test flags or new filtering options. Use the focused commands below for individual suites.
 
 In a Codex sandbox, the three native HEIC tests can fail with `heic_encode_failed` and `nilError` because real Core Image encoding needs host access. If that signature occurs, rerun the focused command with authorized host access and report both results separately:
 

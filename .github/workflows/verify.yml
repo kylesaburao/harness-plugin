@@ -20,7 +20,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '26'
+          node-version-file: '.nvmrc'
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -32,8 +32,8 @@ jobs:
         run: node scripts/check-source-policy.js --base "$SOURCE_BASE" --head "$SOURCE_HEAD" --integration "$INTEGRATION"
       - run: npm ci --include=dev
       - run: npm run build
-      - run: node scripts/setup-tests.js
-      - run: node scripts/run-tests.js --skip-gif
+      - run: npm run test:setup
+      - run: npm test -- --skip-gif
       - name: Verify tracked checkout remained unchanged
         run: |
           git diff --exit-code

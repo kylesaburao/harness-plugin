@@ -11,11 +11,13 @@ On macOS, prepare and test an ordinary change with:
 ```sh
 npm ci --include=dev
 npm run build
-node scripts/setup-tests.js
-node scripts/run-tests.js
+npm run test:setup
+npm test
 ```
 
 Repeat `npm ci` after root dependency inputs change. Rebuild after source or build-input changes. Setup operates on an already-built artifact and is required before every complete gate because the gate removes `.venv`. On Linux/WSL2, use the corresponding `./scripts/dev` commands in the [container guide](container.md).
+
+The npm scripts delegate to the existing build, setup, and test implementations. Build and test do not implicitly install dependencies or change output targets. Run them from the repository root; nested skill packages retain their separate dependency installation.
 
 Ordinary commits contain source, tooling, tests, and documentation. Do not edit, regenerate, or stage `dist/`, and do not edit the release-owned `src/harness/package.json`. Source can legitimately be newer than the published artifact.
 
@@ -34,8 +36,8 @@ The default target is `development`:
 npm run build                 # reconcile .build/harness/
 npm run build:check           # compare .build/harness/ without repair
 npm run validate:build        # validate .build/harness/
-node scripts/setup-tests.js   # set up .build/harness/ dependencies
-node scripts/run-tests.js     # test .build/harness/
+npm run test:setup            # set up .build/harness/ dependencies
+npm test                      # test .build/harness/
 ```
 
 Distribution inspection is explicit:
@@ -43,8 +45,11 @@ Distribution inspection is explicit:
 ```sh
 npm run build:dist:check
 npm run validate:dist
-node scripts/run-tests.js --target distribution
+npm run test:setup -- --target distribution
+npm test -- --target distribution
 ```
+
+Pass target options after npm's `--` separator. Distribution testing requires fresh published output and its own setup dependencies; these inspection commands do not authorize rebuilding tracked output.
 
 `npm run build:dist` and the canonical version writer require all publication-intent conditions used by the trusted release workflow: the GitHub Actions repository, main ref, push or manual-dispatch event, and `HARNESS_RELEASE_WRITE=1`. Generic `CI=true` is not permission to write release-owned files. This guard prevents accidental use; environment variables are not authentication.
 

@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '26'
+          node-version-file: '.nvmrc'
       - name: Validate source before generation
         env:
           SOURCE_BEFORE: ${{ github.event.before }}
@@ -79,9 +79,9 @@ jobs:
         if: steps.candidate.outputs.test_candidate == 'true'
       - run: npm run build
         if: steps.candidate.outputs.test_candidate == 'true'
-      - run: node scripts/setup-tests.js
+      - run: npm run test:setup
         if: steps.candidate.outputs.test_candidate == 'true'
-      - run: node scripts/run-tests.js --skip-gif
+      - run: npm test -- --skip-gif
         if: steps.candidate.outputs.test_candidate == 'true'
       - name: Verify tracked checkout remained unchanged
         run: |
@@ -109,7 +109,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: '26'
+          node-version-file: '.nvmrc'
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
