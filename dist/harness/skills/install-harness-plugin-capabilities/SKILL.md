@@ -1,14 +1,13 @@
 ---
 name: install-harness-plugin-capabilities
-description: Install, repair, or update Harness user-level integration for Codex or Claude Code, including Advisor activation, Final plans guidance, and Skill discovery. Use when requested to configure Harness capabilities or repair their host integration.
+description: Install, repair, or update Harness user-level integration for Codex or Claude Code, including Advisor activation, implementation-planning activation, and Skill discovery. Use when requested to configure Harness capabilities or repair their host integration.
 ---
 
 # Install Harness capabilities
 
-Use ordinary agent file operations. For each requested host, copy one companion
-file into its user directory and add Advisor instructions, a Final plans
-pointer, and Skill discovery guidance to its user-level instruction file. Follow
-these steps in order.
+Use ordinary agent file operations to install three independent components in
+each selected host's effective user instructions: Advisor, implementation-planning
+activation, and Skill discovery. Follow these steps in order for each host.
 
 ## Bundled path authority
 
@@ -36,34 +35,34 @@ effective user instruction file before editing. A nonempty Codex
 If the host uses another applicable user-level instruction file, establish that
 file first. Report a specific blocker if the effective file cannot be established.
 
-The companion destination is `<host-user-directory>/final-plan-context.md` for
-both hosts. These host integration files are an intentional exception to the
-plugin's runtime-data root. Preserve host settings, Advisor routing (including
-`~/.harness-plugin/harness-advisor/config.json`), and legacy role files.
+Preserve host settings, Advisor routing (including
+`~/.harness-plugin/harness-advisor/config.json`), legacy role files, and unrelated
+instructions. Do not create or maintain a user-level `final-plan-context.md`.
+Do not delete, rename, overwrite, or adopt ownership of an existing legacy
+companion. Its presence does not justify retaining an obsolete active Harness
+pointer. Do not inspect the companion unnecessarily.
 
-## 2. Read the source and existing destination content
+## 2. Read templates and identify existing integration
 
-Read the bundled [final-plan-context.md](references/final-plan-context.md),
-the selected host's capabilities block, the shared Final plans trigger, and
-the shared Skill discovery template in
+Read the selected host's capabilities block, shared implementation-planning
+trigger, and shared Skill discovery template in
 [activation-instructions.md](references/activation-instructions.md).
-Read the existing destination companion and user instruction file if present.
+Read the existing effective user instruction file before editing.
 
-Identify the existing integration from the document's context. Preserve unrelated
-instructions and examples. Example headings and markers are not active
-integration. Use contextual edits, without rebuilding a Markdown parser. If
-ownership or the intended edit is genuinely unclear, report the path and blocker
-instead of guessing.
+Identify active integration from its document context. Fenced or quoted examples
+and historical descriptions are not active instructions. Preserve unrelated prose,
+examples, adjacent sections, and nested blocks. Use contextual edits without
+building a Markdown parser or replacing everything through the next heading.
+A heading alone does not establish ownership of its contents. Report the path
+and specific ambiguity when ownership or conflicting instructions make an edit
+unclear; preserve the uncertain content.
 
-## 3. Copy the companion
+Inspect all three components independently. A correct or blocked component must
+not cause another component to be skipped. Leave correct components unchanged;
+with unchanged inputs a second run must make no edits. Do not rewrite the whole
+file to normalize whitespace or headings.
 
-Create missing destination directories as needed. Copy the bundled
-`final-plan-context.md` byte-for-byte, including its final newline, to the
-companion destination. The bundled file is authoritative. Leave an identical
-installed companion alone. If copying fails, report the failure and stop before
-installing or updating its pointer.
-
-## 4. Install the Advisor instructions
+## 3. Install the Advisor instructions
 
 Create the user instruction file if missing. Copy the selected host's capabilities
 block from `activation-instructions.md` exactly, including its markers. Update
@@ -77,46 +76,75 @@ family, materialize routing defaults, or consult an Advisor during installation.
 The optional [host-detection.md](references/host-detection.md) explains the Claude
 session gate, but adds no installation steps.
 
-## 5. Install the Final plans note in the same instruction file
+## 4. Check availability and install implementation planning
 
-Take the shared `# Final plans` trigger from `activation-instructions.md` and
-replace `<absolute-companion-path>` with the absolute path copied to in step 3.
-Write the resulting note as active instructions in the file selected in step 1.
-This applies to both Codex and Claude independently of Advisor availability.
+Before adding or replacing planning integration, establish that the selected
+host can discover and load the intended Harness `write-implementation-plan`
+skill through its supported active catalogue mechanism. Use actual target-host
+discovery evidence. A source file, a successful development build, or availability
+in a different host is insufficient. Do not search caches for a substitute or
+select an installation by version or timestamp.
 
-Update existing final-plan integration in place. Preserve unrelated content
-sharing its section, including any nested capabilities block updated in step 4.
-If the guidance is missing, insert it before `# Engineering context` when
-present, otherwise append it with blank-line separation. Avoid duplicates and
-leave correct guidance alone.
+If the replacement is absent, stale, unloadable, ambiguous, or cannot be verified
+from this session, leave that host's existing planning integration untouched and
+report this component blocked. Direct the user to the normal plugin update/reload
+workflow and, when necessary, rerun capability installation in a fresh session of
+that host. Do not add a CLI dependency or use the legacy companion as the new
+contract. Continue Advisor and Skill discovery installation where their own
+prerequisites are satisfied.
 
-## 6. Install Skill discovery in the same instruction file
+Once availability is established, copy the shared implementation-planning trigger
+as active Markdown, including its ownership markers and excluding the surrounding
+code fence. Install it independently of Advisor availability.
+
+Recognize old Harness planning integration only through the combined context of
+its `final-plan-context.md` companion pointer and identifiable Harness
+context-transfer/fresh-context-audit wording. The `# Final plans` heading alone,
+or an arbitrary similarly named file reference, does not establish ownership.
+Replace only the identifiable Harness-owned span. Preserve custom prose and any
+nested capabilities blocks. Rename or remove the old heading only when doing so
+does not discard unrelated content.
+
+For new integration, matching ownership markers and the activation template define
+the normal update boundary. An unmarked but clearly identifiable equivalent
+Harness trigger may be migrated to the marked form. Incomplete markers,
+conflicting content, or uncertain ownership require an ambiguity report instead
+of guessed replacement. Preserve uncertain content rather than adding another
+trigger alongside it.
+
+If identifiable old and new active Harness triggers coexist, retain one canonical
+new trigger and remove only obsolete or duplicate Harness-owned spans. Leave the
+legacy companion itself untouched. Do not leave two active planning authorities.
+
+Update identifiable integration in place. If absent, insert before
+`# Engineering context` when present, otherwise append with blank-line separation.
+Avoid moving unrelated content. Keep `# Implementation planning` and
+`# Skill discovery` as sibling sections.
+
+## 5. Install Skill discovery
 
 Copy the shared Skill discovery template from `activation-instructions.md` as
-active Markdown instructions, without its surrounding code fence, into the
-effective file selected in step 1. Install it for both hosts regardless of
-Claude native Advisor availability. Keep `# Skill discovery` a sibling of
-`# Final plans`.
+active Markdown without its surrounding code fence into the effective instruction
+file. Install for both hosts regardless of Claude native Advisor availability.
 
-Update identifiable active Skill discovery guidance in place. Preserve unrelated
-prose, nested content, and examples. A heading alone does not establish ownership
-of everything beneath it. If ownership or conflicting instructions make the
-intended edit unclear, report the path and ambiguity instead of guessing.
+Update identifiable active guidance in place, preserving unrelated prose, nested
+content, and examples. Report specific ambiguities instead of guessing ownership.
+Leave matching guidance unchanged. If absent, insert before
+`# Engineering context` when present, otherwise append with blank-line separation.
+Avoid duplicate active guidance. Check this component even if Advisor or planning
+integration already matches or is blocked.
 
-Leave matching guidance unchanged. If absent, insert it before
-`# Engineering context` when present, otherwise append it with blank-line
-separation. Avoid duplicate active guidance. Always check Advisor, Final plans,
-and Skill discovery independently in steps 4 through 6. Matching components
-must not cause a missing component to be skipped.
+## 6. Verify and report
 
-## 7. Verify and report
+Inspect the effective instruction file and resulting edits. Verify each installed
+component is active text and correct. For a successful planning migration, verify
+one canonical Harness planning trigger remains and the migrated Harness pointer
+is removed. Do not claim removal of arbitrary user-authored references. Confirm
+unrelated content is preserved; do not inspect or modify the legacy companion
+for verification.
 
-Inspect the resulting edits. Check that the installed companion matches the
-bundled bytes, the Final plans pointer resolves to that installed file, and
-all three instruction components (Advisor, Final plans, and Skill discovery)
-are active text in the effective instruction file.
-
-Report changed paths, unchanged artifacts, failures, and partial completion
-honestly. Remind the user to start a new host session. Installation does not
-establish account model access, effective runtime permissions, or future agents'
-compliance with the guidance.
+For each selected host report changed paths, unchanged components, blocked
+components, failures, and partial completion honestly. Mention an untouched legacy
+companion only when its presence is known. Remind the user to start a new host
+session. Installation does not establish account model access, effective runtime
+permissions, runtime compliance, or guaranteed skill invocation.
