@@ -56,7 +56,14 @@ test('target selection reaches every setup and prerequisite command without ambi
       const plan = buildSetupPlan(root, target);
       assert.equal(plan.some(spec => spec.label === 'install build dependencies'), false);
       const expectedRoot = path.join(root, target === 'development' ? '.build/harness' : 'dist/harness');
-      assert.ok(plan.find(spec => spec.label === 'install backup dependencies').args.includes(path.join(expectedRoot, 'skills/back-up-directories')));
+      const expectedSkill = path.join(expectedRoot, 'skills/back-up-directories');
+      const home = path.join(root, 'home');
+      const dependencyRoot = path.join(home, '.harness-plugin/back-up-directories');
+      const homePlan = buildSetupPlan(root, target, home);
+      assert.deepEqual(homePlan.find(spec => spec.label === 'copy backup dependency manifest and lockfile').args,
+        [path.join(expectedSkill, 'package.json'), path.join(expectedSkill, 'package-lock.json'), dependencyRoot]);
+      assert.deepEqual(homePlan.find(spec => spec.label === 'install backup dependencies').args,
+        ['ci', '--omit=dev', '--prefix', dependencyRoot]);
     }
     assert.equal(process.env.HARNESS_TEST_TARGET, 'invalid-ambient-target');
     assert.throws(() => parseArguments(['--target', 'elsewhere']));
@@ -360,7 +367,7 @@ test('missing test prerequisites give a setup remedy without installing', () => 
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-test('missing candidate backup dependencies cannot fall back to root or published dependencies', t =>
+test('backup dependencies must come from the user-level directory and the selected artifact lockfile', t =>
 {
   const root = makeTestTree({empty:[]});
   t.after(() => fs.rmSync(root,{recursive:true,force:true}));
@@ -370,16 +377,42 @@ test('missing candidate backup dependencies cannot fall back to root or publishe
     fs.mkdirSync(path.dirname(file),{recursive:true});
     fs.writeFileSync(file,text);
   };
-  write('node_modules/.bin/tsc','compiler placeholder');
-  write('.venv/bin/python','python placeholder');
-  write('.build/harness/skills/back-up-directories/package.json','{}');
-  for (const directory of ['node_modules/archiver','dist/harness/skills/back-up-directories/node_modules/archiver'])
+  const archiver = directory =>
   {
     write(`${directory}/package.json`,'{"name":"archiver","main":"index.js"}');
     write(`${directory}/index.js`,'module.exports = {};');
-  }
+  };
+  write('node_modules/.bin/tsc','compiler placeholder');
+  write('.venv/bin/python','python placeholder');
+  write('.build/harness/skills/back-up-directories/package.json','{}');
+  write('.build/harness/skills/back-up-directories/package-lock.json','{"lockfileVersion":3}');
+  // Root, in-skill, published, and parent-of-dependency-root packages must not satisfy the check.
+  for (const directory of ['node_modules/archiver', '.build/harness/skills/back-up-directories/node_modules/archiver',
+    'dist/harness/skills/back-up-directories/node_modules/archiver', 'homes/node_modules/archiver']) archiver(directory);
   const {checkPrerequisites} = require('../../scripts/setup-tests');
-  assert.throws(() => checkPrerequisites(root), /archiver must be installed in the selected backup skill/);
+  // Node caches module resolution per process, so each scenario uses its own home.
+  const check = (name, prepare) =>
+  {
+    const dependencyRoot = `homes/${name}/.harness-plugin/back-up-directories`;
+    prepare(dependencyRoot);
+    return () => checkPrerequisites(root, 'development', path.join(root, 'homes', name));
+  };
+  assert.throws(check('absent', () => {}), /archiver must be installed in the backup dependency directory/);
+  assert.throws(check('empty', directory => fs.mkdirSync(path.join(root, directory, 'node_modules'), {recursive:true})),
+    /archiver must be installed in the backup dependency directory/);
+  assert.throws(check('unlocked', directory => archiver(`${directory}/node_modules/archiver`)),
+    /not installed from the selected artifact's lockfile/);
+  assert.throws(check('stale', directory =>
+  {
+    archiver(`${directory}/node_modules/archiver`);
+    write(`${directory}/package-lock.json`,'{"lockfileVersion":3,"stale":true}');
+  }), /not installed from the selected artifact's lockfile/);
+  // Every backup check passes; the placeholder interpreter fails the next prerequisite.
+  assert.throws(check('installed', directory =>
+  {
+    archiver(`${directory}/node_modules/archiver`);
+    write(`${directory}/package-lock.json`,'{"lockfileVersion":3}');
+  }), /pypdfium2 is missing/);
 });
 
 test('cleanup empties a busy venv mount and reports child cleanup failure', async t => {

@@ -14,7 +14,7 @@ npm run build
 npm run test:setup
 ```
 
-The root `npm ci` step is separate from test setup. `npm run build` creates or refreshes `.build/harness/`. Setup first checks that this selected artifact is fresh, then installs its backup npm dependencies, creates `.venv`, installs `pypdfium2`, and initializes the existing user-level ASD-STE100 reference bundle. It does not build either artifact, install root dependencies, install host runtimes or media executables, compile the Swift helper, or modify the published distribution.
+The root `npm ci` step is separate from test setup. `npm run build` creates or refreshes `.build/harness/`. Setup first checks that this selected artifact is fresh, then installs backup npm dependencies from its lockfile into `~/.harness-plugin/back-up-directories/`, creates `.venv`, installs `pypdfium2`, and initializes the existing user-level ASD-STE100 reference bundle. It does not build either artifact, install root dependencies, install host runtimes or media executables, compile the Swift helper, or modify the published distribution.
 
 Use `npm run test:setup -- --check` to check prerequisites and selected-root dependency resolution without installing, initializing, or building. On Linux/WSL2, use [container setup](container.md), and keep Git operations on the host.
 
@@ -36,7 +36,7 @@ npm test -- --target distribution
 
 The runner's explicit target overrides any inherited test-target setting and propagates one authoritative `HARNESS_TEST_TARGET` value to every prerequisite, Node worker, GIF process, Python reporter, Python test, and relevant nested child. Direct focused commands default to `development`; to inspect the published artifact explicitly, set `HARNESS_TEST_TARGET=distribution`. Any other supplied value fails instead of falling back to source or another artifact.
 
-Backup's `archiver` dependency must resolve from the selected artifact's own `skills/back-up-directories/node_modules/`. A dependency in the root or the other artifact cannot satisfy that boundary.
+Backup's `archiver` dependency must resolve from `~/.harness-plugin/back-up-directories/node_modules/`, where the skill itself resolves it, and that directory's `package-lock.json` must match the selected artifact's. A dependency in the root, inside either artifact, or in a parent `node_modules` cannot satisfy that boundary. Setup for one target replaces the install for the other, so run setup for the target you are about to test. Setup writes this user-level directory in the real home, as it already does for the ASD-STE100 bundle.
 
 ## Full gate
 
@@ -52,7 +52,7 @@ On Linux/WSL2, after `./scripts/dev setup`:
 ./scripts/dev exec npm test
 ```
 
-The gate checks selected-artifact freshness and static validity before behavioral tests. One `build.js --check` stage does both: it compiles a candidate, compares it with the selected artifact, and validates that artifact. `npm run validate:build` remains available on its own for validation without a compile. It validates existing dependencies and does not install them. After all test processes finish, it removes the repository `.venv`; run setup before each complete gate. The gate checks only that `pypdfium2` imports, so this removal makes each gate run against the environment that setup just built from `requirements-dev.txt`, not one left over from an earlier pin or manual installs. Backup `node_modules` and user-level reference bundles remain. A parent shell may still display `(.venv)` until deactivated or closed.
+The gate checks selected-artifact freshness and static validity before behavioral tests. One `build.js --check` stage does both: it compiles a candidate, compares it with the selected artifact, and validates that artifact. `npm run validate:build` remains available on its own for validation without a compile. It validates existing dependencies and does not install them. After all test processes finish, it removes the repository `.venv`; run setup before each complete gate. The gate checks only that `pypdfium2` imports, so this removal makes each gate run against the environment that setup just built from `requirements-dev.txt`, not one left over from an earlier pin or manual installs. Backup dependencies and reference bundles under `~/.harness-plugin/` remain. A parent shell may still display `(.venv)` until deactivated or closed.
 
 Use `--skip-gif` for a hosted-style partial gate that omits GIF tests and both converter preflights. Report that exclusion. Linux platform skips do not establish native macOS frame-extraction coverage, and the hosted subset is not the complete local gate.
 

@@ -58,7 +58,8 @@ function qualifyBackup() {
   assert.ok(diagnostic.error.remedy.includes(skill));
   const npmEnv = { ...env, PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`,
     npm_config_cache: path.join(home, 'npm-cache') };
-  const installed = spawnSync('npm', ['ci', '--omit=dev', '--prefix', skill], { cwd: home, env: npmEnv, encoding: 'utf8', timeout: 120000 });
+  // The remedy installs from the skill's lockfile into ~/.harness-plugin/back-up-directories.
+  const installed = spawnSync('sh', ['-c', diagnostic.error.remedy], { cwd: home, env: npmEnv, encoding: 'utf8', timeout: 120000 });
   assert.ifError(installed.error);
   assert.equal(installed.status, 0, installed.stderr);
   for (const name of ['source', 'target']) fs.mkdirSync(path.join(home, name));
@@ -79,7 +80,7 @@ function qualifyBackup() {
   assert.equal(contents.status, 0, contents.stderr);
   assert.equal(contents.stdout, 'runtime floor backup\n');
   assert.deepEqual(fs.readdirSync(path.join(home, 'output')), []);
-  process.stdout.write(`Backup runtime floor passed on Node ${process.versions.node}: isolated generated plan, missing dependency, lockfile install, preflight output creation, real archive and replication.\n`);
+  process.stdout.write(`Backup runtime floor passed on Node ${process.versions.node}: isolated generated plan, missing dependency, user-level lockfile install, preflight output creation, real archive and replication.\n`);
 }
 try {
   if (process.argv.includes('--backup')) qualifyBackup();

@@ -5,6 +5,7 @@
 // Repository Node runtime: see .nvmrc.
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { performance } = require('node:perf_hooks');
@@ -75,15 +76,28 @@ function command(label, executable, args, repoRoot) {
   return { label, command: executable, args, cwd: repoRoot };
 }
 
-function buildSetupPlan(repoRoot, target = 'development')
+// The backup skill resolves archiver only from its user-level state directory,
+// never from the installed skill, so setup installs it there from the selected
+// artifact's manifest and lockfile. These stages mirror the skill's own
+// dependency_missing remedy.
+function backupDependencyRoot(home = os.homedir())
+{
+  return path.join(home, '.harness-plugin', 'back-up-directories');
+}
+
+function buildSetupPlan(repoRoot, target = 'development', home = os.homedir())
 {
   const selected = artifactRoot(repoRoot, target);
+  const backupSkill = path.join(selected, 'skills/back-up-directories');
+  const backupRoot = backupDependencyRoot(home);
   const python = path.join('.venv', 'bin', 'python');
   return [
     command('verify selected artifact', 'node', ['scripts/build.js', '--target', target, '--check'], repoRoot),
-    command('install backup dependencies', 'npm', [
-      'ci', '--omit=dev', '--prefix', path.join(selected, 'skills/back-up-directories'),
+    command('create backup dependency directory', 'mkdir', ['-p', backupRoot], repoRoot),
+    command('copy backup dependency manifest and lockfile', 'cp', [
+      path.join(backupSkill, 'package.json'), path.join(backupSkill, 'package-lock.json'), backupRoot,
     ], repoRoot),
+    command('install backup dependencies', 'npm', ['ci', '--omit=dev', '--prefix', backupRoot], repoRoot),
     command('create or reuse Python virtual environment', 'python3', [
       '-m', 'venv', '.venv',
     ], repoRoot),
@@ -230,6 +244,7 @@ async function main(argv, {
 if (require.main === module) Promise.resolve(main(process.argv.slice(2))).then(status => { process.exitCode = status; }).catch(error => { console.error(error); process.exitCode = 1; });
 
 module.exports = {
+  backupDependencyRoot,
   buildSetupPlan,
   buildPrerequisitePlan,
   buildNodeTestGroups,

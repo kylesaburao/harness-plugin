@@ -1,9 +1,9 @@
 # ZIP backup utility
 
-Reference for the `back-up-directories` skill. Node.js 24.0.0 or newer is required. Install the one dependency once, from the skill directory:
+Reference for the `back-up-directories` skill. Node.js 24.0.0 or newer is required. Install the one dependency once, from the skill's lockfile into `~/.harness-plugin/back-up-directories/` (see [INSTALL.md](../INSTALL.md)):
 
 ```sh
-npm install --omit=dev --prefix "<SKILL_DIR>"
+mkdir -p "$HOME/.harness-plugin/back-up-directories" && cp "<SKILL_DIR>/package.json" "<SKILL_DIR>/package-lock.json" "$HOME/.harness-plugin/back-up-directories" && npm ci --omit=dev --prefix "$HOME/.harness-plugin/back-up-directories"
 ```
 
 Copy the committed [`backup-config.json`](backup-config.json) template to an ignored local configuration, then edit the local copy:

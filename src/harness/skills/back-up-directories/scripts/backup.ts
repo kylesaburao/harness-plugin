@@ -6,6 +6,8 @@ import fsp = require('node:fs/promises');
 import os = require('node:os');
 import path = require('node:path');
 import crypto = require('node:crypto');
+import nodeModule = require('node:module');
+const { createRequire } = nodeModule;
 import readline = require('node:readline/promises');
 import streamPromises = require('node:stream/promises');
 const { pipeline } = streamPromises;
@@ -82,8 +84,11 @@ const EXIT = Object.freeze({
 const MINIMUM_NODE = [24, 0, 0];
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
-// Per-user Harness state lives under ~/.harness-plugin/<skill>/.
-const RUN_LOCK_RELATIVE_PATH = path.join('.harness-plugin', 'back-up-directories', 'run.lock');
+// Per-user Harness state lives under ~/.harness-plugin/<skill>/: the run lock
+// and the installed npm dependencies. Neither lives in the installed skill
+// directory, which a plugin upgrade replaces.
+const USER_STATE_RELATIVE_PATH = path.join('.harness-plugin', 'back-up-directories');
+const RUN_LOCK_RELATIVE_PATH = path.join(USER_STATE_RELATIVE_PATH, 'run.lock');
 const INDENT_PREFIX = '  ';
 const LIST_DETAIL_PREFIX = '   ';
 
@@ -113,6 +118,46 @@ class StartupError extends Error {
   }
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+// The dependency is installed from this skill's own manifest and lockfile into
+// the user-level state directory, so it survives plugin upgrades and is shared
+// by every harness. This is the single install command: the preflight remedy
+// prints it with the paths filled in.
+function dependencyInstallCommand(dependencyRoot: string): string {
+  const skillDirectory = path.resolve(__dirname, '..');
+  return `mkdir -p ${shellQuote(dependencyRoot)}`
+    + ` && cp ${shellQuote(path.join(skillDirectory, 'package.json'))} ${shellQuote(path.join(skillDirectory, 'package-lock.json'))} ${shellQuote(dependencyRoot)}`
+    + ` && npm ci --omit=dev --prefix ${shellQuote(dependencyRoot)}`;
+}
+
+// Resolves archiver only from <dependencyRoot>/node_modules. Node's ordinary
+// lookup would continue into parent node_modules directories, NODE_PATH, and
+// the global folders, so a package found anywhere else counts as missing.
+// The request stays the bare 'archiver' so the loader sees the same request
+// a plain require would issue.
+function requireFromDependencyRoot(dependencyRoot: string): NodeJS.Require | null {
+  let modules: string;
+  try {
+    modules = fs.realpathSync(path.join(dependencyRoot, 'node_modules'));
+  } catch (error) {
+    const code = failureDetails(error).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+    throw error;
+  }
+  const requireFromRoot = createRequire(path.join(dependencyRoot, 'package.json'));
+  let resolved: string;
+  try {
+    resolved = requireFromRoot.resolve('archiver');
+  } catch (error) {
+    if (failureDetails(error).code === 'MODULE_NOT_FOUND') return null;
+    throw error;
+  }
+  return resolved.startsWith(modules + path.sep) ? requireFromRoot : null;
+}
+
 // archiver is the only dependency that needs installing, so it is resolved on
 // demand. A top-level require turned a missing install into a MODULE_NOT_FOUND
 // stack trace instead of an answerable diagnostic. Repeat calls are free:
@@ -123,28 +168,25 @@ class StartupError extends Error {
 // wrapper: a resolvable archiver that no longer carries ZipArchive would
 // otherwise pass this preflight and fail much later, mid-run, as a bare
 // "ZipArchive is not a constructor".
-function loadArchiver(): ArchiveFactory {
-  const remedy = `npm install --omit=dev --prefix '${path.resolve(__dirname, '..').replaceAll("'", "'\\''")}'`;
+function loadArchiver(homeDirectory = os.homedir()): ArchiveFactory {
+  const dependencyRoot = path.join(homeDirectory, USER_STATE_RELATIVE_PATH);
+  const remedy = dependencyInstallCommand(dependencyRoot);
+  const missing = (condition = `the archiver package is not installed in ${path.join(dependencyRoot, 'node_modules')}, so no ZIP can be written`) =>
+    new StartupError('dependency_missing', condition, remedy);
+  const loadFailed = (error: unknown) => new StartupError('dependency_load_failed',
+    `the installed archiver package could not load: ${failureDetails(error).message || String(error)}`, remedy);
   let archiver: unknown;
   try {
-    archiver = require('archiver');
+    const requireFromRoot = requireFromDependencyRoot(dependencyRoot);
+    if (requireFromRoot === null) throw missing();
+    archiver = requireFromRoot('archiver');
   } catch (error) {
-    if (failureDetails(error).code !== 'MODULE_NOT_FOUND') {
-      throw new StartupError('dependency_load_failed',
-        `the installed archiver package could not load: ${failureDetails(error).message || String(error)}`, remedy);
-    }
-    throw new StartupError(
-      'dependency_missing',
-      'the archiver package is not installed, so no ZIP can be written',
-      remedy,
-    );
+    if (error instanceof StartupError) throw error;
+    if (failureDetails(error).code !== 'MODULE_NOT_FOUND') throw loadFailed(error);
+    throw missing();
   }
   if (!hasZipArchive(archiver)) {
-    throw new StartupError(
-      'dependency_missing',
-      'the installed archiver package does not export ZipArchive, so no ZIP can be written',
-      remedy,
-    );
+    throw missing('the installed archiver package does not export ZipArchive, so no ZIP can be written');
   }
   return (options) => new archiver.ZipArchive(options);
 }

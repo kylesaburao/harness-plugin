@@ -6,15 +6,17 @@ one npm dependency is not present yet.
 
 ## Install the dependency
 
-Run this once, with Node.js 24.0.0 or newer:
+The dependency is installed outside the plugin, under
+`~/.harness-plugin/back-up-directories/`, from this skill's own `package.json` and
+`package-lock.json`. Run this once, with Node.js 24.0.0 or newer:
 
 ```sh
-npm install --omit=dev --prefix "<SKILL_DIR>"
+mkdir -p "$HOME/.harness-plugin/back-up-directories" && cp "<SKILL_DIR>/package.json" "<SKILL_DIR>/package-lock.json" "$HOME/.harness-plugin/back-up-directories" && npm ci --omit=dev --prefix "$HOME/.harness-plugin/back-up-directories"
 ```
 
 Replace `<SKILL_DIR>` with the exact loaded skill directory established by `SKILL.md`.
-The preflight prints the exact command with the path already filled in, so prefer copying
-it from there:
+The preflight prints the exact command with every path already filled in, so prefer
+copying it from there:
 
 ```sh
 node "<SKILL_DIR>/scripts/backup.js" --preflight --json
@@ -23,9 +25,11 @@ node "<SKILL_DIR>/scripts/backup.js" --preflight --json
 The package is `archiver`, which writes the ZIP. Everything else the utility uses comes
 from the Node.js standard library. Installation needs a network connection.
 
-`node_modules/` is not distributed with the plugin. If your harness installs the skill into
-a versioned cache directory, re-run this command after every plugin upgrade, since an
-upgrade can replace the cache directory and drop the installed packages.
+`node_modules/` is not distributed with the plugin, and the skill loads `archiver` only from
+`~/.harness-plugin/back-up-directories/node_modules/`: not from the skill directory,
+`NODE_PATH`, or any other `node_modules`. Because the install lives outside the plugin, it
+survives plugin upgrades and is shared by Codex and Claude Code. Re-run the command when an
+upgrade changes the skill's `package-lock.json`.
 
 ## Verify
 
@@ -34,7 +38,7 @@ node "<SKILL_DIR>/scripts/backup.js" --preflight --json
 ```
 
 `{"status":"ready", ...}` and exit status 0 mean the skill can run. Exit status 2 with
-`dependency_missing` means the install has not happened or did not survive an upgrade.
+`dependency_missing` means the install has not happened in that directory.
 
 ## Run the tests
 

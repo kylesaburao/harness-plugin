@@ -8,7 +8,7 @@ const { spawnSync } = require('node:child_process');
 const { inventory } = require('../../scripts/build');
 const { artifactRoot } = require('../helpers/plugin-paths');
 
-test('isolated artifact runs beneath an ESM parent and installs backup dependencies locally', t => {
+test('isolated artifact runs beneath an ESM parent and installs backup dependencies under the user-level root', t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'harness installé ')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}\n');
@@ -44,7 +44,8 @@ test('isolated artifact runs beneath an ESM parent and installs backup dependenc
   const missing = run(backup, ['--preflight', '--json']);
   assert.equal(missing.status, 2, missing.stderr);
   assert.equal(JSON.parse(missing.stderr).error.code, 'dependency_missing');
-  assert.ok(JSON.parse(missing.stderr).error.remedy.includes(path.join(plugin, 'skills/back-up-directories')));
+  const { remedy } = JSON.parse(missing.stderr).error;
+  assert.ok(remedy.includes(path.join(plugin, 'skills/back-up-directories/package-lock.json')));
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
   const calls = path.join(root, 'claude-calls');
   fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}
@@ -73,8 +74,11 @@ process.stdout.write('test-cli');
   for (const name of ['skills/extract-video-frames/scripts/tiff-to-heic.swift', 'skills/write-asd-ste100/scripts/ste_check.py']) assert.ok(fs.statSync(path.join(plugin, name)).isFile());
   const python = spawnSync('python3', [path.join(plugin, 'skills/write-asd-ste100/scripts/ste_check.py'), '--help'], { cwd: root, env, encoding: 'utf8' });
   assert.equal(python.status, 0, python.stderr);
-  const install = spawnSync('npm', ['ci', '--omit=dev', '--prefix', path.join(plugin, 'skills/back-up-directories')], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
+  // Install by running the diagnostic's remedy exactly as a user would.
+  const install = spawnSync('sh', ['-c', remedy], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
   assert.equal(install.status, 0, install.stderr);
+  assert.equal(fs.existsSync(path.join(plugin, 'skills/back-up-directories/node_modules')), false);
+  assert.ok(fs.statSync(path.join(env.HOME, '.harness-plugin/back-up-directories/node_modules/archiver')).isDirectory());
   fs.mkdirSync(path.join(root, 'source')); fs.writeFileSync(path.join(root, 'source/hello.txt'), 'isolated backup\n');
   fs.mkdirSync(path.join(root, 'target'));
   const config = path.join(root, 'backup.json');

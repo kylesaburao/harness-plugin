@@ -5,10 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createRequire } = require('node:module');
 const { spawnSync } = require('node:child_process');
-const { buildSetupPlan, runCommandPlan } = require('./run-tests');
+const { backupDependencyRoot, buildSetupPlan, runCommandPlan } = require('./run-tests');
 const { artifactRoot, parseArtifactTarget } = require('./artifact-paths');
 
-function checkPrerequisites(root, target = 'development')
+function checkPrerequisites(root, target = 'development', home = undefined)
 {
   const selected = artifactRoot(root, target);
   if (!fs.existsSync(selected))
@@ -24,12 +24,35 @@ function checkPrerequisites(root, target = 'development')
   {
     throw new Error(`Python environment is missing: ${python}`);
   }
-  const backupRoot = path.join(selected, 'skills/back-up-directories');
-  const backupRequire = createRequire(path.join(backupRoot, 'package.json'));
-  const dependency = backupRequire.resolve('archiver');
-  if (!dependency.startsWith(path.join(backupRoot, 'node_modules') + path.sep))
+  // archiver must resolve from the user-level backup dependency directory, as
+  // the skill resolves it, and that install must come from the selected
+  // artifact's lockfile so the gate tests the dependencies that artifact ships.
+  const backupSkill = path.join(selected, 'skills/back-up-directories');
+  const backupRoot = backupDependencyRoot(home);
+  const backupModules = path.join(backupRoot, 'node_modules');
+  if (!fs.existsSync(backupModules))
   {
-    throw new Error(`archiver must be installed in the selected backup skill: ${backupRoot}`);
+    throw new Error(`archiver must be installed in the backup dependency directory: ${backupRoot}`);
+  }
+  const backupRequire = createRequire(path.join(backupRoot, 'package.json'));
+  let dependency;
+  try
+  {
+    dependency = backupRequire.resolve('archiver');
+  }
+  catch (error)
+  {
+    if (error.code !== 'MODULE_NOT_FOUND') throw error;
+  }
+  if (!dependency || !dependency.startsWith(fs.realpathSync(backupModules) + path.sep))
+  {
+    throw new Error(`archiver must be installed in the backup dependency directory: ${backupRoot}`);
+  }
+  const installedLock = path.join(backupRoot, 'package-lock.json');
+  if (!fs.existsSync(installedLock)
+    || !fs.readFileSync(installedLock).equals(fs.readFileSync(path.join(backupSkill, 'package-lock.json'))))
+  {
+    throw new Error(`backup dependencies in ${backupRoot} were not installed from the selected artifact's lockfile: ${backupSkill}`);
   }
   backupRequire('archiver');
   const probe = spawnSync(python, ['-c', 'import pypdfium2'], { encoding: 'utf8' });
