@@ -85,3 +85,7 @@ The gate timer includes prerequisites and scheduling time, but excludes Node sta
 ## Development container
 
 See [CONTAINER.md](CONTAINER.md) to build the Node 26 and media toolchain image, prepare persistent dependency volumes, and run temporary command containers against your live checkout with `./scripts/dev`. Git operations stay on the host.
+
+## Other Plugins
+
+See [Suggested Plugins](SUGGESTED-PLUGINS.md).
