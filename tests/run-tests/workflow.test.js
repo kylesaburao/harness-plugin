@@ -16,9 +16,9 @@ test('main routing gates all candidate work after source validation and retains 
   const policy = steps.findIndex(step => step.name === 'Validate source before generation');
   const selection = steps.findIndex(step => step.id === 'candidate');
   assert.ok(policy >= 0 && policy < selection);
-  const expensive = steps.filter(step => step.uses === 'actions/setup-python@v6' ||
+  const expensive = steps.filter(step => step.uses === 'actions/setup-python@v6' || step.uses === 'actions/cache@v4' ||
     ['npm ci --include=dev', 'npm run build', 'npm run test:setup', 'npm test -- --skip-gif'].includes(step.run));
-  assert.equal(expensive.length, 5);
+  assert.equal(expensive.length, 6);
   for (const step of expensive)
   {
     assert.ok(steps.indexOf(step) > selection);
@@ -103,4 +103,31 @@ test('PR verification cancels obsolete runs for the same PR and still tests its 
   assert.match(pr[policy].run, /--base "\$SOURCE_BASE" --head "\$SOURCE_HEAD" --integration "\$INTEGRATION"/);
   assert.match(pr[policy].raw, /INTEGRATION: \$\{\{ github.sha \}\}/);
   assert.ok(pr.every(step => step.if === undefined));
+});
+
+test('every gate job caches npm, pip and the ASD-STE100 bundle before setup initializes references', () =>
+{
+  const bundleConfig = 'src/harness/skills/write-asd-ste100/references/source-config.json';
+  assert.ok(fs.existsSync(path.join(root, bundleConfig)));
+  assert.ok(fs.existsSync(path.join(root, 'requirements-dev.txt')));
+  const jobs = [
+    [workflowSteps(verification, 'verify'), step => step.run === 'npm run test:setup'],
+    [workflowSteps(publication, 'test'), step => step.run === 'npm run test:setup'],
+    [workflowSteps(publication, 'bump'), step => step.run?.includes('node scripts/setup-tests.js --target distribution')],
+  ];
+  for (const [job, isSetup] of jobs)
+  {
+    const node = job.filter(step => step.uses === 'actions/setup-node@v4');
+    assert.equal(node.length, 1);
+    assert.match(node[0].raw, /\n          cache: npm$/m);
+    const python = job.filter(step => step.uses === 'actions/setup-python@v6');
+    assert.equal(python.length, 1);
+    assert.match(python[0].raw, /\n          cache: pip\n          cache-dependency-path: requirements-dev\.txt$/m);
+    const bundle = job.filter(step => step.uses === 'actions/cache@v4');
+    assert.equal(bundle.length, 1);
+    assert.match(bundle[0].raw, /\n          path: ~\/\.harness-plugin\/write-asd-ste100\/bundles$/m);
+    assert.ok(bundle[0].raw.includes(`key: asd-ste100-bundle-\${{ runner.os }}-\${{ hashFiles('${bundleConfig}') }}`));
+    const setup = job.findIndex(isSetup);
+    assert.ok(setup >= 0 && job.indexOf(bundle[0]) < setup);
+  }
 });

@@ -21,15 +21,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
+          cache: npm
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
       - name: Validate submitted source before generation
         env:
           SOURCE_BASE: ${{ github.event.pull_request.base.sha }}
           SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
           INTEGRATION: ${{ github.sha }}
         run: node scripts/check-source-policy.js --base "$SOURCE_BASE" --head "$SOURCE_HEAD" --integration "$INTEGRATION"
+      - name: Restore ASD-STE100 reference bundle
+        uses: actions/cache@v4
+        with:
+          path: ~/.harness-plugin/write-asd-ste100/bundles
+          key: asd-ste100-bundle-${{ runner.os }}-${{ hashFiles('src/harness/skills/write-asd-ste100/references/source-config.json') }}
       - run: npm ci --include=dev
       - run: npm run build
       - run: npm run test:setup

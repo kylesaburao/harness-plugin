@@ -1,0 +1,3 @@
+# Python packages installed into the repository .venv by `npm run test:setup`.
+# Exact pins keep CI and local setup reproducible; see docs/development/dependencies.md.
+pypdfium2==5.14.0

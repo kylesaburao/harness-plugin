@@ -87,7 +87,9 @@ function buildSetupPlan(repoRoot, target = 'development')
     command('create or reuse Python virtual environment', 'python3', [
       '-m', 'venv', '.venv',
     ], repoRoot),
-    command('install pypdfium2', python, ['-m', 'pip', 'install', 'pypdfium2'], repoRoot),
+    command('install pinned Python dependencies', python, [
+      '-m', 'pip', 'install', '-r', 'requirements-dev.txt',
+    ], repoRoot),
     command('initialize ASD-STE100 references', python, [
       path.join(selected, 'skills/write-asd-ste100/scripts/initialize_references.py'),
     ], repoRoot),

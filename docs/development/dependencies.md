@@ -12,10 +12,10 @@ On macOS, run development commands and tests directly on the host. On Linux, inc
 | --- | --- |
 | Git, POSIX shell, and standard command-line utilities | Checkout operations, shell-based tests, and hooks. Backup integration tests also require `unzip`. `ripgrep` is used for repository searches. |
 | Node.js and npm | Node.js **26.x**, declared in the root [`.nvmrc`](../../.nvmrc), satisfies the full development gate, including `wake-desktop`. npm installs the root build toolchain and separate backup dependencies. |
-| Python 3 with `venv` and pip | Creates the repository's `.venv` and runs the ASD-STE100 tests and reference tools. Python and `pypdfium2` versions are not pinned by the setup script. Use an interpreter supported by the installed `pypdfium2` package. |
+| Python 3 with `venv` and pip | Creates the repository's `.venv` and runs the ASD-STE100 tests and reference tools. The Python version is not pinned locally; CI uses Python 3.12. Use an interpreter supported by the pinned `pypdfium2` release. |
 | TypeScript and Node type definitions | Root development-only exact pins: `typescript` **7.0.2** and `@types/node` **20.19.43**, installed with `npm ci --include=dev`. They do not ship and do not raise skill runtime floors. |
 | `archiver` | Direct npm dependency `^8.0.0`, with exact resolved packages in the backup skill's `package-lock.json`. Installed by setup in that skill's `node_modules`. |
-| `pypdfium2` and the generated ASD reference bundle | Setup installs `pypdfium2` into `.venv` and initializes the bundle under `~/.harness-plugin/write-asd-ste100/bundles/`. Both are required by the full development gate. |
+| `pypdfium2` and the generated ASD reference bundle | Development-only exact pin `pypdfium2==5.14.0` in the root [`requirements-dev.txt`](../../requirements-dev.txt). Setup installs that file into `.venv` with `pip install -r` and initializes the bundle under `~/.harness-plugin/write-asd-ste100/bundles/`. Both are required by the full development gate. Change the pin only together with a from-scratch initialization that validates the pinned dictionary hash. |
 | FFmpeg and matching `ffprobe` | GIF tests require working `libvmaf` with its built-in models, including `vmaf_v0.6.1`, plus the media capabilities described under plugin use below. Test fixtures additionally require `libx264` encoding. |
 | Both `gifski` and `gifsicle` | The full gate runs both converter preflights and backend tests. Installing only the default backend is insufficient for development. |
 | macOS **26.0 or newer**, Command Line Tools, and `ffmpeg-full` | Required for native frame-extraction execution and its platform-specific tests. Command Line Tools supply `swiftc` and the macOS SDK. The FFmpeg build needs `zscale`, PNG, TIFF, `libx265`, and `prores_ks` for frame-test fixtures. System `sw_vers`, `sips`, and `/usr/bin/osascript` must be available. |
@@ -84,7 +84,9 @@ See [container persistence and reset](container.md#persistence-and-reset) for de
 
 The Linux container cannot execute the macOS-only frame-extraction skill. It runs the portable tests and reports platform skips. See [validation records](validation.md#verified-on-2026-09-06) for recorded platform verification. Docker Desktop on macOS remains available for explicit container development and validation, while ordinary macOS development runs natively.
 
-Development requirements are implemented by [setup-tests.js](../../scripts/setup-tests.js), [run-tests.js](../../scripts/run-tests.js), [scripts/dev](../../scripts/dev), and the [Dockerfile](../../Dockerfile).
+CI workflows cache npm downloads, pip downloads keyed on `requirements-dev.txt`, and the generated ASD bundle directory keyed on the hash of the source `source-config.json`. A restored bundle is still validated by the initializer before use; a cache miss regenerates it from the pinned PDF.
+
+Development requirements are implemented by [setup-tests.js](../../scripts/setup-tests.js), [run-tests.js](../../scripts/run-tests.js), [requirements-dev.txt](../../requirements-dev.txt), [scripts/dev](../../scripts/dev), and the [Dockerfile](../../Dockerfile).
 
 ## 2. Using the plugin
 

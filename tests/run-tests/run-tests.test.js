@@ -285,6 +285,31 @@ test('a complete child invocation includes waiting time', () => {
   assert.equal((capture.output.stdout.match(/Test gate: Passed/g) || []).length, 1);
 });
 
+test('setup installs Python packages only from the exact pins in requirements-dev.txt', () =>
+{
+  const { buildSetupPlan } = loadRunner();
+  const python = path.join('.venv', 'bin', 'python');
+  const venv = buildSetupPlan(repoRoot).findIndex(stage => stage.label === 'create or reuse Python virtual environment');
+  const install = buildSetupPlan(repoRoot).findIndex(stage => stage.label === 'install pinned Python dependencies');
+  const initialize = buildSetupPlan(repoRoot).findIndex(stage => stage.label === 'initialize ASD-STE100 references');
+  assert.ok(venv >= 0 && venv < install && install < initialize);
+  for (const target of ['development', 'distribution'])
+  {
+    const stage = buildSetupPlan(repoRoot, target)[install];
+    assert.equal(stage.command, python);
+    assert.deepEqual(stage.args, ['-m', 'pip', 'install', '-r', 'requirements-dev.txt']);
+    assert.equal(stage.cwd, repoRoot);
+  }
+  const requirements = fs.readFileSync(path.join(repoRoot, 'requirements-dev.txt'), 'utf8')
+    .split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+  assert.ok(requirements.length > 0);
+  for (const requirement of requirements) assert.match(requirement, /^[A-Za-z0-9._-]+==\d+(\.\d+)*$/);
+  const pin = requirements.find(requirement => requirement.startsWith('pypdfium2=='));
+  assert.ok(pin, 'pypdfium2 must be pinned');
+  const inventory = fs.readFileSync(path.join(repoRoot, 'docs/development/dependencies.md'), 'utf8');
+  assert.ok(inventory.includes(`\`${pin}\``), 'dependencies.md must record the pypdfium2 pin');
+});
+
 test('workflow limits credentials and validates each versioned distribution before committing it', () => {
   const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/bump-version.yml'), 'utf8');
   assert.match(workflow, /test:\n\s+permissions:\n\s+contents: read\n\s+runs-on: ubuntu-24\.04/);

@@ -30,6 +30,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
+          cache: npm
       - name: Validate source before generation
         env:
           SOURCE_BEFORE: ${{ github.event.before }}
@@ -75,6 +76,14 @@ jobs:
         if: steps.candidate.outputs.test_candidate == 'true'
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Restore ASD-STE100 reference bundle
+        if: steps.candidate.outputs.test_candidate == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.harness-plugin/write-asd-ste100/bundles
+          key: asd-ste100-bundle-${{ runner.os }}-${{ hashFiles('src/harness/skills/write-asd-ste100/references/source-config.json') }}
       - run: npm ci --include=dev
         if: steps.candidate.outputs.test_candidate == 'true'
       - run: npm run build
@@ -110,9 +119,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
+          cache: npm
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Restore ASD-STE100 reference bundle
+        uses: actions/cache@v4
+        with:
+          path: ~/.harness-plugin/write-asd-ste100/bundles
+          key: asd-ste100-bundle-${{ runner.os }}-${{ hashFiles('src/harness/skills/write-asd-ste100/references/source-config.json') }}
       - name: Publish one validated versioned distribution
         env:
           DISPATCH_LEVEL: ${{ inputs.level }}
