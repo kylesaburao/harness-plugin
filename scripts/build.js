@@ -14,7 +14,7 @@ const {
   ArtifactArgumentError,
   validateTarget,
   artifactRoot,
-  parseArtifactTarget,
+  parseCommandLine,
   assertReleaseWriteIntent,
 } = require('./artifact-paths');
 const templates = ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json'];
@@ -307,37 +307,17 @@ for the main-branch release workflow. Check mode compares without repairing outp
 
 function parseArguments(argv)
 {
-  const parsed = parseArtifactTarget(argv);
-  let check = false;
-  let help = false;
-  for (const argument of parsed.remaining)
-  {
-    if (argument === '--check')
-    {
-      if (check)
-      {
-        throw new ArtifactArgumentError('DUPLICATE_CHECK', '--check was supplied more than once', 'supply --check once');
-      }
-      check = true;
-    }
-    else if (argument === '--help' || argument === '-h')
-    {
-      if (help)
-      {
-        throw new ArtifactArgumentError('DUPLICATE_HELP', 'help was supplied more than once', 'supply --help once');
-      }
-      help = true;
-    }
-    else
-    {
-      throw new ArtifactArgumentError('UNKNOWN_ARGUMENT', `unrecognized argument: ${argument}`, 'node scripts/build.js --help');
-    }
-  }
-  if (help && (check || parsed.explicitTarget))
+  const values = parseCommandLine(argv, {
+    target: { type: 'string' },
+    check: { type: 'boolean' },
+    help: { type: 'boolean', short: 'h' },
+  }, (code, condition) => new ArtifactArgumentError(code, condition, 'node scripts/build.js --help'));
+  const target = validateTarget(values.target ?? DEFAULT_TARGET);
+  if (values.help && (values.check || values.target !== null))
   {
     throw new ArtifactArgumentError('INVALID_ARGUMENTS', '--help cannot be combined with build options', 'node scripts/build.js --help');
   }
-  return { target: parsed.target, check, help };
+  return { target, check: values.check, help: values.help };
 }
 
 function main(argv, env = process.env)

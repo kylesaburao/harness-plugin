@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const { parseCommandLine } = require('./artifact-paths');
 const {
   PolicyError,
   UsageError,
@@ -20,74 +21,24 @@ Exit status: 0 validation passed, 2 bad usage, or 1 validation/Git inspection fa
 
 function parseArguments(argv)
 {
+  const values = parseCommandLine(argv, {
+    base: { type: 'string' },
+    level: { type: 'string' },
+    next: { type: 'string' },
+    staged: { type: 'boolean' },
+    commit: { type: 'string' },
+    'run-id': { type: 'string' },
+    help: { type: 'boolean', short: 'h' },
+  }, (code, condition) => new UsageError(code, condition, 'node scripts/check-release.js --help'));
   const options = {
-    base: null,
-    level: null,
-    next: null,
-    staged: false,
-    commit: null,
-    runId: null,
-    help: false,
+    base: values.base,
+    level: values.level,
+    next: values.next,
+    staged: values.staged,
+    commit: values.commit,
+    runId: values['run-id'],
+    help: values.help,
   };
-  const values = new Map([
-    ['--base', 'base'],
-    ['--level', 'level'],
-    ['--next', 'next'],
-    ['--commit', 'commit'],
-    ['--run-id', 'runId'],
-  ]);
-  const seen = new Set();
-  for (let index = 0; index < argv.length; index += 1)
-  {
-    const argument = argv[index];
-    if (argument === '--help' || argument === '-h')
-    {
-      options.help = true;
-      continue;
-    }
-    if (argument === '--staged')
-    {
-      if (options.staged)
-      {
-        throw new UsageError(
-          'DUPLICATE_ARGUMENT',
-          '--staged was supplied more than once',
-          'choose exactly one staged or committed validation mode',
-        );
-      }
-      options.staged = true;
-      continue;
-    }
-    const property = values.get(argument);
-    if (!property)
-    {
-      throw new UsageError(
-        'UNKNOWN_ARGUMENT',
-        `unrecognized argument: ${argument}`,
-        'node scripts/check-release.js --help',
-      );
-    }
-    if (seen.has(argument))
-    {
-      throw new UsageError(
-        'DUPLICATE_ARGUMENT',
-        `argument supplied more than once: ${argument}`,
-        'pass every release argument exactly once',
-      );
-    }
-    const value = argv[index + 1];
-    if (value === undefined || value.length === 0 || value.startsWith('-'))
-    {
-      throw new UsageError(
-        'MISSING_VALUE',
-        `${argument} requires a value`,
-        'node scripts/check-release.js --help',
-      );
-    }
-    options[property] = value;
-    seen.add(argument);
-    index += 1;
-  }
   if (options.help)
   {
     if (argv.length !== 1)

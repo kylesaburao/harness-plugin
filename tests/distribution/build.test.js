@@ -7,13 +7,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { build, inventory } = require('../../scripts/build');
+const { build, inventory, parseArguments: parseBuildArguments } = require('../../scripts/build');
 const { validate, validateTracked } = require('../../scripts/validate-dist');
 const {
   TARGETS,
   artifactRoot,
   artifactPath,
-  parseArtifactTarget,
   assertReleaseWriteIntent,
 } = require('../../scripts/artifact-paths');
 const { repositoryRoot } = require('../helpers/plugin-paths');
@@ -130,20 +129,29 @@ test('fixed artifact targets reject arbitrary names and escaping paths', () =>
   assert.equal(artifactPath('/repository', 'distribution', 'skills/example'), path.resolve('/repository/dist/harness/skills/example'));
   assert.throws(() => artifactRoot('/repository', 'elsewhere'), /unknown artifact target/);
   assert.throws(() => artifactPath('/repository', 'development', '..', '..', 'dist'), /escapes/);
-  assert.deepEqual(parseArtifactTarget(['--check']), {
-    target: 'development', explicitTarget: false, remaining: ['--check'],
+  assert.deepEqual(parseBuildArguments(['--check']), {
+    target: 'development', check: true, help: false,
   });
-  assert.deepEqual(parseArtifactTarget(['--check', '--target', 'distribution']), {
-    target: 'distribution', explicitTarget: true, remaining: ['--check'],
+  assert.deepEqual(parseBuildArguments(['--check', '--target', 'distribution']), {
+    target: 'distribution', check: true, help: false,
   });
-  for (const args of [
-    ['--target'],
-    ['--target', '--check'],
-    ['--target', 'elsewhere'],
-    ['--target', 'development', '--target', 'development'],
+  assert.deepEqual(parseBuildArguments(['--target=distribution']), {
+    target: 'distribution', check: false, help: false,
+  });
+  for (const [args, code] of [
+    [['--target'], 'MISSING_VALUE'],
+    [['--target', '--check'], 'MISSING_VALUE'],
+    [['--target='], 'MISSING_VALUE'],
+    [['--target', 'elsewhere'], 'INVALID_TARGET'],
+    [['--target', 'development', '--target', 'development'], 'DUPLICATE_ARGUMENT'],
+    [['--check', '--check'], 'DUPLICATE_ARGUMENT'],
+    [['--check=yes'], 'UNKNOWN_ARGUMENT'],
+    [['--'], 'UNKNOWN_ARGUMENT'],
+    [['development'], 'UNKNOWN_ARGUMENT'],
+    [['--help', '--check'], 'INVALID_ARGUMENTS'],
   ])
   {
-    assert.throws(() => parseArtifactTarget(args));
+    assert.throws(() => parseBuildArguments(args), { code, exitCode: 2 }, args.join(' '));
   }
 });
 

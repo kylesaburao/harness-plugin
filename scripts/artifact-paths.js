@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { parseArgs } = require('node:util');
 const DEFAULT_TARGET = 'development';
 const TARGETS = Object.freeze({ development: '.build/harness', distribution: 'dist/harness' });
 // Extensions copied into an artifact unchanged. The builder classifies source
@@ -39,26 +40,64 @@ function artifactRoot(root, target = DEFAULT_TARGET)
   return path.resolve(root, TARGETS[validateTarget(target)]);
 }
 
-function parseArtifactTarget(argv)
+// Parses a repository tooling command line with one strict node:util.parseArgs
+// call and no positionals. Every option may appear at most once, and a string
+// option's value must be non-empty and must not start with '-', including the
+// inline --name=value spelling, so a value can never be mistaken for a flag or
+// reach Git as one. usageError(code, condition) builds the caller's own exit-2
+// error for UNKNOWN_ARGUMENT, MISSING_VALUE and DUPLICATE_ARGUMENT, reported for
+// the first offending argument in command-line order. Absent booleans are false
+// and absent strings are null.
+function parseCommandLine(argv, options, usageError)
 {
-  let target = DEFAULT_TARGET;
-  let explicitTarget = false;
-  const remaining = [];
-  for (let index = 0; index < argv.length; index += 1)
+  let tokens;
+  let strictFailure = null;
+  try
   {
-    if (argv[index] !== '--target')
-    {
-      remaining.push(argv[index]);
-      continue;
-    }
-    if (explicitTarget)
-    {
-      throw new ArtifactArgumentError('DUPLICATE_TARGET', '--target was supplied more than once', 'supply --target once');
-    }
-    explicitTarget = true;
-    target = validateTarget(argv[++index]);
+    ({ tokens } = parseArgs({ args: argv, options, strict: true, tokens: true }));
   }
-  return { target, explicitTarget, remaining };
+  catch (error)
+  {
+    if (typeof error.code !== 'string' || !error.code.startsWith('ERR_PARSE_ARGS_'))
+    {
+      throw error;
+    }
+    // Strict mode names no offending argument in a stable form, so locate it
+    // in the same command line parsed without enforcement.
+    strictFailure = error;
+    ({ tokens } = parseArgs({ args: argv, options, strict: false, tokens: true }));
+  }
+  const values = {};
+  for (const token of tokens)
+  {
+    const option = token.kind === 'option' && Object.hasOwn(options, token.name) ? options[token.name] : null;
+    if (option === null || (option.type === 'boolean' && token.value !== undefined))
+    {
+      throw usageError('UNKNOWN_ARGUMENT', `unrecognized argument: ${argv[token.index]}`);
+    }
+    const flag = `--${token.name}`;
+    if (Object.hasOwn(values, token.name))
+    {
+      throw usageError('DUPLICATE_ARGUMENT', `${flag} was supplied more than once`);
+    }
+    if (option.type === 'string' && (token.value === undefined || token.value === '' || token.value.startsWith('-')))
+    {
+      throw usageError('MISSING_VALUE', `${flag} requires a value`);
+    }
+    values[token.name] = option.type === 'boolean' ? true : token.value;
+  }
+  if (strictFailure !== null)
+  {
+    throw usageError('INVALID_ARGUMENTS', strictFailure.message);
+  }
+  for (const [name, option] of Object.entries(options))
+  {
+    if (!Object.hasOwn(values, name))
+    {
+      values[name] = option.type === 'boolean' ? false : null;
+    }
+  }
+  return values;
 }
 
 function artifactPath(root, target, ...segments)
@@ -93,6 +132,6 @@ module.exports = {
   validateTarget,
   artifactRoot,
   artifactPath,
-  parseArtifactTarget,
+  parseCommandLine,
   assertReleaseWriteIntent,
 };

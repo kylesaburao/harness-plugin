@@ -6,7 +6,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { ArtifactArgumentError } = require('./artifact-paths');
+const { ArtifactArgumentError, parseCommandLine } = require('./artifact-paths');
 const {
   PolicyError,
   assertReleaseWriteIntent,
@@ -73,74 +73,21 @@ class WriteFailedError extends Error
 
 function parseArguments(argv)
 {
+  const values = parseCommandLine(argv, {
+    'bump-major': { type: 'boolean' },
+    'bump-minor': { type: 'boolean' },
+    'bump-patch': { type: 'boolean' },
+    'repo-root': { type: 'string' },
+    json: { type: 'boolean' },
+    help: { type: 'boolean', short: 'h' },
+  }, (code, condition) => new StartupError(code, condition, 'bump-version.js --help'));
+  const levels = ['major', 'minor', 'patch'].filter(level => values[`bump-${level}`]);
   const options = {
-    level: null,
-    repoRoot: null,
-    json: false,
-    help: false,
+    level: levels.length === 1 ? levels[0] : null,
+    repoRoot: values['repo-root'],
+    json: values.json,
+    help: values.help,
   };
-  const levelFlags = new Map([
-    ['--bump-major', 'major'],
-    ['--bump-minor', 'minor'],
-    ['--bump-patch', 'patch'],
-  ]);
-  let levelFlagCount = 0;
-
-  for (let index = 0; index < argv.length; index += 1)
-  {
-    const argument = argv[index];
-    if (levelFlags.has(argument))
-    {
-      options.level = levelFlags.get(argument);
-      levelFlagCount += 1;
-    }
-    else if (argument === '--repo-root')
-    {
-      const value = argv[index + 1];
-      if (value === undefined || value.startsWith('--'))
-      {
-        throw new StartupError(
-          'MISSING_VALUE',
-          `${argument} requires a value`,
-          'bump-version.js --repo-root DIR ...',
-        );
-      }
-      if (options.repoRoot !== null)
-      {
-        throw new StartupError(
-          'DUPLICATE_ARGUMENT',
-          '--repo-root was supplied more than once',
-          'pass exactly one fixture/repository root',
-        );
-      }
-      options.repoRoot = value;
-      index += 1;
-    }
-    else if (argument === '--json')
-    {
-      if (options.json)
-      {
-        throw new StartupError(
-          'DUPLICATE_ARGUMENT',
-          '--json was supplied more than once',
-          'pass --json at most once',
-        );
-      }
-      options.json = true;
-    }
-    else if (argument === '-h' || argument === '--help')
-    {
-      options.help = true;
-    }
-    else
-    {
-      throw new StartupError(
-        'UNKNOWN_ARGUMENT',
-        `unrecognized argument: ${argument}`,
-        'bump-version.js --help',
-      );
-    }
-  }
 
   if (options.help)
   {
@@ -154,7 +101,7 @@ function parseArguments(argv)
     }
     return options;
   }
-  if (levelFlagCount === 0)
+  if (levels.length === 0)
   {
     throw new StartupError(
       'NO_LEVEL',
@@ -162,7 +109,7 @@ function parseArguments(argv)
       'bump-version.js (--bump-major | --bump-minor | --bump-patch)',
     );
   }
-  if (levelFlagCount > 1)
+  if (levels.length > 1)
   {
     throw new StartupError(
       'AMBIGUOUS_LEVEL',

@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { performance } = require('node:perf_hooks');
-const { artifactRoot, parseArtifactTarget, validateTarget } = require('./artifact-paths');
+const { DEFAULT_TARGET, artifactRoot, parseCommandLine, validateTarget } = require('./artifact-paths');
 
 const EXIT = Object.freeze({ OK: 0, FAILED: 1, CANNOT_START: 2 });
 const GIF_GROUP = 'create-discord-emoji-gif';
@@ -41,17 +41,17 @@ Exit status: 0 success, 2 bad usage, prerequisite child status, 1 test failure, 
 
 function parseArguments(argv)
 {
-  const { target, remaining } = parseArtifactTarget(argv);
-  const unknown = remaining.find(argument => argument !== '--skip-gif' && argument !== '--help');
-  if (unknown)
-  {
-    throw Object.assign(new Error(`unrecognized argument: ${unknown}`), { code: 'UNKNOWN_ARGUMENT' });
-  }
-  if (remaining.length > 1)
+  const values = parseCommandLine(argv, {
+    target: { type: 'string' },
+    'skip-gif': { type: 'boolean' },
+    help: { type: 'boolean' },
+  }, (code, condition) => Object.assign(new Error(condition), { code }));
+  const target = validateTarget(values.target ?? DEFAULT_TARGET);
+  if (values['skip-gif'] && values.help)
   {
     throw Object.assign(new Error('use at most one of --skip-gif or --help'), { code: 'INVALID_ARGUMENTS' });
   }
-  return { target, help: remaining[0] === '--help', skipGif: remaining[0] === '--skip-gif' };
+  return { target, help: values.help, skipGif: values['skip-gif'] };
 }
 
 function nodeTestFiles(repoRoot, group) {

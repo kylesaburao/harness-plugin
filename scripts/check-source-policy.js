@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const { parseCommandLine } = require('./artifact-paths');
 const {
   PolicyError,
   UsageError,
@@ -23,56 +24,12 @@ Exit status: 0 policy passed, 2 bad usage, or 1 rejected content/Git inspection 
 
 function parseArguments(argv)
 {
-  const options = {
-    base: null,
-    head: null,
-    integration: null,
-    help: false,
-  };
-  const names = new Map([
-    ['--base', 'base'],
-    ['--head', 'head'],
-    ['--integration', 'integration'],
-  ]);
-  const seen = new Set();
-  for (let index = 0; index < argv.length; index += 1)
-  {
-    const argument = argv[index];
-    if (argument === '--help' || argument === '-h')
-    {
-      options.help = true;
-      continue;
-    }
-    const property = names.get(argument);
-    if (!property)
-    {
-      throw new UsageError(
-        'UNKNOWN_ARGUMENT',
-        `unrecognized argument: ${argument}`,
-        'node scripts/check-source-policy.js --help',
-      );
-    }
-    if (seen.has(argument))
-    {
-      throw new UsageError(
-        'DUPLICATE_ARGUMENT',
-        `argument supplied more than once: ${argument}`,
-        'pass each revision option exactly once',
-      );
-    }
-    const value = argv[index + 1];
-    if (value === undefined || value.length === 0 || value.startsWith('-'))
-    {
-      throw new UsageError(
-        'MISSING_VALUE',
-        `${argument} requires a value`,
-        'node scripts/check-source-policy.js --help',
-      );
-    }
-    options[property] = value;
-    seen.add(argument);
-    index += 1;
-  }
+  const options = parseCommandLine(argv, {
+    base: { type: 'string' },
+    head: { type: 'string' },
+    integration: { type: 'string' },
+    help: { type: 'boolean', short: 'h' },
+  }, (code, condition) => new UsageError(code, condition, 'node scripts/check-source-policy.js --help'));
   if (options.help)
   {
     if (argv.length !== 1)

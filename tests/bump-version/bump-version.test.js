@@ -106,6 +106,14 @@ test('argument parsing rejects no level, multiple levels, duplicates, and missin
   assert.equal(startupCode(() => parseArguments(['--bump-patch', '--bump-minor'])), 'AMBIGUOUS_LEVEL');
   assert.equal(startupCode(() => parseArguments(['--bump-patch', '--json', '--json'])), 'DUPLICATE_ARGUMENT');
   assert.equal(startupCode(() => parseArguments(['--bump-patch', '--repo-root'])), 'MISSING_VALUE');
+  assert.equal(startupCode(() => parseArguments(['--bump-patch', '--repo-root', '--json'])), 'MISSING_VALUE');
+  assert.equal(startupCode(() => parseArguments(['--bump-patch', '--repo-root='])), 'MISSING_VALUE');
+  assert.equal(startupCode(() => parseArguments(['--bump-patch', '--level', 'patch'])), 'UNKNOWN_ARGUMENT');
+  assert.equal(startupCode(() => parseArguments(['--bump-patch', 'extra'])), 'UNKNOWN_ARGUMENT');
+  assert.equal(startupCode(() => parseArguments(['--help', '--bump-patch'])), 'INVALID_HELP_USAGE');
+  assert.deepEqual(parseArguments(['--bump-minor', '--repo-root=fixture', '--json']), {
+    level: 'minor', repoRoot: 'fixture', json: true, help: false,
+  });
 });
 
 test('public mutation rejects CI=true alone before reading or writing the package', (t) =>

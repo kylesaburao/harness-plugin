@@ -6,7 +6,7 @@ const path = require('node:path');
 const { createRequire } = require('node:module');
 const { spawnSync } = require('node:child_process');
 const { backupDependencyRoot, buildSetupPlan, runCommandPlan } = require('./run-tests');
-const { artifactRoot, parseArtifactTarget } = require('./artifact-paths');
+const { DEFAULT_TARGET, artifactRoot, parseCommandLine, validateTarget } = require('./artifact-paths');
 
 function checkPrerequisites(root, target = 'development', home = undefined)
 {
@@ -67,18 +67,23 @@ function main(argv)
   let parsed;
   try
   {
-    parsed = parseArtifactTarget(argv);
-    if (parsed.remaining.length > 1 || parsed.remaining.some(value => !['--help', '--check'].includes(value)))
+    const values = parseCommandLine(argv, {
+      target: { type: 'string' },
+      check: { type: 'boolean' },
+      help: { type: 'boolean' },
+    }, (code, condition) => new Error(condition));
+    if (values.check && values.help)
     {
       throw new Error('expected --target development|distribution, --check, or --help');
     }
+    parsed = { target: validateTarget(values.target ?? DEFAULT_TARGET), check: values.check, help: values.help };
   }
   catch (error)
   {
     process.stderr.write(`ERROR [usage_error]: ${error.message}\nRemedy: npm run test:setup -- --help\n`);
     return 2;
   }
-  if (parsed.remaining.includes('--help'))
+  if (parsed.help)
   {
     process.stdout.write(`Usage: npm run test:setup [-- [--target development|distribution] [--check | --help]]
 Prepare runtime dependencies for an already-built artifact (default: development).
@@ -94,7 +99,7 @@ Examples:
     return 0;
   }
   const root = path.resolve(__dirname, '..');
-  if (!parsed.remaining.includes('--check'))
+  if (!parsed.check)
   {
     return runCommandPlan(buildSetupPlan(root, parsed.target), undefined, { summaryLabel: 'Test setup' });
   }

@@ -840,6 +840,12 @@ test('CLI entry points validate arguments before inspecting Git', () =>
     ['check-release.js', [
       '--base', '--not-a-value', '--level', 'patch', '--next', '1.0.1', '--staged',
     ]],
+    // Inline values pass strict parsing, so empty and dash-prefixed values
+    // must still be refused before they can reach Git as options.
+    ['check-source-policy.js', ['--base=-x', '--head', 'HEAD']],
+    ['check-source-policy.js', ['--base=', '--head', 'HEAD']],
+    ['check-release.js', ['--base=-x', '--level', 'patch', '--next', '1.0.1', '--staged']],
+    ['check-release.js', ['--base=', '--level', 'patch', '--next', '1.0.1', '--staged']],
   ])
   {
     const result = spawnSync(process.execPath, [path.join(checkoutRoot, 'scripts', script), ...arguments_], {

@@ -9,7 +9,7 @@ const {
   ArtifactArgumentError,
   validateTarget,
   artifactRoot,
-  parseArtifactTarget,
+  parseCommandLine,
 } = require('./artifact-paths');
 const { indexEntries, readBlobs } = require('./release-policy');
 
@@ -134,37 +134,17 @@ index and is valid only with an explicit --target distribution.`;
 
 function parseArguments(argv)
 {
-  const parsed = parseArtifactTarget(argv);
-  let tracked = false;
-  let help = false;
-  for (const argument of parsed.remaining)
-  {
-    if (argument === '--tracked')
-    {
-      if (tracked)
-      {
-        throw new ArtifactArgumentError('DUPLICATE_TRACKED', '--tracked was supplied more than once', 'supply --tracked once');
-      }
-      tracked = true;
-    }
-    else if (argument === '--help' || argument === '-h')
-    {
-      if (help)
-      {
-        throw new ArtifactArgumentError('DUPLICATE_HELP', 'help was supplied more than once', 'supply --help once');
-      }
-      help = true;
-    }
-    else
-    {
-      throw new ArtifactArgumentError('UNKNOWN_ARGUMENT', `unrecognized argument: ${argument}`, 'node scripts/validate-dist.js --help');
-    }
-  }
-  if (help && (tracked || parsed.explicitTarget))
+  const values = parseCommandLine(argv, {
+    target: { type: 'string' },
+    tracked: { type: 'boolean' },
+    help: { type: 'boolean', short: 'h' },
+  }, (code, condition) => new ArtifactArgumentError(code, condition, 'node scripts/validate-dist.js --help'));
+  const target = validateTarget(values.target ?? DEFAULT_TARGET);
+  if (values.help && (values.tracked || values.target !== null))
   {
     throw new ArtifactArgumentError('INVALID_ARGUMENTS', '--help cannot be combined with validation options', 'node scripts/validate-dist.js --help');
   }
-  if (tracked && (!parsed.explicitTarget || parsed.target !== 'distribution'))
+  if (values.tracked && target !== 'distribution')
   {
     throw new ArtifactArgumentError(
       'TRACKED_TARGET_REQUIRED',
@@ -172,7 +152,7 @@ function parseArguments(argv)
       'use node scripts/validate-dist.js --target distribution --tracked',
     );
   }
-  return { target: parsed.target, tracked, help };
+  return { target, tracked: values.tracked, help: values.help };
 }
 
 function main(argv)
