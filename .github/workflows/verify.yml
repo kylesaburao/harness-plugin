@@ -105,10 +105,7 @@ jobs:
           FLOOR: ${{ matrix.node-version }}
         run: test "$(node --version)" = "v$FLOOR"
       - run: node tests/distribution/runtime-floor.js
-      - run: node tests/distribution/runtime-floor.js --backup
-      - run: node tests/distribution/runtime-floor.js --wake
       - run: node tests/distribution/runtime-floor.js --gif
-      - run: node tests/distribution/runtime-floor.js --frames
       - run: node tests/distribution/runtime-floor.js --ste-comments
       - name: Verify tracked checkout remained unchanged
         run: |

@@ -16,7 +16,6 @@ const FORBIDDEN_ARTIFACT_COMPONENTS = new Set([
 // Ignored local directories that may exist inside a built artifact. Builders
 // and validators leave them untouched and never inventory their contents.
 const OPAQUE_OVERLAYS = new Set([
-  'skills/back-up-directories/node_modules',
   'skills/write-asd-ste100/scripts/__pycache__',
 ]);
 

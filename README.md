@@ -29,31 +29,16 @@ Some skills retain configuration or generated data under `~/.harness-plugin/`, s
 | Skill | Purpose |
 | --- | --- |
 | [harness-advisor](dist/harness/skills/harness-advisor/SKILL.md) | Get a tool-free reasoning review of executor-supplied evidence. [Guide](docs/skills/harness-advisor.md). |
-| [back-up-directories](dist/harness/skills/back-up-directories/SKILL.md) | Archive a directory to a dated ZIP and replicate it to configured destinations. |
 | [conceptual-first](dist/harness/skills/conceptual-first/SKILL.md) | Establish conceptual ownership before expanding related implementations; preserve meaningful differences and task scope. |
 | [create-discord-emoji-gif](dist/harness/skills/create-discord-emoji-gif/SKILL.md) | Convert a clip into a looping, under-256KB, 128x128 Discord emoji GIF. |
 | [diagnose-environment](dist/harness/skills/diagnose-environment/SKILL.md) | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. |
-| [extract-video-frames](dist/harness/skills/extract-video-frames/SKILL.md) | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. |
 | [inspect-development-environment](dist/harness/skills/inspect-development-environment/SKILL.md) | Produce an evidence-backed inventory of the current dev environment. |
 | [install-harness-plugin-capabilities](dist/harness/skills/install-harness-plugin-capabilities/SKILL.md) | Install or repair Advisor integration, implementation-planning activation, conceptual-first activation, and Skill discovery for Codex and Claude Code through agent file edits. |
-| [record-decision](dist/harness/skills/record-decision/SKILL.md) | Capture a consequential technical decision, its constraints, and its reversibility. |
 | [demonstrate-workflow](dist/harness/skills/demonstrate-workflow/SKILL.md) | Turn completed session work or a new demonstration into a reusable skill through explicit invocation. |
-| [research-precedent](dist/harness/skills/research-precedent/SKILL.md) | Research whether a proposed approach has precedent, internally or in the wider industry. |
 | [random-sampler](dist/harness/skills/random-sampler/SKILL.md) | Make cryptographic random choices, integers, samples, shuffles, dice rolls, and coin flips. |
-| [wake-desktop](dist/harness/skills/wake-desktop/SKILL.md) | Manage named LAN wake targets and send a magic packet, optionally waiting for a ping response. [Guide](docs/skills/wake-desktop.md). |
 | [write-implementation-plan](dist/harness/skills/write-implementation-plan/SKILL.md) | Create self-contained implementation plans, offering optional HANDOFF.md support for multi-phase or long-horizon work. |
 | [write-compact-prompt](dist/harness/skills/write-compact-prompt/SKILL.md) | Write session-specific focus instructions for /compact, or a pre-compaction checkpoint on hosts without arguments. |
 | [write-asd-ste100](dist/harness/skills/write-asd-ste100/SKILL.md) | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. [Guide](docs/skills/write-asd-ste100.md). |
-
-### Output styles
-
-Claude Code only: `.codex-plugin/plugin.json` pins its component list to `./skills/` and ignores these.
-
-- [Casual](dist/harness/output-styles/casual.md): short, direct, everyday speech.
-- [Encoded](dist/harness/output-styles/encoded.md): one-line semantic algebra for LLM consumption.
-- [Natural](dist/harness/output-styles/natural.md): natural technical prose with default Claude Code behavior.
-
-The plugin ships skills and output styles only: no commands, no hooks, no plugin-level agents.
 
 ## From implementation to installed distribution
 
@@ -77,7 +62,6 @@ Commit source, tooling, tests, and documentation without regenerated output or a
 Start with the [documentation index](docs/README.md), or go directly to:
 
 - [Harness Advisor](docs/skills/harness-advisor.md): integration, requests, and routing preferences.
-- [Wake Desktop](docs/skills/wake-desktop.md): save and wake computers on your LAN.
 - [ASD-STE100 Writer](docs/skills/write-asd-ste100.md): set up, run, and scope the technical-English checker.
 - [Development](docs/development/README.md): setup, testing, containers, and versioning.
 - [Dependencies and skill setup](docs/development/dependencies.md): runtimes, tools, and initialization.

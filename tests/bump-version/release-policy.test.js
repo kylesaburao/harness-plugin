@@ -531,8 +531,8 @@ test('staged validation rejects indexed overlays and paths outside dist/harness'
   f.write('scripts/check-release.js', 'migration marker\n');
   const base = f.source('src/harness/shared/node/example.ts', 'export {};\n', 'migration source');
   f.stageRelease('1.0.2');
-  f.write('dist/harness/skills/back-up-directories/node_modules/bad.js', 'bad\n');
-  f.git('add', '-f', 'dist/harness/skills/back-up-directories/node_modules/bad.js');
+  f.write('dist/harness/skills/write-asd-ste100/scripts/__pycache__/bad.pyc', 'bad\n');
+  f.git('add', '-f', 'dist/harness/skills/write-asd-ste100/scripts/__pycache__/bad.pyc');
   assert.equal(
     policyCode(() => validateStagedRelease(f.repositoryRoot, {
       base,

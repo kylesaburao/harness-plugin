@@ -78,22 +78,21 @@ There is no build-time `pre-push` hook. Candidate construction and source-policy
 
 ## Ownership and assembly
 
-TypeScript compiles through the locked local CLI with strict checking, NodeNext resolution, and ES2022 output. Ordinary `.ts` modules emit CommonJS `.js` under the plugin package boundary. The sampler's `.mts` emits native ESM `.mjs`. Python and Swift stay in their existing languages, and assets copy byte for byte. The canonical version is injected into both versionless source manifest templates.
+TypeScript compiles through the locked local CLI with strict checking, NodeNext resolution, and ES2022 output. Ordinary `.ts` modules emit CommonJS `.js` under the plugin package boundary. The sampler's `.mts` emits native ESM `.mjs`. Python sources and assets copy byte for byte. The canonical version is injected into both versionless source manifest templates.
 
 Both targets use the same inventory, compilation, copying, validation, and byte-oriented reconciliation. Each invocation owns unique staging under `.build/`; it never deletes the entire directory. Writing builds use separate `.build/development.lock` and `.build/distribution.lock` directories. A check creates only private staging and neither repairs its target nor removes another build's lock or stage.
 
-The selected artifact can retain these two opaque local overlays:
+The selected artifact can retain this opaque local overlay:
 
 ```text
-skills/back-up-directories/node_modules/
 skills/write-asd-ste100/scripts/__pycache__/
 ```
 
-Reconciliation preserves their contents and mounted-directory ancestors. Published Git inventory must still reject tracked overlay content. Builds do not install runtime dependencies, initialize references, or compile the Swift helper. Source executable bits determine generated executable intent; a shebang alone does not make a file executable.
+Reconciliation preserves its contents and mounted-directory ancestors. Published Git inventory must still reject tracked overlay content. Builds do not install runtime dependencies or initialize references. Source executable bits determine generated executable intent; a shebang alone does not make a file executable.
 
 ## CI publication boundary
 
-Pull requests validate submitted commit history, then build and test the pinned integration candidate in `.build/harness/` with `--skip-gif`. A parallel `gif` job builds the repository [Dockerfile](../../Dockerfile) image with GitHub Actions layer caching, then runs `./scripts/dev setup` and the complete `./scripts/dev exec npm test` gate, including both GIF converter preflights and all GIF tests. Neither job runs on macOS, so macOS HEIC execution still has no hosted coverage. A newer run for the same PR cancels obsolete verification in both jobs. The release workflow's read-only `test` job validates the event range and calls the existing publication policy before any Python setup or dependency installation. It runs the development candidate gate only for `no eligible changes`; eligible or already-published requests defer to the publisher. Both workflows verify that tracked checkout content remained unchanged.
+Pull requests validate submitted commit history, then build and test the pinned integration candidate in `.build/harness/` with `--skip-gif`. A parallel `gif` job builds the repository [Dockerfile](../../Dockerfile) image with GitHub Actions layer caching, then runs `./scripts/dev setup` and the complete `./scripts/dev exec npm test` gate, including both GIF converter preflights and all GIF tests. A newer run for the same PR cancels obsolete verification in both jobs. The release workflow's read-only `test` job validates the event range and calls the existing publication policy before any Python setup or dependency installation. It runs the development candidate gate only for `no eligible changes`; eligible or already-published requests defer to the publisher. Both workflows verify that tracked checkout content remained unchanged.
 
 The write-enabled `bump` job always depends on successful `test`, including after a non-release development gate. Its fresh-main inspection remains publication authority. Ordinary releases therefore run only one exact-version distribution gate, and ordinary non-release main pushes run only one development gate. New unpublished source arriving after preliminary classification can intentionally require a distribution gate as well. Summaries distinguish policy success, candidate testing, and the number of completed distribution gates.
 

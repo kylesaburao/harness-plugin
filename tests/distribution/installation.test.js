@@ -8,7 +8,7 @@ const { spawnSync } = require('node:child_process');
 const { inventory } = require('../../scripts/build');
 const { artifactRoot } = require('../helpers/plugin-paths');
 
-test('isolated artifact runs beneath an ESM parent and installs backup dependencies under the user-level root', t => {
+test('isolated artifact runs beneath an ESM parent', t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'harness installé ')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}\n');
@@ -22,15 +22,11 @@ test('isolated artifact runs beneath an ESM parent and installs backup dependenc
   fs.mkdirSync(env.HOME);
   const run = (relative, args, input = '') => spawnSync(process.execPath, [path.join(plugin, relative), ...args], { cwd: root, env, input, encoding: 'utf8', timeout: 30000 });
   for (const cli of [
-    'back-up-directories/scripts/backup.js',
     'create-discord-emoji-gif/scripts/node/mov-to-gif.js',
     'create-discord-emoji-gif/scripts/node/mov-to-gif-gifski.js',
-    'extract-video-frames/scripts/extract-video-frames.js',
     'harness-advisor/scripts/advisor-config.js',
     'harness-advisor/scripts/claude-advisor.js',
     'random-sampler/scripts/sample.mjs',
-    'wake-desktop/scripts/manage-targets.js',
-    'wake-desktop/scripts/wake-desktop.js',
     'write-asd-ste100/scripts/extract-js-comments.js',
   ]) {
     const result = run(`skills/${cli}`, ['--help']);
@@ -41,12 +37,6 @@ test('isolated artifact runs beneath an ESM parent and installs backup dependenc
   assert.equal(JSON.parse(sampler.stdout).result.value, 0);
   const preflight = run('skills/random-sampler/scripts/sample.mjs', ['--preflight', '--json']);
   assert.equal(preflight.status, 0, preflight.stderr);
-  const backup = 'skills/back-up-directories/scripts/backup.js';
-  const missing = run(backup, ['--preflight', '--json']);
-  assert.equal(missing.status, 2, missing.stderr);
-  assert.equal(JSON.parse(missing.stderr).error.code, 'dependency_missing');
-  const { remedy } = JSON.parse(missing.stderr).error;
-  assert.ok(remedy.includes(path.join(plugin, 'skills/back-up-directories/package-lock.json')));
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
   const calls = path.join(root, 'claude-calls');
   fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}
@@ -73,7 +63,7 @@ process.stdout.write('test-cli');
   assert.equal(Object.hasOwn(JSON.parse(advisor.stdout), 'workspace'), false);
   assert.equal(Object.hasOwn(JSON.parse(advisor.stdout), 'observations'), false);
   assert.equal(fs.readFileSync(calls, 'utf8'), '--version\n');
-  for (const name of ['skills/extract-video-frames/scripts/tiff-to-heic.swift', 'skills/write-asd-ste100/scripts/ste_check.py',
+  for (const name of ['skills/write-asd-ste100/scripts/ste_check.py',
     'skills/write-asd-ste100/scripts/ste_source.py', 'skills/write-asd-ste100/package.json', 'skills/write-asd-ste100/package-lock.json']) assert.ok(fs.statSync(path.join(plugin, name)).isFile());
   assert.equal(fs.existsSync(path.join(plugin, 'skills/write-asd-ste100/node_modules')), false);
   // The comment helper runs as CommonJS beneath the ESM parent and reports its missing parser.
@@ -82,16 +72,4 @@ process.stdout.write('test-cli');
   assert.equal(JSON.parse(parser.stderr).error.code, 'dependency_missing');
   const python = spawnSync('python3', [path.join(plugin, 'skills/write-asd-ste100/scripts/ste_check.py'), '--help'], { cwd: root, env, encoding: 'utf8' });
   assert.equal(python.status, 0, python.stderr);
-  // Install by running the diagnostic's remedy exactly as a user would.
-  const install = spawnSync('sh', ['-c', remedy], { cwd: root, env, encoding: 'utf8', timeout: 120000 });
-  assert.equal(install.status, 0, install.stderr);
-  assert.equal(fs.existsSync(path.join(plugin, 'skills/back-up-directories/node_modules')), false);
-  assert.ok(fs.statSync(path.join(env.HOME, '.harness-plugin/back-up-directories/node_modules/archiver')).isDirectory());
-  fs.mkdirSync(path.join(root, 'source')); fs.writeFileSync(path.join(root, 'source/hello.txt'), 'isolated backup\n');
-  fs.mkdirSync(path.join(root, 'target'));
-  const config = path.join(root, 'backup.json');
-  fs.writeFileSync(config, JSON.stringify({ sourceDirectory: './source', outputDirectory: './output', targetDirectories: ['./target'] }));
-  const result = run(backup, ['--json', config], 'y\n');
-  assert.equal(result.status, 0, result.stderr);
-  assert.ok(fs.readdirSync(path.join(root, 'target')).some(name => name.endsWith('.zip')));
 });

@@ -22,23 +22,6 @@ function success(relative, args, input) {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 }
-function qualifyWakeDesktop() {
-  // Management and wake validation only: no packet is sent and no socket is opened.
-  const manager = 'skills/wake-desktop/scripts/manage-targets.js';
-  const wake = 'skills/wake-desktop/scripts/wake-desktop.js';
-  const configPath = path.join(home, '.harness-plugin/wake-desktop/config.json');
-  success(manager, ['--help']);
-  success(wake, ['--help']);
-  assert.deepEqual(JSON.parse(success(manager, ['list', '--json'])), { result: { status: 'listed', configPath, targets: [] } });
-  const register = ['register', '--name', 'desktop', '--ip', '192.168.1.91', '--mac', '34:5a:60:37:3e:21', '--json'];
-  assert.equal(JSON.parse(success(manager, [...register, '--preflight'])).status, 'ready');
-  assert.equal(fs.existsSync(configPath), false);
-  assert.equal(JSON.parse(success(manager, register)).result.changed, true);
-  assert.deepEqual(JSON.parse(success(manager, ['list', '--json'])).result.targets, [{ name: 'desktop', ip: '192.168.1.91', mac: '34:5a:60:37:3e:21' }]);
-  const unknown = run(wake, ['--target', 'absent', '--no-wait', '--preflight', '--json']);
-  assert.equal(unknown.status, 2, unknown.stderr);
-  assert.equal(JSON.parse(unknown.stderr).error.code, 'target_unknown');
-}
 // One-line JSON error envelope with empty stdout: the unified CLI contract.
 function failure(result, status, code) {
   assert.equal(result.status, status, result.stderr);
@@ -76,62 +59,6 @@ function qualifyGif() {
       ['ffmpeg', 'ffprobe', backend].map(name => `required command not found: ${name}`));
   }
   process.stdout.write(`GIF runtime floor passed on Node ${process.versions.node}: help, usage error and missing-tool preflight for both converters.\n`);
-}
-function qualifyFrames() {
-  const relative = 'skills/extract-video-frames/scripts/extract-video-frames.js';
-  assert.match(success(relative, ['--help']), /^Usage: /);
-  failure(run(relative, ['--bogus', '--json']), 2, 'usage_error');
-  failure(run(relative, ['--json']), 2, 'usage_error');
-  // Preflight checks the Node floor first, then the platform: Linux stops there,
-  // macOS stops at the missing sw_vers on the isolated PATH.
-  failure(runWith(withoutTools(), relative, ['--preflight', '--json']), 2,
-    process.platform === 'darwin' ? 'command_missing' : 'platform_unsupported');
-  process.stdout.write(`Frame extraction runtime floor passed on Node ${process.versions.node}: help, usage errors and platform preflight.\n`);
-}
-function qualifyBackup() {
-  fs.writeFileSync(path.join(home, 'package.json'), '{"type":"module"}\n');
-  const skill = path.join(home, 'backup installé');
-  fs.cpSync(path.join(plugin, 'skills/back-up-directories'), skill, {
-    recursive: true,
-    filter: source => path.basename(source) !== 'node_modules',
-  });
-  const backup = path.join(skill, 'scripts/backup.js');
-  const execute = (args, input = '') => {
-    const result = spawnSync(process.execPath, [backup, ...args], { cwd: home, env, input, encoding: 'utf8', timeout: 15000 });
-    assert.ifError(result.error);
-    return result;
-  };
-  const missing = execute(['--preflight', '--json']);
-  assert.equal(missing.status, 2, missing.stderr);
-  // Node may emit a require(esm) warning separately from the JSON error.
-  const diagnostic = JSON.parse(missing.stderr.split('\n').find(line => line.startsWith('{')));
-  assert.equal(diagnostic.error.code, 'dependency_missing');
-  assert.ok(diagnostic.error.remedy.includes(skill));
-  const npmEnv = { ...env, PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`,
-    npm_config_cache: path.join(home, 'npm-cache') };
-  // The remedy installs from the skill's lockfile into ~/.harness-plugin/back-up-directories.
-  const installed = spawnSync('sh', ['-c', diagnostic.error.remedy], { cwd: home, env: npmEnv, encoding: 'utf8', timeout: 120000 });
-  assert.ifError(installed.error);
-  assert.equal(installed.status, 0, installed.stderr);
-  for (const name of ['source', 'target']) fs.mkdirSync(path.join(home, name));
-  fs.writeFileSync(path.join(home, 'source/hello.txt'), 'runtime floor backup\n');
-  const config = path.join(home, 'backup.json');
-  fs.writeFileSync(config, JSON.stringify({ sourceDirectory: './source', outputDirectory: './output', targetDirectories: ['./target'] }));
-  const preflight = execute(['--preflight', '--json', config]);
-  assert.equal(preflight.status, 0, preflight.stderr);
-  assert.equal(JSON.parse(preflight.stdout).outputDirectoryCreated, fs.realpathSync(path.join(home, 'output')));
-  const completed = execute(['--json', config], 'y\n');
-  assert.equal(completed.status, 0, completed.stderr);
-  const result = JSON.parse(completed.stdout).result;
-  assert.equal(result.archive, null);
-  assert.equal(result.stagingRemoved, true);
-  assert.equal(result.copies.length, 1);
-  assert.equal(fs.statSync(result.copies[0]).size, result.bytes);
-  const contents = spawnSync('unzip', ['-p', result.copies[0], 'hello.txt'], { encoding: 'utf8' });
-  assert.equal(contents.status, 0, contents.stderr);
-  assert.equal(contents.stdout, 'runtime floor backup\n');
-  assert.deepEqual(fs.readdirSync(path.join(home, 'output')), []);
-  process.stdout.write(`Backup runtime floor passed on Node ${process.versions.node}: isolated generated plan, missing dependency, user-level lockfile install, preflight output creation, real archive and replication.\n`);
 }
 function qualifySteComments() {
   // Only the JavaScript-family comment helper: no ASD reference bundle is needed.
@@ -179,7 +106,7 @@ function qualifySteComments() {
   assert.equal(result.files[3].error.reason, 'ReservedTypeAssertion');
   process.stdout.write(`ASD-STE100 comment helper runtime floor passed on Node ${process.versions.node}: isolated ESM parent, missing dependency, user-level lockfile install, JavaScript, TypeScript and TSX extraction, and a structured parse error.\n`);
 }
-const MODES = new Set(['--backup', '--gif', '--frames', '--wake', '--ste-comments']);
+const MODES = new Set(['--gif', '--ste-comments']);
 const selected = process.argv.slice(2);
 if (selected.length > 1 || (selected.length === 1 && !MODES.has(selected[0]))) {
   process.stderr.write(`Usage: runtime-floor.js [${[...MODES].join('|')}]\n`);
@@ -189,14 +116,8 @@ if (selected.length > 1 || (selected.length === 1 && !MODES.has(selected[0]))) {
 const mode = selected[0];
 try {
   assert.ok(Number(process.versions.node.split('.')[0]) >= FLOOR, `Runtime floor qualification requires Node >=${FLOOR}.0.0`);
-  if (mode === '--backup') qualifyBackup();
-  else if (mode === '--gif') qualifyGif();
-  else if (mode === '--frames') qualifyFrames();
+  if (mode === '--gif') qualifyGif();
   else if (mode === '--ste-comments') qualifySteComments();
-  else if (mode === '--wake') {
-    qualifyWakeDesktop();
-    process.stdout.write(`Wake-desktop runtime floor passed on Node ${process.versions.node}: target management and wake validation.\n`);
-  }
   else {
   const sampler = 'skills/random-sampler/scripts/sample.mjs';
   success(sampler, ['--help']);

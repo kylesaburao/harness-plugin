@@ -169,10 +169,9 @@ test('default build creates a deterministic development artifact without changin
     '.claude-plugin/plugin.json',
     '.codex-plugin/plugin.json',
     'skills/harness-advisor/references/contract.md',
-    'skills/extract-video-frames/scripts/tiff-to-heic.swift',
     'skills/write-asd-ste100/scripts/ste_check.py',
-    'skills/back-up-directories/package-lock.json',
-    'skills/back-up-directories/agents/openai.yaml',
+    'skills/write-asd-ste100/package-lock.json',
+    'skills/write-asd-ste100/agents/openai.yaml',
   ])
   {
     assert.ok(fs.existsSync(artifactPath(root, 'development', name)), name);
@@ -237,10 +236,9 @@ test('renames, deletions, and mode changes reconcile while opaque overlays survi
     write(root, 'src/harness/shared/node/temporary.ts', '#!/usr/bin/env node\nexport const value = 1;\n', 0o755);
     build(root, { target });
     const selected = artifactRoot(root, target);
-    const overlay = path.join(selected, 'skills/back-up-directories/node_modules');
-    write(overlay, 'keep', 'dependency');
+    const overlay = path.join(selected, 'skills/write-asd-ste100/scripts/__pycache__');
+    write(overlay, 'keep.pyc', 'cache');
     fs.symlinkSync('/absent/opaque-dependency', path.join(overlay, 'link'));
-    write(selected, 'skills/write-asd-ste100/scripts/__pycache__/keep.pyc', 'cache');
 
     fs.renameSync(
       path.join(root, 'src/harness/shared/node/temporary.ts'),
@@ -250,7 +248,7 @@ test('renames, deletions, and mode changes reconcile while opaque overlays survi
     build(root, { target });
     assert.equal(fs.existsSync(path.join(selected, 'shared/node/temporary.js')), false);
     assert.equal(fs.statSync(path.join(selected, 'shared/node/renamed.js')).mode & 0o111, 0);
-    assert.equal(fs.readFileSync(path.join(overlay, 'keep'), 'utf8'), 'dependency');
+    assert.equal(fs.readFileSync(path.join(overlay, 'keep.pyc'), 'utf8'), 'cache');
     assert.equal(fs.lstatSync(path.join(overlay, 'link')).isSymbolicLink(), true);
 
     fs.unlinkSync(path.join(root, 'src/harness/shared/node/renamed.ts'));
@@ -434,8 +432,8 @@ test('tracked validation compares index paths, modes, and raw blob bytes with te
   assert.throws(() => validateTracked(root, files), /Forbidden\/stale tracked artifact/);
   execFileSync('git', ['rm', '--cached', '-q', 'dist/outside.txt'], { cwd: root });
 
-  write(root, 'dist/harness/skills/back-up-directories/node_modules/tracked.js', 'forbidden');
-  execFileSync('git', ['add', '-f', 'dist/harness/skills/back-up-directories/node_modules/tracked.js'], { cwd: root });
+  write(root, 'dist/harness/skills/write-asd-ste100/scripts/__pycache__/tracked.js', 'forbidden');
+  execFileSync('git', ['add', '-f', 'dist/harness/skills/write-asd-ste100/scripts/__pycache__/tracked.js'], { cwd: root });
   assert.throws(() => validateTracked(root, files), /Forbidden\/stale tracked artifact/);
 });
 

@@ -67,8 +67,6 @@ fs.writeFileSync(prompt, '[QUESTION]\nreadiness only\n');
 const PREFLIGHT_ARGUMENTS = {
   'harness-advisor/scripts/advisor-config.js': ['show'],
   'harness-advisor/scripts/claude-advisor.js': ['--native-absent', '--model', 'opus', '--reasoning-effort', 'high', '--prompt', prompt],
-  'wake-desktop/scripts/manage-targets.js': ['list'],
-  'wake-desktop/scripts/wake-desktop.js': ['--mac', 'a1:b2:c3:d4:e5:f6', '--ip', '192.0.2.1'],
 };
 const CAMEL_CASE = /^[a-z][A-Za-z0-9]*$/;
 const SNAKE_CASE = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;

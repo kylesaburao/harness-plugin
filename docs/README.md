@@ -4,9 +4,8 @@
 
 - [Install Claude Code or Codex integration](../README.md#install).
 - [Harness Advisor](skills/harness-advisor.md): request a second opinion and configure preferences.
-- [Wake Desktop](skills/wake-desktop.md): register, manage, and wake LAN targets.
 - [Skill requirements](development/dependencies.md#2-using-the-plugin): check dependencies for the skills you use.
-- [Backup setup](../dist/harness/skills/back-up-directories/INSTALL.md) and [ASD-STE100 setup](../dist/harness/skills/write-asd-ste100/INSTALL.md): initialize skills that need additional setup.
+- [ASD-STE100 setup](../dist/harness/skills/write-asd-ste100/INSTALL.md): initialize skills that need additional setup.
 
 For other skills, follow the [plugin catalog](../README.md#plugin-contents) to their installed behavioral contracts.
 

@@ -84,16 +84,7 @@ function command(label, executable, args, repoRoot) {
   return { label, command: executable, args, cwd: repoRoot };
 }
 
-// The backup skill resolves archiver only from its user-level state directory,
-// never from the installed skill, so setup installs it there from the selected
-// artifact's manifest and lockfile. These stages mirror the skill's own
-// dependency_missing remedy.
-function backupDependencyRoot(home = os.homedir())
-{
-  return path.join(home, '.harness-plugin', 'back-up-directories');
-}
-
-// The ASD-STE100 comment parser follows the same pattern: @babel/parser is
+// The ASD-STE100 comment parser dependency @babel/parser is
 // installed from the selected artifact's write-asd-ste100 manifest and
 // lockfile into the skill's user-level directory, where its helper resolves it.
 function steDependencyRoot(home = os.homedir())
@@ -101,25 +92,16 @@ function steDependencyRoot(home = os.homedir())
   return path.join(home, '.harness-plugin', 'write-asd-ste100');
 }
 
-// backupReady and steParserReady omit an install when the caller has confirmed
+// steParserReady omits an install when the caller has confirmed
 // that the user-level install already came from the selected lockfile.
-function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), { backupReady = false, steParserReady = false } = {})
+function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), { steParserReady = false } = {})
 {
   const selected = artifactRoot(repoRoot, target);
-  const backupSkill = path.join(selected, 'skills/back-up-directories');
-  const backupRoot = backupDependencyRoot(home);
   const steSkill = path.join(selected, 'skills/write-asd-ste100');
   const steRoot = steDependencyRoot(home);
   const python = path.join('.venv', 'bin', 'python');
   return [
     command('verify selected artifact', 'node', ['scripts/build.js', '--target', target, '--check'], repoRoot),
-    ...(backupReady ? [] : [
-      command('create backup dependency directory', 'mkdir', ['-p', backupRoot], repoRoot),
-      command('copy backup dependency manifest and lockfile', 'cp', [
-        path.join(backupSkill, 'package.json'), path.join(backupSkill, 'package-lock.json'), backupRoot,
-      ], repoRoot),
-      command('install backup dependencies', 'npm', ['ci', '--omit=dev', '--prefix', backupRoot], repoRoot),
-    ]),
     ...(steParserReady ? [] : [
       command('create ASD-STE100 comment parser directory', 'mkdir', ['-p', steRoot], repoRoot),
       command('copy ASD-STE100 comment parser manifest and lockfile', 'cp', [
@@ -285,7 +267,6 @@ async function main(argv, {
 if (require.main === module) Promise.resolve(main(process.argv.slice(2))).then(status => { process.exitCode = status; }).catch(error => { console.error(error); process.exitCode = 1; });
 
 module.exports = {
-  backupDependencyRoot,
   buildSetupPlan,
   buildPrerequisitePlan,
   steDependencyRoot,

@@ -26,7 +26,7 @@ npm run build
 npm run test:setup
 ```
 
-This cold-start sequence installs the root toolchain, constructs `.build/harness/`, installs the backup skill's npm dependencies from the candidate's lockfile into `/home/node/.harness-plugin/back-up-directories/`, installs the ASD-STE100 comment parser from the writer skill's lockfile into `/home/node/.harness-plugin/write-asd-ste100/`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references. `setup-tests.js` itself does not install the root toolchain or build an artifact. Pull requests build this same image and run the complete gate inside it through the `gif` job of `verify.yml` (see [build.md](build.md)). Initial image build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
+This cold-start sequence installs the root toolchain, constructs `.build/harness/`, installs the ASD-STE100 comment parser from the writer skill's lockfile into `/home/node/.harness-plugin/write-asd-ste100/`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references. `setup-tests.js` itself does not install the root toolchain or build an artifact. Pull requests build this same image and run the complete gate inside it through the `gif` job of `verify.yml` (see [build.md](build.md)). Initial image build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
 
 Run a focused test or open a shell with the same source and dependency mounts:
 
@@ -41,11 +41,9 @@ Ordinary `exec` commands never build or install implicitly. After source edits, 
 
 ## Persistence and reset
 
-The checkout is bind-mounted at `/workspace/harness-plugin`. Four named volumes mask root `node_modules`, `.venv`, `.build/harness/skills/back-up-directories/node_modules`, and `/home/node`. All use `volume-nocopy`, so host dependencies and image home contents are not imported. The `.venv` volume hands the Python environment from setup to one gate, then the gate empties it. The other volumes retain the root toolchain, backup dependencies, generated references, and caches. Backup dependencies live in the home volume at `/home/node/.harness-plugin/back-up-directories/node_modules`, where the skill resolves them. The candidate-local backup volume is still created and mounted by the launcher but is no longer used; it stays empty.
+The checkout is bind-mounted at `/workspace/harness-plugin`. Three named volumes mask root `node_modules`, `.venv`, and `/home/node`. All use `volume-nocopy`, so host dependencies and image home contents are not imported. The `.venv` volume hands the Python environment from setup to one gate, then the gate empties it. The other volumes retain the root toolchain, generated references, and caches.
 
-Before Docker receives that nested mount target, the launcher creates and validates `.build/harness/skills/back-up-directories/node_modules` as the invoking user. It rejects conflicting files or unexpected symlink traversal, so Docker cannot create a root-owned development artifact in the host checkout. The launcher may create ignored development directories but does not modify tracked `dist/`.
-
-The home volume stores backup dependencies, the ASD-STE100 comment parser, and generated references under `/home/node/.harness-plugin/`, and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the four volumes. The source checkout is never mounted into that root container.
+The home volume stores the ASD-STE100 comment parser and generated references under `/home/node/.harness-plugin/`, and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the three volumes. The source checkout is never mounted into that root container.
 
 Image and volume names use a hash of the checkout's canonical path and invoking UID/GID. Independent checkouts and users have separate dependency state. Moving a checkout or changing UID/GID selects new names and leaves the old resources in Docker. Symlink paths to the same checkout reuse its state. `./scripts/dev image-name` prints this checkout's image name without contacting Docker; the CI `gif` job reads its build tag from it.
 
@@ -57,7 +55,7 @@ After incompatible runtime changes, or to reproduce from empty dependency state:
 ./scripts/dev setup
 ```
 
-Reset removes only this checkout/user's four volumes, including cached dependencies and generated references. Source and image remain. It refuses removal while any container references those volumes, including a stopped container. Finish active commands and remove stopped containers using the volumes before retrying.
+Reset removes only this checkout/user's three volumes, including cached dependencies and generated references. Source and image remain. It refuses removal while any container references those volumes, including a stopped container. Finish active commands and remove stopped containers using the volumes before retrying.
 
 ## Toolchain and limits
 
@@ -67,7 +65,7 @@ Only the Dockerfile enters the build context. Source changes reuse the toolchain
 
 Keep commits, pushes, authentication, and checkout Git configuration on the host. No SSH agent or credentials are forwarded. The local commit guards require only host Git and POSIX shell; Docker, Node, Python, an active image, and network access are not required merely to create a source-only commit. A linked worktree is usable for development commands, but its external Git metadata is not mounted for container Git operations. Development tooling stays outside the shipped plugin.
 
-Targets are local Linux Docker, macOS Docker Desktop, and Windows through WSL2. Remote-daemon source transfer and native PowerShell are unsupported. macOS-only HEIC execution requires separate macOS validation.
+Targets are local Linux Docker, macOS Docker Desktop, and Windows through WSL2. Remote-daemon source transfer and native PowerShell are unsupported.
 
 ## Failure handling
 

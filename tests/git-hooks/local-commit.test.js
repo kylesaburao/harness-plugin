@@ -77,7 +77,7 @@ function makeRepository(t, { unborn = false, remote = false } = {})
     write(root, 'dist/harness/generated.txt', 'published\n');
     write(root, 'src/harness/package.json', '{"name":"harness","version":"1.0.0","private":true,"type":"commonjs"}\n');
     write(root, 'src/harness/implementation.ts', 'export const value = 1;\n');
-    write(root, 'src/harness/skills/back-up-directories/package.json', '{"name":"backup"}\n');
+    write(root, 'src/harness/skills/write-asd-ste100/package.json', '{"name":"writer"}\n');
     write(root, 'package.json', '{"private":true}\n');
     write(root, 'outside.txt', 'outside\n');
     git(root, 'add', '--all');
@@ -234,8 +234,8 @@ test('the whole canonical package blob is protected while other packages stay ed
 
   const editableFixture = makeRepository(t);
   write(editableFixture.root, 'package.json', '{"private":true,"description":"editable"}\n');
-  write(editableFixture.root, 'src/harness/skills/back-up-directories/package.json', '{"name":"backup","version":"2.0.0"}\n');
-  git(editableFixture.root, 'add', 'package.json', 'src/harness/skills/back-up-directories/package.json');
+  write(editableFixture.root, 'src/harness/skills/write-asd-ste100/package.json', '{"name":"writer","version":"2.0.0"}\n');
+  git(editableFixture.root, 'add', 'package.json', 'src/harness/skills/write-asd-ste100/package.json');
   const allowed = attemptCommit(editableFixture.root);
   assert.equal(allowed.status, 0, combinedOutput(allowed));
 });

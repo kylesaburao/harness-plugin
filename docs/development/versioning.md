@@ -2,7 +2,7 @@
 
 [Development](README.md) / Versioning
 
-`src/harness/package.json` owns the canonical plugin version, but publication owns changes to that file. Developers do not bump it locally. Source host manifests remain versionless templates, and the independent backup-skill package remains normally editable.
+`src/harness/package.json` owns the canonical plugin version, but publication owns changes to that file. Developers do not bump it locally. Source host manifests remain versionless templates, and skill-local packages remain normally editable.
 
 The release workflow changes only the canonical `version`, builds the complete `dist/harness/` artifact, and commits the canonical package and generated distribution together. The distribution package and both generated host manifests must all carry the same new version.
 
@@ -46,7 +46,7 @@ The workflow validates its event, repository, ref, run ID, selected source histo
 
 The write-enabled publisher depends on successful `test` and always inspects freshly fetched main. Preliminary selection does not authorize publication. An ordinary release gets one hosted gate against its exact versioned distribution; an ordinary non-release push gets one development gate. A documentation event can publish earlier unreleased source, and newer unpublished source arriving after a non-release gate intentionally requires an additional distribution gate. A previously published run is resolved against current main without rebuilding even when its original event still looks eligible. Queued events whose changes have already been published likewise avoid a second release.
 
-Step summaries distinguish source-policy success from a completed development gate and report the number of completed distribution gates. The release workflow's hosted gates use `--skip-gif`; publication does not wait for a GIF gate. Pull requests also run the complete gate, including GIF tests and both converter preflights, inside the repository's development container. No hosted gate establishes native macOS execution coverage, including macOS HEIC. Pull requests continue to test their pinned integration candidate; newer runs for the same PR cancel obsolete verification without affecting the publication queue.
+Step summaries distinguish source-policy success from a completed development gate and report the number of completed distribution gates. The release workflow's hosted gates use `--skip-gif`; publication does not wait for a GIF gate. Pull requests also run the complete gate, including GIF tests and both converter preflights, inside the repository's development container. No hosted gate establishes native macOS execution coverage. Pull requests continue to test their pinned integration candidate; newer runs for the same PR cancel obsolete verification without affecting the publication queue.
 
 ## Publication transaction
 

@@ -10,12 +10,20 @@ const { artifactPath, mapPublishedPath } = require('../helpers/plugin-paths');
 const ROOT = path.resolve(__dirname, '../..');
 const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
 
+function components(directory, options) {
+  try { return fs.readdirSync(directory, options); }
+  catch (error) {
+    if (error.code === 'ENOENT' && path.basename(directory) === 'output-styles') return [];
+    throw error;
+  }
+}
+
 // Compare public component links with the shipped tree. Headings, tables, lists,
 // ordering, and additional guide links are presentation choices.
 for (const kind of ['skills', 'output-styles']) {
   test(`README links to exactly the shipped ${kind}, using their public names`, () => {
     const directory = `dist/harness/${kind}`;
-    const expected = fs.readdirSync(artifactPath(kind), { withFileTypes: true })
+    const expected = components(artifactPath(kind), { withFileTypes: true })
       .filter(entry => kind === 'skills' ? entry.isDirectory() : entry.isFile() && entry.name.endsWith('.md'))
       .map(entry => `${directory}/${entry.name}${kind === 'skills' ? '/SKILL.md' : ''}`)
       .filter(file => fs.existsSync(mapPublishedPath(path.join(ROOT, file))))
@@ -36,7 +44,7 @@ for (const kind of ['skills', 'output-styles']) {
 
 test('source and distribution expose the same components', () => {
   for (const kind of ['skills', 'output-styles']) {
-    assert.deepEqual(fs.readdirSync(path.join(ROOT, 'src/harness', kind)).sort(), fs.readdirSync(artifactPath(kind)).sort());
+    assert.deepEqual(components(path.join(ROOT, 'src/harness', kind)).sort(), components(artifactPath(kind)).sort());
   }
 });
 

@@ -172,7 +172,7 @@ test('floors job pins the .nvmrc floor and runs every runtime-floor mode once', 
   assert.match(job, new RegExp(`\\n        node-version: \\['${major}\\.0\\.0'\\]\\n`));
   const floors = workflowSteps(verification, 'floors');
   const modes = floors.map(step => /^node tests\/distribution\/runtime-floor\.js(?: (.+))?$/.exec(step.run ?? '')).filter(Boolean).map(match => match[1] ?? '');
-  assert.deepEqual([...modes].sort(), ['', '--backup', '--frames', '--gif', '--ste-comments', '--wake']);
+  assert.deepEqual([...modes].sort(), ['', '--gif', '--ste-comments']);
   const switched = floors.findIndex(step => step.name === 'Switch to the floor runtime');
   const first = floors.findIndex(step => step.run?.startsWith('node tests/distribution/runtime-floor.js'));
   assert.ok(switched >= 0 && switched < first);

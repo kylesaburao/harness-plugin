@@ -3,50 +3,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { createRequire } = require('node:module');
 const { spawnSync } = require('node:child_process');
-const { backupDependencyRoot, buildSetupPlan, runCommandPlan } = require('./run-tests');
+const { buildSetupPlan, runCommandPlan } = require('./run-tests');
 const { DEFAULT_TARGET, artifactRoot, parseCommandLine, validateTarget } = require('./artifact-paths');
-
-// archiver must resolve from the user-level backup dependency directory, as
-// the skill resolves it, and that install must come from the selected
-// artifact's lockfile so the gate tests the dependencies that artifact ships.
-// Returns null when that holds, otherwise the reason it does not.
-function backupInstallProblem(selected, home = undefined)
-{
-  const backupSkill = path.join(selected, 'skills/back-up-directories');
-  const backupRoot = backupDependencyRoot(home);
-  const backupModules = path.join(backupRoot, 'node_modules');
-  const missing = `archiver must be installed in the backup dependency directory: ${backupRoot}`;
-  if (!fs.existsSync(backupModules)) return missing;
-  const backupRequire = createRequire(path.join(backupRoot, 'package.json'));
-  let dependency;
-  try
-  {
-    dependency = backupRequire.resolve('archiver');
-  }
-  catch (error)
-  {
-    if (error.code !== 'MODULE_NOT_FOUND') throw error;
-  }
-  if (!dependency || !dependency.startsWith(fs.realpathSync(backupModules) + path.sep)) return missing;
-  const installedLock = path.join(backupRoot, 'package-lock.json');
-  const selectedLock = path.join(backupSkill, 'package-lock.json');
-  if (!fs.existsSync(installedLock) || !fs.existsSync(selectedLock)
-    || !fs.readFileSync(installedLock).equals(fs.readFileSync(selectedLock)))
-  {
-    return `backup dependencies in ${backupRoot} were not installed from the selected artifact's lockfile: ${backupSkill}`;
-  }
-  try
-  {
-    backupRequire('archiver');
-  }
-  catch (error)
-  {
-    return `archiver in ${backupRoot} cannot be loaded: ${error.message}`;
-  }
-  return null;
-}
 
 // The selected artifact's own comment helper decides parser readiness, so setup
 // and the skill cannot disagree: Node.js floor, user-level location, lockfile
@@ -87,8 +46,6 @@ function checkPrerequisites(root, target = 'development', home = undefined)
   {
     throw new Error(`Python environment is missing: ${python}`);
   }
-  const backupProblem = backupInstallProblem(selected, home);
-  if (backupProblem) throw new Error(backupProblem);
   const probe = spawnSync(python, ['-c', 'import pypdfium2'], { encoding: 'utf8' });
   if (probe.status !== 0)
   {
@@ -138,17 +95,12 @@ Examples:
   if (!parsed.check)
   {
     const selected = artifactRoot(root, parsed.target);
-    const backupReady = backupInstallProblem(selected) === null;
-    if (backupReady)
-    {
-      process.stdout.write(`Backup dependency already installed for ${parsed.target}; skipping npm ci\n`);
-    }
     const steParserReady = steParserProblem(selected) === null;
     if (steParserReady)
     {
       process.stdout.write(`ASD-STE100 comment parser already installed for ${parsed.target}; skipping npm ci\n`);
     }
-    return runCommandPlan(buildSetupPlan(root, parsed.target, undefined, { backupReady, steParserReady }), undefined, { summaryLabel: 'Test setup' });
+    return runCommandPlan(buildSetupPlan(root, parsed.target, undefined, { steParserReady }), undefined, { summaryLabel: 'Test setup' });
   }
   try
   {
@@ -165,4 +117,4 @@ if (require.main === module)
 {
   process.exitCode = main(process.argv.slice(2));
 }
-module.exports = { backupInstallProblem, checkPrerequisites, main, steParserProblem };
+module.exports = { checkPrerequisites, main, steParserProblem };

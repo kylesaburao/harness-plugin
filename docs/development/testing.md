@@ -14,7 +14,7 @@ npm run build
 npm run test:setup
 ```
 
-The root `npm ci` step is separate from test setup. `npm run build` creates or refreshes `.build/harness/`. Setup first checks that this selected artifact is fresh, then installs backup npm dependencies from its lockfile into `~/.harness-plugin/back-up-directories/`, installs the ASD-STE100 comment parser from the writer skill's lockfile into `~/.harness-plugin/write-asd-ste100/` and probes it with that skill's helper, creates `.venv`, installs `pypdfium2`, and initializes the existing user-level ASD-STE100 reference bundle. It does not build either artifact, install root dependencies, install host runtimes or media executables, compile the Swift helper, or modify the published distribution.
+The root `npm ci` step is separate from test setup. `npm run build` creates or refreshes `.build/harness/`. Setup first checks that this selected artifact is fresh, then installs the ASD-STE100 comment parser from the writer skill's lockfile into `~/.harness-plugin/write-asd-ste100/` and probes it with that skill's helper, creates `.venv`, installs `pypdfium2`, and initializes the existing user-level ASD-STE100 reference bundle. It does not build either artifact, install root dependencies, install host runtimes or media executables, or modify the published distribution.
 
 Use `npm run test:setup -- --check` to check prerequisites and selected-root dependency resolution without installing, initializing, or building. On Linux/WSL2, use [container setup](container.md), and keep Git operations on the host.
 
@@ -36,9 +36,7 @@ npm test -- --target distribution
 
 The runner's explicit target overrides any inherited test-target setting and propagates one authoritative `HARNESS_TEST_TARGET` value to every prerequisite, Node worker, GIF process, Python reporter, Python test, and relevant nested child. Direct focused commands default to `development`; to inspect the published artifact explicitly, set `HARNESS_TEST_TARGET=distribution`. Any other supplied value fails instead of falling back to source or another artifact.
 
-Backup's `archiver` dependency must resolve from `~/.harness-plugin/back-up-directories/node_modules/`, where the skill itself resolves it, and that directory's `package-lock.json` must match the selected artifact's. A dependency in the root, inside either artifact, or in a parent `node_modules` cannot satisfy that boundary. Setup skips the copy and `npm ci` when that directory already satisfies both conditions for the selected target. When the two targets' lockfiles differ, setup for one replaces the install for the other, so run setup for the target you are about to test. Setup writes this user-level directory in the real home, as it already does for the ASD-STE100 bundle, and every worktree shares it: run `npm run test:setup` in one worktree at a time, and not while another worktree runs the backup tests.
-
-The ASD-STE100 comment parser follows the same rules in `~/.harness-plugin/write-asd-ste100/`. Setup and `npm run test:setup -- --check` decide readiness by running the selected artifact's own `extract-js-comments.js --preflight`, which checks the Node.js floor, the user-level location, a byte match with the selected `package.json` and `package-lock.json`, the exact parser version, and a loadable `parse` export. Setup skips the copy and `npm ci` when that probe passes. Python tests that need the parser are skipped when it is not installed, so a focused run without setup reports skips rather than failures; the full gate's prerequisite check requires it. Python source-comment tests need Python 3.12 or newer, as CI provides.
+The ASD-STE100 comment parser installs into `~/.harness-plugin/write-asd-ste100/`. Setup and `npm run test:setup -- --check` decide readiness by running the selected artifact's own `extract-js-comments.js --preflight`, which checks the Node.js floor, the user-level location, a byte match with the selected `package.json` and `package-lock.json`, the exact parser version, and a loadable `parse` export. Setup skips the copy and `npm ci` when that probe passes. Every worktree shares this user-level install, so run setup for the target you will test, one worktree at a time, and avoid replacing it while another worktree uses it. Python tests that need the parser are skipped when it is not installed, so a focused run without setup reports skips rather than failures; the full gate's prerequisite check requires it. Python source-comment tests need Python 3.12 or newer, as CI provides.
 
 ## Full gate
 
@@ -54,9 +52,9 @@ On Linux/WSL2, after `./scripts/dev setup`:
 ./scripts/dev exec npm test
 ```
 
-The gate checks selected-artifact freshness and static validity before behavioral tests. One `build.js --check` stage does both: it compiles a candidate, compares it with the selected artifact, and validates that artifact. `npm run validate:build` remains available on its own for validation without a compile. It validates existing dependencies and does not install them. After all test processes finish, it removes the repository `.venv`; run setup before each complete gate. Pass `--keep-venv` (`npm test -- --keep-venv`) to keep it for focused Python or runtime-floor runs afterwards; run setup again before the next complete gate. The gate checks only that `pypdfium2` imports, so this removal makes each gate run against the environment that setup just built from `requirements-dev.txt`, not one left over from an earlier pin or manual installs. Backup dependencies and reference bundles under `~/.harness-plugin/` remain. A parent shell may still display `(.venv)` until deactivated or closed.
+The gate checks selected-artifact freshness and static validity before behavioral tests. One `build.js --check` stage does both: it compiles a candidate, compares it with the selected artifact, and validates that artifact. `npm run validate:build` remains available on its own for validation without a compile. It validates existing dependencies and does not install them. After all test processes finish, it removes the repository `.venv`; run setup before each complete gate. Pass `--keep-venv` (`npm test -- --keep-venv`) to keep it for focused Python or runtime-floor runs afterwards; run setup again before the next complete gate. The gate checks only that `pypdfium2` imports, so this removal makes each gate run against the environment that setup just built from `requirements-dev.txt`, not one left over from an earlier pin or manual installs. Parser dependencies and reference bundles under `~/.harness-plugin/` remain. A parent shell may still display `(.venv)` until deactivated or closed.
 
-Use `--skip-gif` for a partial gate that omits GIF tests and both converter preflights, as the hosted `verify` and release gates do; pull requests also run the complete gate in the repository image through the `gif` job described in [build.md](build.md). Report that exclusion. Linux platform skips do not establish native macOS frame-extraction coverage, and the hosted subset is not the complete local gate.
+Use `--skip-gif` for a partial gate that omits GIF tests and both converter preflights, as the hosted `verify` and release gates do; pull requests also run the complete gate in the repository image through the `gif` job described in [build.md](build.md). Report that exclusion. The hosted subset is not the complete local gate.
 
 Pass runner options after npm's `--` separator. The existing runner accepts one `--target development|distribution`, optionally `--skip-gif` and `--keep-venv`, or `--help` alone. The default includes GIF tests. Setup must precede each gate invocation below; help does no work and does not remove `.venv`:
 
@@ -71,12 +69,6 @@ npm test -- --target distribution --help
 
 Distribution tests still require target-specific setup and freshness. npm forwards the options to the existing parser; it does not add arbitrary Node test flags or new filtering options. Use the focused commands below for individual suites.
 
-In a Codex sandbox, the three native HEIC tests can fail with `heic_encode_failed` and `nilError` because real Core Image encoding needs host access. If that signature occurs, rerun the focused command with authorized host access and report both results separately:
-
-```sh
-node --test --test-name-pattern='native .*HEIC10' tests/extract-video-frames/lifecycle.test.js
-```
-
 The case-colliding source test in `tests/distribution/build.test.js` needs case-sensitive temporary storage and is skipped elsewhere, including default macOS APFS. To cover it locally, point `TMPDIR` at a case-sensitive volume.
 
 ## Focused checks
@@ -85,11 +77,8 @@ Build the candidate first, then use the relevant subset while editing:
 
 ```sh
 node --test tests/inventory/*.test.js
-node --test tests/back-up-directories/*.test.js
 node --test tests/create-discord-emoji-gif/*.test.js
-node --test tests/extract-video-frames/*.test.js
 node --test tests/harness-advisor/*.test.js
-node --test tests/wake-desktop/*.test.js
 node --test tests/random-sampler/*.test.js
 node --test tests/shared-node/*.test.js
 node --test tests/demonstrate-workflow/*.test.js
@@ -102,7 +91,7 @@ node --test tests/dev/*.test.js
 node --test tests/write-asd-ste100/*.test.js
 ```
 
-Backup, ASD-STE100, and Python checks require setup dependencies. Media checks also need their host tools. Use the container wrapper on Linux, with `sh -c` when wildcard expansion must happen inside the container.
+ASD-STE100 and Python checks require setup dependencies. Media checks also need their host tools. Use the container wrapper on Linux, with `sh -c` when wildcard expansion must happen inside the container.
 
 Inventory and documentation-link checks resolve public `dist/harness/...` links against the selected artifact while preserving the literal public destinations. They therefore cover source/candidate-only skills and headings without weakening path-escape, fragment, resource-classification, or published-shape checks. Installation tests copy the selected artifact without dependency/cache overlays and retain the ESM-parent, spaces/non-ASCII, CLI-help, and runtime smoke cases.
 
@@ -128,14 +117,11 @@ The default build/setup/test sequence must leave all tracked files, including `d
 
 ```sh
 node tests/distribution/runtime-floor.js            # random-sampler, harness-advisor
-node tests/distribution/runtime-floor.js --backup   # back-up-directories, including the lockfile install
-node tests/distribution/runtime-floor.js --wake     # wake-desktop target management and validation
 node tests/distribution/runtime-floor.js --gif      # both GIF converters: help, usage error, missing-tool preflight
-node tests/distribution/runtime-floor.js --frames   # extract-video-frames: help, usage errors, platform preflight
 node tests/distribution/runtime-floor.js --ste-comments  # write-asd-ste100 comment helper, including the lockfile install
 ```
 
-Each mode uses a temporary home, and an isolated `PATH` where tool presence would otherwise vary by machine. Each mode asserts the unified JSON envelopes. The GIF and frame modes do not convert media. The `--ste-comments` mode needs no ASD reference bundle; it qualifies only JavaScript-family comment extraction. A local run on a newer Node.js checks only the script. The PR `floors` job builds the candidate on the `.nvmrc` runtime, switches to exactly 24.0.0, and runs every mode.
+Each mode uses a temporary home, and an isolated `PATH` where tool presence would otherwise vary by machine. Each mode asserts the unified JSON envelopes. The GIF mode does not convert media. The `--ste-comments` mode needs no ASD reference bundle; it qualifies only JavaScript-family comment extraction. A local run on a newer Node.js checks only the script. The PR `floors` job builds the candidate on the `.nvmrc` runtime, switches to exactly 24.0.0, and runs every mode.
 
 ## Interpret results
 
