@@ -341,15 +341,21 @@ test('workflow limits credentials and validates each versioned distribution befo
     assert.doesNotMatch(node[0].raw, /node-version:/);
   }
   assert.equal((workflow.match(/python-version: '3\.12'/g) || []).length, 2);
-  const reset = workflow.indexOf('git reset --hard origin/main');
-  const bump = workflow.indexOf('HARNESS_RELEASE_WRITE=1 node scripts/bump-version.js', reset);
-  const build = workflow.indexOf('HARNESS_RELEASE_WRITE=1 npm run build:dist', bump);
-  const setup = workflow.indexOf('node scripts/setup-tests.js --target distribution', build);
-  const gate = workflow.indexOf('node scripts/run-tests.js --target distribution --skip-gif', setup);
-  const freshness = workflow.indexOf('npm run build:dist:check', gate);
-  const stage = workflow.indexOf('git add -A -- src/harness/package.json dist/', freshness);
-  const indexed = workflow.indexOf('node scripts/check-release.js', stage);
-  const commit = workflow.indexOf('git commit -F', indexed);
+  const publish = workflowSteps(workflow, 'bump').at(-1);
+  assert.equal(publish.name, 'Publish one validated versioned distribution');
+  assert.equal(publish.run, 'node scripts/publish-release.js');
+  assert.match(publish.raw, /DISPATCH_LEVEL: \$\{\{ inputs.level \}\}/);
+  // The release transaction lives in the publication script.
+  const script = fs.readFileSync(path.join(repoRoot, 'scripts/publish-release.js'), 'utf8');
+  const reset = script.indexOf("['reset', '--hard', 'origin/main']");
+  const bump = script.indexOf("'scripts/bump-version.js', `--bump-${level}`, '--json'", reset);
+  const build = script.indexOf("['run', 'build:dist'], { environment: writerEnv }", bump);
+  const setup = script.indexOf("['scripts/setup-tests.js', '--target', 'distribution']", build);
+  const gate = script.indexOf("['scripts/run-tests.js', '--target', 'distribution', '--skip-gif']", setup);
+  const freshness = script.indexOf("['run', 'build:dist:check']", gate);
+  const stage = script.indexOf("['add', '-A', '--', 'src/harness/package.json', 'dist/']", freshness);
+  const indexed = script.indexOf("'scripts/check-release.js'", stage);
+  const commit = script.indexOf("['commit', '-F', messageFile]", indexed);
   assert.ok(reset >= 0 && reset < bump && bump < build && build < setup && setup < gate && gate < freshness && freshness < stage && stage < indexed && indexed < commit);
   assert.match(workflow, /queue: max/);
   assert.ok(!workflow.includes('startsWith(github.event.head_commit.message'));

@@ -113,7 +113,8 @@ test('every gate job caches npm, pip and the ASD-STE100 bundle before setup init
   const jobs = [
     [workflowSteps(verification, 'verify'), step => step.run === 'npm run test:setup'],
     [workflowSteps(publication, 'test'), step => step.run === 'npm run test:setup'],
-    [workflowSteps(publication, 'bump'), step => step.run?.includes('node scripts/setup-tests.js --target distribution')],
+    // The publication script runs setup-tests.js --target distribution.
+    [workflowSteps(publication, 'bump'), step => step.run === 'node scripts/publish-release.js'],
   ];
   for (const [job, isSetup] of jobs)
   {

@@ -39,6 +39,7 @@ const RELEVANT_DIRECTORY_PREFIXES = Object.freeze([
 const RELEVANT_EXACT_PATHS = Object.freeze([
   'scripts/build.js',
   'scripts/artifact-paths.js',
+  'scripts/publish-release.js',
   'tsconfig.json',
   'package.json',
   'package-lock.json',

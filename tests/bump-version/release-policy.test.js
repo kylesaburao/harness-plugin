@@ -229,6 +229,7 @@ test('the exact conservative release-input set is eligible', () =>
     '.agents/plugins/marketplace.json',
     'scripts/build.js',
     'scripts/artifact-paths.js',
+    'scripts/publish-release.js',
     'tsconfig.json',
     'package.json',
     'package-lock.json',

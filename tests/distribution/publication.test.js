@@ -49,12 +49,16 @@ test('failed post-push inspection reports uncertainty and the same run later res
 
 test('a raced workflow change stops before another install or gate', t =>
 {
-  const f = fixture(t, {races:1,workflowRace:true});
-  const result = f.run();
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /executed workflow/);
-  assert.equal(f.events().filter(e => e.stage === 'install').length, 1);
-  assert.equal(findReleaseByRunId(f.remote, 'main', '42'), null);
+  // The publication script is part of the executed workflow definition.
+  for (const race of ['workflowRace', 'scriptRace'])
+  {
+    const f = fixture(t, {races:1,[race]:true});
+    const result = f.run();
+    assert.notEqual(result.status, 0, race);
+    assert.match(result.stderr, /executed workflow/, race);
+    assert.equal(f.events().filter(e => e.stage === 'install').length, 1, race);
+    assert.equal(findReleaseByRunId(f.remote, 'main', '42'), null, race);
+  }
 });
 
 test('a post-staging artifact edit cannot publish', t =>

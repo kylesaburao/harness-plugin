@@ -16,6 +16,7 @@ src/harness/
 .agents/plugins/
 scripts/build.js
 scripts/artifact-paths.js
+scripts/publish-release.js
 tsconfig.json
 package.json
 package-lock.json
@@ -60,13 +61,13 @@ The subject remains `chore: bump version to X.Y.Z`. New publisher commits record
 
 Release anchors and run identities are discovered on `main`'s first-parent history. A merge that moves a release onto second-parent ancestry fails the unreleased source-range policy and needs explicit operator recovery; the publisher does not guess another baseline. Removing published history also removes the evidence needed for run-ID deduplication.
 
-Before committing, the workflow verifies source/package/manifest consistency, the selected increment, the complete working checkout, and the raw bytes and modes in the active Git index. It stages only the canonical package and all of `dist/`, sets both required timestamps for the new commit, validates that commit, and pushes without force, merge, or rebase.
+The workflow's write-enabled job runs the release transaction in [`scripts/publish-release.js`](../../scripts/publish-release.js). Before committing, the publisher verifies source/package/manifest consistency, the selected increment, the complete working checkout, and the raw bytes and modes in the active Git index. It stages only the canonical package and all of `dist/`, sets both required timestamps for the new commit, validates that commit, and pushes without force, merge, or rebase.
 
-The publisher retries at most three genuine push races. Every newer source snapshot gets a new version decision and a complete build/setup/test/validation cycle. Remote inspection confirms publication after a successful push or an uncertain transport result. A rerun that finds the same run's valid release reports `already published` without creating another version. Permission or policy rejection with an unchanged remote, stale executed workflow content, an unreadable remote outcome, or exhausted races fails explicitly.
+The publisher retries at most three genuine push races. Every newer source snapshot gets a new version decision and a complete build/setup/test/validation cycle. Remote inspection confirms publication after a successful push or an uncertain transport result. A rerun that finds the same run's valid release reports `already published` without creating another version. Permission or policy rejection with an unchanged remote, stale executed workflow content (the workflow file or the publication script differing from the selected source), an unreadable remote outcome, or exhausted races fails explicitly.
 
 Automatic runs with no pending eligible work report `no eligible changes`. Concurrency uses one `version-bump` group, keeps running work, and queues ordinary bursts; the finite queue is not a durable release-request log, so range catch-up remains authoritative.
 
-The [version writer](../../scripts/bump-version.js), [release policy](../../scripts/release-policy.js), and [workflow](../../.github/workflows/bump-version.yml) implement this policy.
+The [version writer](../../scripts/bump-version.js), [release policy](../../scripts/release-policy.js), [publication script](../../scripts/publish-release.js), and [workflow](../../.github/workflows/bump-version.yml) implement this policy.
 
 ## Hook installation and merge synchronization
 

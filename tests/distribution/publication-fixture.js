@@ -1,7 +1,8 @@
 'use strict';
 
-// Execute the actual workflow shell against disposable clones and a bare remote.
-// Runtime gates are controlled probes here; assembly and all Git/policy checks are real.
+// Execute the actual publication script and the test job's workflow shell against
+// disposable clones and a bare remote. Runtime gates are controlled probes here;
+// assembly and all Git/policy checks are real.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -95,9 +96,8 @@ function fixture(t, control = {}, { eligible = true } = {})
   git(actor, 'push', '-q', 'origin', 'main');
   git(root, 'pull', '-q', '--ff-only');
   const workflow = fs.readFileSync(path.join(root, '.github/workflows/bump-version.yml'), 'utf8');
-  const shell = workflowSteps(workflow, 'bump').find(step => step.name === 'Publish one validated versioned distribution').run;
-  const shellFile = path.join(home, 'publish.sh');
-  fs.writeFileSync(shellFile, shell);
+  const publishStep = workflowSteps(workflow, 'bump').find(step => step.name === 'Publish one validated versioned distribution');
+  assert.equal(publishStep.run, 'node scripts/publish-release.js');
   const bin = path.join(home, 'bin');
   fs.mkdirSync(bin);
   const controlFile = path.join(home, 'control.json');
@@ -223,6 +223,11 @@ if (tool === 'git')
         fs.appendFileSync(path.join(actor,'.github/workflows/bump-version.yml'),'\\n# changed workflow\\n');
         git(actor,['add','.github/workflows/bump-version.yml']);
       }
+      if (ctl.scriptRace)
+      {
+        fs.appendFileSync(path.join(actor,'scripts/publish-release.js'),'\\n// changed publication script\\n');
+        git(actor,['add','scripts/publish-release.js']);
+      }
       git(actor,['commit','-qm','raced source change']);
       git(actor,['push','-q','origin','main']);
     }
@@ -303,7 +308,11 @@ if (tool === 'git')
     },
     run(overrides = {})
     {
-      return spawnSync('bash', [shellFile], {cwd: root, env: {...environment,...overrides}, encoding:'utf8', maxBuffer:16*1024*1024});
+      // The publisher must set the fixed release dates itself, as on a runner.
+      const { GIT_AUTHOR_DATE, GIT_COMMITTER_DATE, ...publisher } = environment;
+      return spawnSync(path.join(bin, 'node'), ['scripts/publish-release.js'], {
+        cwd: root, env: {...publisher,...overrides}, encoding:'utf8', maxBuffer:16*1024*1024,
+      });
     },
     events()
     {
