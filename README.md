@@ -3,6 +3,38 @@
 One repository of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills), packaged as an installable plugin for both Claude Code and Codex. Skills live once, under `plugins/harness/skills/`.
 The two `.claude-plugin/` and `.codex-plugin/` directories are thin packaging layers around that same content. See [AGENTS.md](AGENTS.md) for the architecture rules.
 
+## Plugin contents
+
+### Skills
+
+| Skill | Purpose | Setup |
+| --- | --- | --- |
+| `agentic-loop` | Run a bounded build/adversarial-review/revise loop for multi-step implementation work. | |
+| `back-up-directories` | Archive a directory to a dated ZIP and replicate it to configured destinations. | `npm install --omit=dev --prefix plugins/harness/skills/back-up-directories` (needs `archiver`); see its `INSTALL.md` |
+| `brief-source` | Read a long source and separate what it claims from what it actually establishes. | |
+| `create-discord-emoji-gif` | Convert a clip into a looping, under-256KB, 128x128 Discord emoji GIF. | Node ≥22, `ffmpeg` built with `libvmaf`, `ffprobe`, and `gifski` or `gifsicle` |
+| `diagnose-environment` | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. | |
+| `encode-for-llms` | Compress prose, technical material, or code into a compact LLM-decodable notation. | |
+| `handoff` | Write a durable brief for a fresh session to resume in-flight work. | |
+| `hello-world` | Print the exact text "Hello world" as an installation smoke test. | |
+| `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. | |
+| `natural-style` | Rewrite supplied text into natural, conversational technical prose. | |
+| `record-decision` | Capture a consequential technical decision, its constraints, and its reversibility. | |
+| `research-precedent` | Research whether a proposed approach has precedent, internally or in the wider industry. | |
+| `triage-dependency` | Decide whether to add, keep, replace, or remove a third-party dependency. | |
+| `wake-desktop` | Send a Wake-on-LAN packet to a LAN host, then poll until it answers. | |
+| `write-asd-ste100` | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. | `python3`, plus a locally generated reference bundle; see its `INSTALL.md` |
+
+### Output styles
+
+Claude Code only — `.codex-plugin/plugin.json` pins its component list to `./skills/` and ignores these.
+
+- `Casual` ([plugins/harness/output-styles/casual.md](plugins/harness/output-styles/casual.md)) — plain street-level speech instead of technical or academic prose, kept short and direct.
+- `Encoded` ([plugins/harness/output-styles/encoded.md](plugins/harness/output-styles/encoded.md)) — every user-facing message compressed to one-line semantic algebra for LLM consumption.
+- `Natural` ([plugins/harness/output-styles/natural.md](plugins/harness/output-styles/natural.md)) — default Claude Code behavior with natural technical prose, no semicolons, no em-dashes.
+
+The plugin ships skills and output styles only: no commands, no hooks, no plugin-level agents.
+
 ## Install
 
 Run these commands in a terminal, outside Claude Code or Codex.

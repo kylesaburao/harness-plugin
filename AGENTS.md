@@ -34,9 +34,13 @@ Bash, Python, or another runtime only when a concrete platform API, maintained l
 existing artifact makes Node materially worse, and document that reason in the skill. Do
 not rewrite an existing executable only to make its runtime match this default.
 
+## Plugin contents catalog
+
+`README.md`'s "Plugin contents" section is the canonical, human-scannable catalog of what the plugin ships - skills and output styles, each with a one-line purpose. Adding, removing, or renaming a skill or output style requires updating that table in the same commit; `tests/inventory/readme-inventory.test.js` enforces it.
+
 ## Tests
 
-Tests live at the repository root, in `tests/<skill-name>/`, never inside the skill.
+Tests live at the repository root, in `tests/<skill-name>/`, never inside the skill. The one exception is a whole-tree invariant test that isn't scoped to a single skill, such as `tests/inventory/`, which checks `README.md` against the plugin tree itself.
 
 Tests, fixtures, benchmarks, and development-only helpers remain at repository root and never ship. Installing a plugin copies the whole plugin directory into the harness's plugin cache, and neither Claude Code nor Codex supports excluding files from that copy. Anything under `plugins/harness/` is therefore shipped to every install. Tests reach their subject by relative path, and they run from a clone, where both trees exist.
 
@@ -48,6 +52,7 @@ node --test tests/wake-desktop/*.test.js
 node --test tests/create-discord-emoji-gif/*.test.js
 node --test tests/bump-version/*.test.js
 node --test tests/git-hooks/*.test.js
+node --test tests/inventory/*.test.js
 python3 -m unittest discover -s tests/write-asd-ste100 -v
 ```
 
