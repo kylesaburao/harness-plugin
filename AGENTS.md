@@ -74,19 +74,29 @@ Nothing prunes stale entries. Changing `source-config.json` orphans the previous
 
 The pre-existing in-tree location `plugins/harness/skills/write-asd-ste100/references/generated/` is where the bundle lived before it moved to the user-level root. It is now valid only as an `--import-from` source, and an imported bundle is validated against the current source configuration before it is copied (`initialize_references.py`, `validate_import_source`).
 
-## Plugin contents catalog
+## Documentation architecture
 
-`README.md`'s "Plugin contents" section is the canonical, human-scannable catalog of what the plugin ships - skills and output styles, each with a one-line purpose. Adding, removing, or renaming a skill or output style requires updating that table in the same commit; `tests/inventory/readme-inventory.test.js` enforces it.
+`README.md` is the project landing page: introduction, installation, a short discovery-oriented inventory, and navigation. Keep per-skill operating manuals out of it.
+
+`docs/README.md` routes readers by intent. Substantial human usage and configuration guides belong under `docs/`, and contributor documentation belongs under `docs/development/` unless it has a specific repository-entry-point role. Create a guide only for a coherent topic that needs one.
+
+`AGENTS.md` owns repository architecture, development invariants, and instructions for agents modifying this repository. Installed `plugins/harness/skills/*/SKILL.md` files own behavioral contracts and agent execution instructions. Existing skill-local `INSTALL.md` files own their setup instructions.
+
+Summarize at each entry point and link downward to authoritative detail. Do not duplicate complete skill contracts in human guides or keep full copies at old and new paths.
+
+Keep each shipped skill and output style discoverable through a README link to its canonical file, with a one-line purpose. Update the catalog when adding, removing, or renaming a component. `tests/inventory/readme-inventory.test.js` compares those linked files and names with the plugin tree without depending on headings, table columns, or list layout.
+
+When documentation paths or architecture change, search incoming references throughout the repository, update links and validation tests in the same change, and resolve relative links from their containing files. Preserve links from any files outside the authorized edit scope. Documentation tests protect inventory agreement and link integrity, not incidental wording or presentation.
 
 ## Dependency inventory
 
-[DEPENDENCIES.md](DEPENDENCIES.md) is the authoritative inventory for development and plugin-use dependencies. Read it before dependency setup or changes. When work adds, removes, upgrades, or otherwise changes a runtime, package, system tool, platform requirement, or required initialization artifact, update it in the same change. Keep the affected manifests, lockfiles, preflights, Dockerfile, and skill-local setup instructions consistent with it.
+The [dependency inventory](docs/development/dependencies.md) is authoritative for development and plugin-use dependencies. Read it before dependency setup or changes. When work adds, removes, upgrades, or otherwise changes a runtime, package, system tool, platform requirement, or required initialization artifact, update it in the same change. Keep the affected manifests, lockfiles, preflights, Dockerfile, and skill-local setup instructions consistent with it.
 
 ## Development container
 
 On macOS hosts, run development commands and tests directly on macOS. On Linux hosts (including WSL2), run them through the development container using `./scripts/dev exec <command> [args...]`.
 
-When building, running, or changing the development container, read [CONTAINER.md](CONTAINER.md) for launcher commands, dependency volumes, failure remedies, and platform limits. Run the full container gate with `./scripts/dev exec node scripts/run-tests.js`. Keep Git operations on the host.
+When building, running, or changing the development container, read [container guide](docs/development/container.md) for launcher commands, dependency volumes, failure remedies, and platform limits. Run the full container gate with `./scripts/dev exec node scripts/run-tests.js`. Keep Git operations on the host.
 
 ## Tests
 
@@ -94,19 +104,9 @@ Tests live at the repository root, in `tests/<skill-name>/`, never inside the sk
 
 Tests, fixtures, benchmarks, and development-only helpers remain at repository root and never ship. Installing a plugin copies the whole plugin directory into the harness's plugin cache, and neither Claude Code nor Codex supports excluding files from that copy. Anything under `plugins/harness/` is therefore shipped to every install. Tests reach their subject by relative path, and they run from a clone, where both trees exist.
 
-Documentation-restatement tests are intentionally retained. Test stable public behavior at the lowest useful layer, plus a small consumer integration test. Remove runtime parity tests when the obsolete runtime is removed. Remove implementation-detail tests when retained observable tests cover the contract. Treat performance comparisons as execution evidence, not permanent timing tests, unless timing is already a public contract.
+Retain documentation tests that protect public contracts, and revise tests that merely freeze wording or layout when documentation is refactored. Test stable public behavior at the lowest useful layer, plus a small consumer integration test. Remove runtime parity tests when the obsolete runtime is removed. Remove implementation-detail tests when retained observable tests cover the contract. Treat performance comparisons as execution evidence, not permanent timing tests, unless timing is already a public contract.
 
-```sh
-node --test tests/back-up-directories/*.test.js
-node --test tests/create-discord-emoji-gif/*.test.js
-node --test tests/extract-video-frames/*.test.js
-node --test tests/bump-version/*.test.js
-node --test tests/git-hooks/*.test.js
-node --test tests/inventory/*.test.js
-python3 -m unittest discover -s tests/write-asd-ste100 -v
-```
-
-The backup tests need that skill's dependency installed first (`npm install --omit=dev --prefix plugins/harness/skills/back-up-directories`). The others need nothing.
+Read [testing](docs/development/testing.md) for setup, focused commands, the full gate, and result interpretation.
 
 The same reasoning applies to anything else that only exists to develop the code. If it never runs for someone who installed the plugin, it does not belong under `plugins/harness/`. Repo-root `scripts/` is where that development tooling lives, `bump-version.js` and `derive-bump-level.js` among it.
 
@@ -128,19 +128,6 @@ Every script a skill runs must let a calling agent find out whether it can work,
 
 The diagnostic shape matches `plugins/harness/skills/write-asd-ste100/scripts/ste_data.py`, which reports a code, the failed condition, and an initialization command.
 
-## Versioning
+## Versioning and commits
 
-`plugins/harness/.codex-plugin/plugin.json` and `plugins/harness/.claude-plugin/plugin.json` both carry a `version` field, and the two are always kept equal. `scripts/bump-version.js` is the only thing that changes them: `--bump-major`, `--bump-minor`, or `--bump-patch`, where bumping a higher-priority value resets the lower-priority ones to 0. Never edit either `version` field by hand, except to recover from a `VERSION_MISMATCH` the script reports.
-
-A push to `main` runs `.github/workflows/bump-version.yml`, which bumps the patch version automatically. `scripts/derive-bump-level.js` scans every commit since the last `chore: bump version to X.Y.Z` commit, not just the newest one, so a `[bump:minor]` or `[bump:major]` tag survives a batched push. The workflow's own bump commits are excluded from re-triggering itself, and its push step retries against freshly-fetched state so a race with another push to `main` doesn't lose a bump.
-
-The version tracks what ships, not what lands, so the bump is gated on paths. A run bumps only if some commit in that range touched `plugins/`, `.claude-plugin/`, or `.agents/plugins/` — the plugin tree itself and the two marketplace manifests. A push that only edits `tests/`, `scripts/`, `.github/`, `.githooks/`, or the root docs changes nothing observable to someone who installed the plugin, so it derives `none` and the workflow exits without committing.
-
-Paths decide *whether* to bump; subjects still decide *how much*. Once any commit in the range is relevant, the level comes from every subject in it, so a `[bump:minor]` tag is honored even sitting on a docs commit — the tag is a deliberate statement about release size and the path gate must not quietly downgrade it. Gating in the script rather than in the workflow's `on: push:` is what preserves the catch-up behavior above: a docs-only push still runs, still sees an earlier un-bumped `plugins/` commit in its range, and still bumps it, where a `paths:` filter would skip that run and strand the bump. `workflow_dispatch` is ungated — a human choosing a level is asking for it directly.
-
-## Commit timestamps
-
-Every commit in this repository, author and committer date alike, uses the fixed instant `1999-12-31T23:59:00-08:00`. Both dates must be set together: `git commit --date=` alone sets only the author date, and on `git commit --amend` even `GIT_AUTHOR_DATE` is silently ignored unless `--date=` is passed explicitly (amend preserves the original author date otherwise). Never use `git commit --date=` on its own for this.
-
-- CI: `.github/workflows/bump-version.yml` exports `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` before its `git commit`.
-- Local commits: `.githooks/post-commit` amends HEAD to the fixed date if it doesn't already match, then exits without amending once it does (this is what stops it recursing on its own re-invocation). It only fires if enabled once per clone: `git config core.hooksPath .githooks`. This does not survive a fresh clone, so re-run it after cloning.
+Before committing, releasing, or changing versioning tooling, read [versioning and commits](docs/development/versioning.md). Keep both manifest versions equal and use `scripts/bump-version.js` for changes, except manual recovery from its `VERSION_MISMATCH`. Set both author and committer dates to `1999-12-31T23:59:00-08:00`. The linked guide owns release mechanics and timestamp-hook setup.

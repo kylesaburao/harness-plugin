@@ -58,7 +58,6 @@ test('A02/A03: exact candidate extension and Codex manual-only metadata', () => 
 });
 
 test('A03/A04: the approved exception is scoped and distribution uses the canonical directory', () => {
-  assert.match(fs.readFileSync(path.join(repo, 'README.md'), 'utf8'), /\|\s*`demonstrate-workflow`/);
   assert.match(fs.readFileSync(path.join(repo, 'AGENTS.md'), 'utf8'), /Exception limited to `demonstrate-workflow`/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, '.codex-plugin/plugin.json'), 'utf8')).skills, './skills/');
 });

@@ -1,0 +1,32 @@
+# Versioning and commits
+
+[Development](README.md) / Versioning
+
+`plugins/harness/.codex-plugin/plugin.json` and `plugins/harness/.claude-plugin/plugin.json` both carry a `version` field, and the two are always kept equal. `scripts/bump-version.js` is the only thing that changes them: `--bump-major`, `--bump-minor`, or `--bump-patch`, where bumping a higher-priority value resets the lower-priority ones to 0. Never edit either `version` field by hand, except to recover from a `VERSION_MISMATCH` the script reports.
+
+A push to `main` runs `.github/workflows/bump-version.yml`. When the path gate below finds a shipped change, the default bump is patch. `scripts/derive-bump-level.js` scans every commit since the last `chore: bump version to X.Y.Z` commit on first-parent ancestry, including merged commits in that range, so a `[bump:minor]` or `[bump:major]` subject tag survives a batched push. The workflow's own bump commits do not trigger another bump. Its push step retries against freshly fetched state to handle concurrent pushes.
+
+The version tracks what ships, not what lands, so the bump is gated on paths. A run bumps only if some commit in that range touched `plugins/`, `.claude-plugin/`, or `.agents/plugins/`, the plugin tree itself and the two marketplace manifests. A push that only edits `tests/`, `scripts/`, `.github/`, `.githooks/`, or documentation changes nothing observable to someone who installed the plugin, so it derives `none` and the workflow exits without committing.
+
+Paths decide whether to bump. Subjects decide the level, with major taking priority over minor and patch. Once any commit in the range is relevant, tags in every subject count, including tags on documentation commits.
+
+The path gate runs inside the derivation script. A documentation-only push can therefore catch an earlier shipped change that has not yet received a bump. A workflow path filter would miss that case. Manual `workflow_dispatch` bypasses the path gate and uses the requested level.
+
+## Manual bump
+
+Run one of these from the repository root when a manual bump is needed:
+
+```sh
+node scripts/bump-version.js --bump-patch
+node scripts/bump-version.js --bump-minor
+node scripts/bump-version.js --bump-major
+```
+
+The [bump script](../../scripts/bump-version.js), [level derivation](../../scripts/derive-bump-level.js), and [workflow](../../.github/workflows/bump-version.yml) implement this policy.
+
+## Commit timestamps
+
+Every commit in this repository, author and committer date alike, uses the fixed instant `1999-12-31T23:59:00-08:00`. Both dates must be set together: `git commit --date=` alone sets only the author date, and on `git commit --amend` even `GIT_AUTHOR_DATE` is silently ignored unless `--date=` is passed explicitly (amend preserves the original author date otherwise). Never use `git commit --date=` on its own for this.
+
+- CI: `.github/workflows/bump-version.yml` exports `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` before its `git commit`.
+- Local commits: `.githooks/post-commit` amends HEAD to the fixed date if it doesn't already match, then exits without amending once it does (this is what stops it recursing on its own re-invocation). It only fires if enabled once per clone: `git config core.hooksPath .githooks`. This does not survive a fresh clone, so re-run it after cloning.

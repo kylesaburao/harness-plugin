@@ -1,6 +1,6 @@
 # Suggested Plugins
 
-## Table
+[Documentation](README.md) / Related projects
 
 | Plugin | Link | Skills |
 |--------|------|--------|

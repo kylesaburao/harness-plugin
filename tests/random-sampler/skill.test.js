@@ -20,7 +20,7 @@ test('entropy boundary stays in built-in crypto with no fallback or randomized s
   assert.match(source,/crypto\.randomInt\(/);
   assert.doesNotMatch(source,/Math\.random|\.sort\s*\(|process\.env|node:(?:fs|https?|net)|\beval\s*\(/);
   assert.match(source,/22\.0\.0/);
-  const dependencies = fs.readFileSync(path.join(root,'DEPENDENCIES.md'),'utf8').split('\n').find(line => line.startsWith('| `random-sampler`'));
+  const dependencies = fs.readFileSync(path.join(root,'docs/development/dependencies.md'),'utf8').split('\n').find(line => line.startsWith('| `random-sampler`'));
   assert.match(dependencies,/22\.0\.0/);
   assert.match(dependencies,/crypto/);
 });

@@ -30,7 +30,7 @@ merged = ste_data.merge_layers(dictionary, software, ste_data.LAYERS)
 
 report = {'python': platform.python_version(), 'baseline': str(baseline_root), 'warmups': 1, 'pairs': 3, 'cases': []}
 for name, text, dictionaries in [(f'synthetic-{n}', 'Foobarqux.\n' * n, ({}, {}, {}, {})) for n in (2000, 8000, 32000)] + [
-    (name, (repo / name).read_text(), (merged.by_headword, merged.approved_forms, merged.unapproved, {})) for name in ('README.md', 'AGENTS.md', 'CONTAINER.md')
+    (name, (repo / name).read_text(), (merged.by_headword, merged.approved_forms, merged.unapproved, {})) for name in ('README.md', 'AGENTS.md', 'docs/development/container.md')
 ]:
     samples = {key: [] for key in modules}
     cli_samples = {key: [] for key in modules}
