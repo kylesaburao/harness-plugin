@@ -946,3 +946,22 @@ test('CLI creates a real ZIP, reports completion, and releases its lock', async 
   assert.equal(await fsp.readFile(path.join(extraction, 'hello.txt'), 'utf8'), 'hello from the backup');
   await assert.rejects(fsp.access(lockPath), { code: 'ENOENT' });
 });
+
+test('JSON backup completion remains parseable with interactive confirmation', async t => {
+  const root = await temporaryRoot(t);
+  const { source, output, target } = await makeDirectories(root, ['source', 'output', 'target']);
+  await fsp.writeFile(path.join(source, 'hello.txt'), 'hello');
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({ sourceDirectory: source, outputDirectory: output, targetDirectories: [target] }));
+  const denied = await runCli(t, ['--json', config], { input: 'no\n' });
+  assert.equal(JSON.parse(denied.stdout).result.cancelled, true);
+  assert.deepEqual(await fsp.readdir(target), []);
+  const done = await runCli(t, ['--json', config], { input: 'yes\n', environment: { BACKUP_LOCK_PATH: path.join(root, 'lock') } });
+  assert.equal(done.exitCode, 0, done.stderr);
+  const result = JSON.parse(done.stdout).result;
+  assert.equal(result.archive, null);
+  assert.equal(result.stagingRemoved, true);
+  assert.equal(result.copies.length, 1);
+  assert.equal(result.bytes, (await fsp.stat(result.copies[0])).size);
+  assert.match(done.stderr, /Proceed\? \[y\/N\]/);
+});

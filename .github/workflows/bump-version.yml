@@ -34,6 +34,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up test dependencies
+        run: node scripts/setup-tests.js
+
       - name: Run hosted test gate
         run: node scripts/run-tests.js --skip-gif
 
@@ -110,6 +113,7 @@ jobs:
               exit 0
             fi
 
+            node scripts/setup-tests.js
             node scripts/run-tests.js --skip-gif
             node scripts/bump-version.js "--bump-${level}" --json | tee /tmp/bump.json
             next="$(jq -r .next /tmp/bump.json)"

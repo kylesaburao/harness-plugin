@@ -67,3 +67,7 @@ Never edit either `plugin.json`'s `version` field directly.
 ## License
 
 MIT: see [LICENSE](LICENSE).
+
+## Development tests
+
+Run `node scripts/setup-tests.js` once to install test dependencies and initialize references. Run `node scripts/run-tests.js` for the complete local gate. The test command validates the existing environment and does not install dependencies. Use `--skip-gif` to omit GIF tests and converter preflights.

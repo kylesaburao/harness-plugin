@@ -515,7 +515,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
         self.addCleanup(restore_home)
         scripts = root / "scripts"
         scripts.mkdir()
-        for name in (*self.public_scripts, "ste_data.py"):
+        for name in (*self.public_scripts, "ste_data.py", "ste_cli.py"):
             shutil.copy2(SCRIPTS / name, scripts / name)
         config, generated, _ = make_bundle(root)
         shared_generated = generated_bundle_path(config, home)
@@ -545,6 +545,18 @@ class RuntimeEntryPointTests(unittest.TestCase):
             check=False,
             env=env,
         )
+
+    def test_checker_and_lookup_cli_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scripts, document = self.make_runtime(Path(directory), valid=True)
+            for name in ("ste_check.py", "ste_lookup.py"):
+                invalid = subprocess.run([sys.executable, str(scripts / name), "--json", "--bogus"], capture_output=True, text=True)
+                self.assertEqual(invalid.returncode, 2)
+                error = json.loads(invalid.stderr)["error"]
+                self.assertTrue(all(error[key] for key in ("code", "condition", "remedy")))
+                ready = subprocess.run([sys.executable, str(scripts / name), "--preflight", "--json"], input="unused", capture_output=True, text=True)
+                self.assertEqual(ready.returncode, 0, ready.stderr)
+                self.assertEqual(json.loads(ready.stdout), {"ready": True})
 
     def test_every_entry_point_validates_automatically(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -742,6 +754,8 @@ class RuntimeEntryPointTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertEqual(json.loads(result.stderr), {"error": {
             "code": "input_read_failed",
+            "condition": "one or more inputs could not be read",
+            "remedy": "run python3 ste_check.py --help and correct the reported input",
             "inputs": [{"path": str(missing), "condition": "file does not exist"}],
         }})
 

@@ -67,3 +67,5 @@ The checker is an aid. It cannot verify meaning, part of speech, every passive c
 Use `STE-compliant` only after lexical, mechanical, and semantic review confirms the text against Issue 9. Otherwise, use `STE-aligned` or `checked against the bundled Issue 9 data`.
 
 The `pypdfium2` package is only for local reference initialization. Runtime lookup and checking use Python 3 and the standard library.
+
+`ste_check.py --preflight --json` and `ste_lookup.py --preflight --json` validate references and terminology without reading prose or looking up a word. Use these only when the user requests readiness alone. Normal commands perform the same reference checks.

@@ -58,21 +58,18 @@ test('Node test groups are discovered deterministically and ignore non-test file
   assert.deepEqual(discoverNodeTestGroups(root, true), ['alpha', 'zebra']);
 });
 
-test('command plan has stable setup, preflight, Node group, and Python suite order', () => {
+test('setup is separate from the validation and test command plan', () => {
   const root = makeTestTree({
     wake: ['wake.test.js'],
     'create-discord-emoji-gif': ['gif.test.js'],
     backup: ['backup.test.js'],
   });
-  const { buildCommandPlan } = loadRunner();
-  assert.deepEqual(buildCommandPlan(root, false).find(stage => stage.label === 'initialize ASD-STE100 references').args, ['plugins/harness/skills/write-asd-ste100/scripts/initialize_references.py']);
+  const { buildCommandPlan, buildSetupPlan } = loadRunner();
+  assert.deepEqual(buildSetupPlan(root).find(stage => stage.label === 'initialize ASD-STE100 references').args, ['plugins/harness/skills/write-asd-ste100/scripts/initialize_references.py']);
   const labels = buildCommandPlan(root, false).map(({ label }) => label);
 
   assert.deepEqual(labels, [
-    'install backup dependencies',
-    'create or reuse Python virtual environment',
-    'install pypdfium2',
-    'initialize ASD-STE100 references',
+    'validate test prerequisites',
     'validate ASD-STE100 references',
     'preflight GIF converter (gifski)',
     'preflight GIF converter (gifsicle)',
@@ -117,7 +114,19 @@ test('workflow limits credentials and tests each exact revision before bumping i
   assert.equal((workflow.match(/python-version: '3\.12'/g) || []).length, 2);
   const reset = workflow.indexOf('git reset --hard origin/main');
   const derive = workflow.indexOf('level="$(git log', reset);
+  const setup = workflow.indexOf('node scripts/setup-tests.js', derive);
   const testGate = workflow.indexOf('node scripts/run-tests.js --skip-gif', derive);
   const bump = workflow.indexOf('node scripts/bump-version.js', testGate);
-  assert.ok(reset !== -1 && reset < derive && derive < testGate && testGate < bump);
+  assert.ok(reset !== -1 && reset < derive && derive < setup && setup < testGate && testGate < bump);
+});
+
+
+test('missing test prerequisites give a setup remedy without installing', () => {
+  const root = makeTestTree({ empty: [] });
+  try {
+    const { checkPrerequisites } = require('../../scripts/setup-tests');
+    assert.throws(() => checkPrerequisites(root), /Python environment is missing/);
+    const { buildCommandPlan } = loadRunner();
+    assert.equal(buildCommandPlan(root, false).some(item => item.command === 'npm' || item.args.includes('pip') || item.args.some(arg => arg.includes('initialize_references'))), false);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

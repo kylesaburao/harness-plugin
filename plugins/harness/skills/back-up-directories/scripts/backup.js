@@ -107,11 +107,11 @@ let jsonOutput = false;
 // The caller knows which failure this is, so it names the code and the remedy.
 // Deriving them from exitCode reported archive, copy, and interruption failures
 // as usage_error.
-function fail(message, exitCode, code = 'run_failed', remedy = '') {
+function fail(message, exitCode, code = 'run_failed', remedy = 'correct the reported failure and run the same command again') {
   if (jsonOutput) {
     console.error(JSON.stringify({ error: { code, condition: message, remedy } }));
   } else {
-    console.error(`Error: ${message}`);
+    console.error(`ERROR [${code}]: ${message}\nRemedy: ${remedy}`);
   }
   process.exitCode = exitCode;
 }
@@ -133,7 +133,7 @@ function usage() {
 
 Options:
   --preflight   Check the environment and configuration, back nothing up, exit
-  --json        Report readiness and startup errors as JSON
+  --json        Report readiness, completion, and errors as JSON (preview and prompt use stderr)
   -h, --help    Print this message
 
 Exit status: 0 success, 2 or 3 nothing started, 4 or 5 the run failed, 130 interrupted.
@@ -465,38 +465,42 @@ function shortTempPath(directory, kind = 'work') {
   return path.join(directory, `.backup-${kind}-${crypto.randomUUID()}.tmp`);
 }
 
+function humanLog(...values) {
+  (jsonOutput ? console.error : console.log)(...values);
+}
+
 function printPreview(plan) {
-  console.log('Backup preview');
-  console.log('==============');
-  console.log('');
-  console.log('Source');
-  console.log(`${INDENT_PREFIX}${plan.source.canonicalPath}`);
-  console.log('');
-  console.log('Archive');
-  console.log(`${INDENT_PREFIX}Filename    ${plan.filename}`);
+  humanLog('Backup preview');
+  humanLog('==============');
+  humanLog('');
+  humanLog('Source');
+  humanLog(`${INDENT_PREFIX}${plan.source.canonicalPath}`);
+  humanLog('');
+  humanLog('Archive');
+  humanLog(`${INDENT_PREFIX}Filename    ${plan.filename}`);
   if (plan.retainArchive) {
-    console.log(`${INDENT_PREFIX}Destination ${plan.archivePath}`);
-    console.log(`${INDENT_PREFIX}Action      ${plan.archiveExists ? 'Overwrite existing file' : 'Create new file'}`);
+    humanLog(`${INDENT_PREFIX}Destination ${plan.archivePath}`);
+    humanLog(`${INDENT_PREFIX}Action      ${plan.archiveExists ? 'Overwrite existing file' : 'Create new file'}`);
   } else {
-    console.log(`${INDENT_PREFIX}Staging     ${plan.output.canonicalPath}`);
-    console.log(`${INDENT_PREFIX}After run   Remove staging archive after replication`);
+    humanLog(`${INDENT_PREFIX}Staging     ${plan.output.canonicalPath}`);
+    humanLog(`${INDENT_PREFIX}After run   Remove staging archive after replication`);
   }
-  console.log('');
+  humanLog('');
   const targetsHeading = `Targets (${plan.previewTargets.length})`;
-  console.log(targetsHeading);
-  console.log('-'.repeat(targetsHeading.length));
+  humanLog(targetsHeading);
+  humanLog('-'.repeat(targetsHeading.length));
   plan.previewTargets.forEach((target, index) => {
-    console.log(`${index + 1}. ${target.destination}`);
-    console.log(`${LIST_DETAIL_PREFIX}Action             ${target.action}`);
-    if (index < plan.previewTargets.length - 1) console.log('');
+    humanLog(`${index + 1}. ${target.destination}`);
+    humanLog(`${LIST_DETAIL_PREFIX}Action             ${target.action}`);
+    if (index < plan.previewTargets.length - 1) humanLog('');
   });
 }
 
 async function confirmExecution(context) {
-  const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const prompt = readline.createInterface({ input: process.stdin, output: jsonOutput ? process.stderr : process.stdout });
   const unregister = context.onAbort(() => prompt.close());
   try {
-    process.stdout.write('\nProceed? [y/N] ');
+    (jsonOutput ? process.stderr : process.stdout).write('\nProceed? [y/N] ');
     for await (const answer of prompt) {
       const response = answer.trim();
       context.throwIfInterrupted();
@@ -926,13 +930,14 @@ async function main() {
   process.once('exit', onExit);
   try {
     if (!await confirmExecution(context)) {
-      console.log('\nCANCELLED — No archive or replicated copy was created.');
+      if (jsonOutput) console.log(JSON.stringify({ result: { cancelled: true, outputDirectoryCreated: plan.output.createdDuringPreflight ? plan.output.canonicalPath : null } }));
+      humanLog('\nCANCELLED — No archive or replicated copy was created.');
       if (plan.output.createdDuringPreflight) {
-        console.log(`Preflight created the output directory: ${plan.output.canonicalPath}`);
+        humanLog(`Preflight created the output directory: ${plan.output.canonicalPath}`);
       }
       return;
     }
-    console.log('\nPreparing backup...');
+    humanLog('\nPreparing backup...');
     try {
       context.throwIfInterrupted();
       runLock = await acquireRunLock(lockPath);
@@ -945,16 +950,16 @@ async function main() {
     }
     const copied = await execute(plan, context, {
       onStage(status) {
-        if (status.phase === 'archive-start') console.log('Creating archive...');
-        if (status.phase === 'archive-complete') console.log('Archive created.');
+        if (status.phase === 'archive-start') humanLog('Creating archive...');
+        if (status.phase === 'archive-complete') humanLog('Archive created.');
         if (status.phase === 'copy-start') {
-          console.log(`Replicating copy ${status.index + 1} of ${status.total}: ${status.destination}`);
+          humanLog(`Replicating copy ${status.index + 1} of ${status.total}: ${status.destination}`);
         }
       },
       archive: {
         onProgress(progress) {
           const entryLabel = progress.entries === 1 ? 'entry' : 'entries';
-          console.log(
+          humanLog(
             `${INDENT_PREFIX}${progress.entries} ${entryLabel}, ` +
             `${formatBytes(BigInt(progress.processedBytes))} read, ` +
             `${formatBytes(BigInt(progress.outputBytes))} written`,
@@ -963,20 +968,30 @@ async function main() {
       },
     });
     context.throwIfInterrupted();
-    console.log('\nBackup complete');
-    console.log('===============');
-    if (plan.retainArchive) {
-      console.log('');
-      console.log('Archive');
-      console.log(`${INDENT_PREFIX}${plan.archivePath}`);
+    if (jsonOutput) {
+      console.log(JSON.stringify({ result: {
+        source: plan.source.canonicalPath,
+        archive: plan.retainArchive ? plan.archivePath : null,
+        stagingRemoved: !plan.retainArchive,
+        copies: copied,
+        bytes: fs.statSync(plan.retainArchive ? plan.archivePath : copied[0]).size,
+      } }));
     } else {
-      console.log('');
-      console.log('Staging');
-      console.log(`${INDENT_PREFIX}Removed from ${plan.output.canonicalPath}`);
+      humanLog('\nBackup complete');
+      humanLog('===============');
+      if (plan.retainArchive) {
+        humanLog('');
+        humanLog('Archive');
+        humanLog(`${INDENT_PREFIX}${plan.archivePath}`);
+      } else {
+        humanLog('');
+        humanLog('Staging');
+        humanLog(`${INDENT_PREFIX}Removed from ${plan.output.canonicalPath}`);
+      }
+      humanLog('');
+      humanLog(`Replicated copies (${copied.length})`);
+      copied.forEach((destination, index) => humanLog(`${INDENT_PREFIX}${index + 1}. ${destination}`));
     }
-    console.log('');
-    console.log(`Replicated copies (${copied.length})`);
-    copied.forEach((destination, index) => console.log(`${INDENT_PREFIX}${index + 1}. ${destination}`));
   } catch (error) {
     fail(error.message, error.exitCode || EXIT.ARCHIVE);
   } finally {

@@ -84,7 +84,7 @@ class ProcessManager {
       for (const fd of opened) fs.closeSync(fd);
     });
     await child.ownedRecord.gone;
-    if (spawnError) throw spawnError;
+    if (spawnError) throw Object.assign(spawnError, { task, childExitCode: result.code, childSignal: result.signal });
     return result;
   }
 
@@ -171,6 +171,7 @@ class ProcessManager {
     const handlers = new Map();
     for (const signal of Object.keys(SIGNAL_EXIT)) {
       const handler = () => {
+        this.interruptionSignal ||= signal;
         if (this.cancelling) return;
         this.cancel(signal).then(() => onSignal(signal, SIGNAL_EXIT[signal]), error => {
           onSignal(signal, SIGNAL_EXIT[signal], error);
