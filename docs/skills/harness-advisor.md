@@ -30,6 +30,21 @@ Ask “Use Sol as my Harness Advisor” to save a host default, or “Map Sonnet
 
 Preferences live in `~/.harness-plugin/harness-advisor/config.json`, shared by both hosts and retained across plugin upgrades. The agent manages them through the bundled configuration CLI. Missing configuration uses built-in routing without creating a file. Saving a preference does not itself consult an Advisor.
 
+## Evidence and source inspection
+
+A fresh opinion does not independently verify the primary agent's account.
+Advisor guidance distinguishes supplied claims and test results from source
+actually inspected, and states unresolved gaps. Reading a test or log does not
+reproduce execution. Source inspection also cannot establish user approval.
+
+Claude fallback can inspect an explicit workspace with restricted file tools and
+customization isolation on compatible hosts. Codex retains evidence-only advice
+when the fresh-child surface lacks the necessary permission controls. Neither
+route authorizes Advisor-run tests or implementation. Enabled tools and successful
+reads are reported separately from review coverage and live-qualified enforcement.
+Final reviews identify the reviewed state and qualify changed targets, incomplete
+inspection, and uninspected generated installation output.
+
 ## Contracts and qualification
 
 The [skill contract](../../dist/harness/skills/harness-advisor/SKILL.md) owns exact dispatch policy, call accounting, routing, context handling, permissions, and diagnostics. Human requests should not need those internals.

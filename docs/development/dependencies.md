@@ -95,3 +95,11 @@ For ASD-STE100, use a Python virtual environment with pip and `pypdfium2` to run
 The reference bundle lives under `~/.harness-plugin/write-asd-ste100/bundles/<source-config-sha256>/`, shared between harnesses and retained across plugin upgrades. A changed source configuration requires a matching valid bundle. Keep any initialization virtual environment outside the installed plugin directory so cache replacement does not discard it.
 
 Skill commands perform their own preflight on normal execution. Follow each skill's dispatch contract and relay its exact failure diagnosis and remedy. A standalone preflight is for an explicit readiness check or a skill-specific requirement, not an automatic extra step before every run.
+
+### Advisor workspace inspection
+
+The optional Claude fallback workspace branch requires Claude Code restricted-mode
+support (2.1.248+) and safe mode, with the selected control combination supported
+by host policy. Local development checked 2.1.270 help, not live enforcement.
+Evidence-only fallback retains its existing CLI requirements. No new package or
+persisted initialization data is required. See the [host contract](../../src/harness/skills/harness-advisor/references/host-claude.md).

@@ -28,7 +28,7 @@ Verify observed model identity against the requested family before treating the
 answer as configured advice. Missing identity is unverified, not proof of model
 selection. Do not reinterpret a substituted model as the configured Advisor.
 
-The runner passes model/effort explicitly, disables all built-in and MCP tools,
+Without --workspace, the runner passes model/effort explicitly, disables all built-in and MCP tools,
 and passes the canonical contract directly through `--system-prompt`. It starts
 fresh, without resume, and does not persist the session. It disables hooks and model fallback chains for this
 process. `switchModelsOnFlag: false` makes a flagged request refuse in print mode
@@ -77,3 +77,63 @@ neither authentication nor successful inference. Repository-only evidence is in
 - [Separate agent definitions and permissions](https://code.claude.com/docs/en/sub-agents)
 - [Model fallback and reasoning settings](https://code.claude.com/docs/en/model-config)
 - [Disabling native Advisor in the child](https://code.claude.com/docs/en/advisor#turn-the-advisor-off)
+
+## Optional workspace inspection
+
+For materially implementation-dependent advice, add the adapter argument
+`--workspace "/absolute/review/workspace"` to the command above when the host
+supports the controls below. This is a Harness argument. An explicit invalid path
+fails with `workspace_invalid` before inference, rather than falling back silently.
+The adapter requires an existing readable directory and canonicalizes its path.
+It retains the unique empty temporary working directory and supplies only that
+workspace through process-local `permissions.additionalDirectories`.
+
+The inspection branch requests `--restricted`, `--safe-mode`, `--tools Read,Glob,Grep`,
+and `--no-chrome`, retaining all other isolation, native suppression, model, and
+session controls. No shell, mutation, runtime execution, nested agent, or external
+service tool is authorized. Host-internal EndConversation may remain available.
+The canonical system contract remains unchanged between branches. The workspace
+and selected tools in the report identify the invocation policy, not observed work.
+A known CLI older than restricted-mode support (2.1.248), or an unrecognized
+version, fails before inference with `inspection_controls_unavailable`. This
+version check is a compatibility filter, not enforcement qualification. Safe mode
+and the full combination must be supported too. A rejected invocation fails once,
+without a permissive retry. Check known managed-policy conflicts before dispatch.
+
+Restricted mode documents confinement of file tools to working directories.
+Safe mode suppresses automatic CLAUDE.md, nested memory, skills, plugins, and other
+customizations. Managed policy remains authoritative and some policy-configured
+hooks remain possible. Do not claim instruction isolation solely from the prompt.
+Do not use inspection if known policy conflicts prevent the essential controls.
+Workspace scope includes in-repository credentials, so this is not secret-path
+filtering. Select source deliberately and avoid credential files. Do not follow
+links outside the canonical target. Symlink, parent traversal, home-read, and
+nested-instruction enforcement remain live-qualification questions, not guarantees
+established by the adapter. Evidence-only consultation remains available when
+inspection cannot safely be selected, with its limitations made explicit.
+
+Inspection uses `--output-format stream-json --verbose`. The bounded transport
+retains no transcript or source store. It matches host assistant tool-use IDs to
+user tool results and reads structured `tool_use_result` metadata. Successful text
+Read metadata supplies path, line range, and complete/partial activity. Glob/Grep
+results are discovery only. Failed results, missing metadata, and unfinished calls
+are failed or unconfirmed observations. Malformed or inconsistent streams fail
+without a success report. Source text is never parsed as an event. A final JSON
+answer alone supplies no observation evidence.
+
+`runtime_controls: "unverified"` is retained even after successful consultation.
+The primary evaluates material coverage and target coherence using the shared
+skill contract. An observation list is not an approval or stability attestation.
+The adapter does not run Git: changed-path inventories and before/after content
+checks supplied by the primary remain supplied artifacts. Read metadata does not
+prove that external writers were absent or generated output was inspected.
+
+Documentation and local help checked 2026-09-14 against Claude Code 2.1.270:
+
+- [Restricted mode and safe mode](https://code.claude.com/docs/en/cli-reference)
+- [Structured message and tool output schemas](https://code.claude.com/docs/en/agent-sdk/typescript)
+- [Streaming CLI output](https://code.claude.com/docs/en/headless)
+
+Local help and deterministic fixtures are not live enforcement qualification.
+Paid inference was not authorized for this implementation. Use the repository
+qualification procedure before claiming live host enforcement.

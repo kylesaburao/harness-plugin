@@ -155,9 +155,14 @@ Keep one task-local epoch consisting of a stable baseline and ordered durable
 records. The baseline contains the objective, user requirements, and relevant
 repository invariants. Preserve its wording within the epoch. Records have
 monotonically increasing IDs and a type: `CONSTRAINT`, `EVIDENCE`, `DECISION`,
-`FAILURE`, or `SUPERSEDES`. Each record is a concise fact with its source or
-accepted decision. A supersession names the old record, which remains unchanged.
-Later supersessions take precedence.
+`FAILURE`, or `SUPERSEDES`. Each record is a concise sourced task record, not an authentication mechanism.
+Attribute primary claims, supplied artifacts, and primary-reported runtime results
+as such. Identify authoritative user/task sources when available, otherwise keep
+requirements and approvals primary-reported. Matching source cannot prove approval. A supersession names the old record, which remains unchanged.
+Later supersessions take precedence. Preserve source and state qualifications
+through compaction. Previously inspected premises become historical when relevant
+code or assumptions change. Reinspect material changed premises before reuse,
+without discarding history after unrelated edits.
 
 Promote only explicit constraints, source/test/runtime observations, authoritative
 documentation, accepted decisions, observed failed approaches, and corrections.
@@ -223,7 +228,9 @@ C0001 | CONSTRAINT | <constraint and provenance>
 E0002 | EVIDENCE | <observation and evidence location>
 <append new records in insertion order>
 [NEW EVIDENCE]
-<current delta and any labeled unresolved questions>
+<review target: workspace, revision or working-tree state, baseline if relevant,
+scope, exclusions, staged/unstaged/relevant untracked work, stability mechanism>
+<current delta, supplied-only premises, and labeled unresolved questions>
 [QUESTION]
 <one decision or review to resolve now>
 ```
@@ -233,6 +240,36 @@ Append records without reordering or polishing old entries. Keep timestamps,
 turn numbers, and changing metadata out of the static prefix. Include all facts
 needed for correctness every time, even if previously supplied.
 
+For implementation-dependent questions, include the invocation-local target in
+[NEW EVIDENCE]. Identify whether final review targets the working tree, a commit
+or range, or another prepared state. Git is optional for conceptual questions and
+non-Git workspaces. Finish relevant edits/builds and coordinate a pause of all
+primary/executor-owned writers before recording the target and consulting. Resume
+after evaluating the result. Obtain a repository-wide changed-path inventory
+before narrowing content by relevance, including staged, unstaged, and relevant
+untracked paths. Use constrained host Git observation if separately available,
+otherwise provide captured Git output labeled supplied, with independent inventory
+unavailable. Never enable shell just to obtain Git output.
+
+Check lightweight state before and after consultation. HEAD, a dirty flag, or
+unchanged status filenames do not prove content stability. Use a cheap relevant
+content comparison when available, otherwise call stability coordinated rather
+than mechanically proven. Disclose external-writer limits. Material changes
+narrow or invalidate affected conclusions, especially a final review, without
+automatic respawn or reset of invocation accounting.
+
+Select inspection by material premises, not the reason label. Conceptual STRATEGY
+may use supplied constraints. Current-code architecture, NEW_DECISION feasibility,
+NEW_EVIDENCE mechanisms, APPROACH_FAILED causes, RECONCILE_CONFLICT premises, and
+FINAL_REVIEW state require relevant inspection when supported. User-requested
+opinions follow the same materiality rules with their separate accounting.
+Follow material imports, callers, tests, and configuration beyond starting paths.
+Include relevant hidden/untracked files without indiscriminate secret or repository
+reading. Inspect generated output when installed behavior matters, or mark that
+part unresolved. Exploration stops proportionally to the question and actual
+capacity/user limits, never an invented file-count budget. Incomplete inspection
+requires narrower advice and does not authorize another automatic attempt.
+
 For strategy, give enough oriented source evidence to assess the choices. For
 completion, include requirements, relevant final diff, actual primary test
 results, and remaining uncertainty. Ask about correctness, regressions, missed
@@ -240,7 +277,7 @@ requirements, unnecessary complexity, and validation gaps.
 
 Caching is opportunistic, not memory. Keep model, effort, instructions, tools,
 baseline, and serialization stable where practical. Cache identity is host,
-exact Advisor model, reasoning configuration, policy version (1), and epoch.
+exact Advisor model, reasoning configuration, selected tool policy, policy version (2), and epoch.
 A model or effort change changes the cache profile, not the semantic epoch:
 retain constraints, verified evidence, accepted decisions, and useful failures.
 One-off model choices share those facts but have a different provider cache. Use an epoch-scoped cache
@@ -254,5 +291,12 @@ Never use unsupported cache controls or retain misleading context for a cache hi
 Evaluate guidance against user requirements and primary source, test, runtime,
 and documentation evidence. Accept, reject, or investigate it. If a same-family peer and primary disagree,
 identify differing assumptions and obtain discriminating evidence. Do not spawn a third Advisor to vote. Another call needs new evidence within budget or a user
-request. Promote only useful durable state, then continue execution and report
+request. Reconcile contradictions by naming both sources, applicable state/time, and
+significance. Source differences may reflect stale evidence or another target.
+The primary owns append-only correction or supersession. Evaluate the report's
+basis and limitations before relaying it: enabled tools, observed successful
+reads, coverage judgment, and permission enforcement are separate. No read list
+or confident prose automatically establishes completed review. Label unavailable
+activity as Advisor-reported or unconfirmed, retain supplied-only runtime results,
+and qualify material omissions and target changes. Promote only useful durable state, then continue execution and report
 what consultation actually occurred, including any failure or remaining uncertainty.

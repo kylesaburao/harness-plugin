@@ -37,11 +37,30 @@ test('Claude activation suppresses Harness on native presence including native e
 test('Codex dispatch uses an ordinary fresh agent and distinguishes instructions from permissions', () => {
   const host = fs.readFileSync(path.join(root, 'harness-advisor/references/host-codex.md'), 'utf8');
   for (const phrase of ['ordinary fresh subagent', 'model and reasoning effort',
-    'fork_turns: "none"', 'canonical `contract.md`', 'use no tools',
-    'make no changes', 'no further delegation', 'No named role is required',
+    'fork_turns: "none"', 'canonical `contract.md`', 'No named role is required',
     'must not block consultation', 'unsupported effort', 'enforced permissions',
     'contract alone does not establish', 'additional child permission controls']) assert.ok(host.includes(phrase), phrase);
+  const dispatch = host.replace(/\s+/g, ' ');
+  for (const phrase of ['Pass the prepared prompt unchanged as the spawn tool’s message argument',
+    'The canonical contract already supplies the Advisor’s role and restrictions',
+    'Add no preamble, wrapper delimiters, or closing instructions',
+    'Immediately before dispatch, check the actual message argument, not merely a saved prompt file',
+    'it must begin with the exact canonical contract and match the prepared prompt',
+    'This check applies to the agent-authored message, not additional context injected by the host']) {
+    assert.ok(dispatch.includes(phrase), phrase);
+  }
   const contract = fs.readFileSync(path.join(root, 'harness-advisor/references/contract.md'), 'utf8');
   assert.match(contract, /Use no tools/);
   assert.match(contract, /Do not modify files, create commits, mutate external state, or spawn agents/);
+});
+
+// These protect required declarations, not model adherence or permission enforcement.
+test('source inspection retains attribution, coherent targets, and qualified conclusions', () => {
+  const contract = fs.readFileSync(path.join(root, 'harness-advisor/references/contract.md'), 'utf8');
+  for (const phrase of ['not authentication', 'primary-reported runtime results',
+    'Source inspection cannot authenticate user approval', 'partial/truncated reads',
+    'mixed-state final review', 'coverage judgment', 'within the inspected scope']) assert.ok(contract.includes(phrase), phrase);
+  for (const phrase of ['repository-wide changed-path inventory', 'before narrowing content',
+    'unchanged status filenames do not prove content stability', 'policy version (2)',
+    'selected tool policy', 'Reinspect material changed premises', 'primary/executor-owned writers']) assert.ok(policy.includes(phrase), phrase);
 });

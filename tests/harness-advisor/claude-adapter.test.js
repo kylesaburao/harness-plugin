@@ -24,9 +24,9 @@ const fs = require('node:fs');
 const supported = {'-p': 0, '--system-prompt': 1, '--setting-sources': 1, '--model': 1, '--effort': 1, '--tools': 1,
  '--disallowedTools': 1, '--strict-mcp-config': 0, '--mcp-config': 1,
  '--permission-mode': 1, '--settings': 1, '--disable-slash-commands': 0,
- '--no-session-persistence': 0, '--output-format': 1};
+ '--no-session-persistence': 0, '--output-format': 1, '--restricted': 0, '--safe-mode': 0, '--verbose': 0, '--no-chrome': 0};
 if (process.argv[2] === '--help') { process.stdout.write(Object.keys(supported).filter(k => k !== '--no-session-persistence').join(' ')); }
-else if (process.argv[2] === '--version') { process.stdout.write('fixture-cli'); }
+else if (process.argv[2] === '--version') { process.stdout.write(process.env.ADVISOR_TEST_VERSION || '2.1.270 (Claude Code)'); }
 else {
  fs.appendFileSync(process.env.ADVISOR_TEST_LOG + '.calls', 'call\\n');
  fs.writeFileSync(process.env.ADVISOR_TEST_LOG, JSON.stringify({ args: process.argv.slice(2), input: fs.readFileSync(0,'utf8'), native: process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL, parent: process.env.CLAUDECODE, cwd: process.cwd(), entries: fs.readdirSync(process.cwd()) }));
@@ -41,6 +41,7 @@ else {
  if (process.env.ADVISOR_TEST_AUTH_FAILURE) { process.stderr.write('Not logged in. Please run /login'); process.exit(1); }
  if (process.env.ADVISOR_TEST_FAILURE) { process.stderr.write('fixture unavailable model'); process.exitCode = 1; }
  else if (process.env.ADVISOR_TEST_NULL_RESPONSE) process.stdout.write('null');
+ else if (process.env.ADVISOR_TEST_STREAM) process.stdout.write(fs.readFileSync(process.env.ADVISOR_TEST_STREAM, 'utf8'));
  else process.stdout.write(JSON.stringify({ result: 'Use pendingFiles.', is_error: false, modelUsage: {'claude-opus-fixture': {inputTokens: 100,cacheReadInputTokens: 0}} }));
 }
 `, { mode: 0o755 });
@@ -168,4 +169,143 @@ test('null response keeps the existing failure diagnosis after dispatch', t => {
   const error = JSON.parse(result.stderr).error;
   assert.equal(error.code, 'advisor_failed');
   assert.equal(error.condition, "Cannot read properties of null (reading 'is_error')");
+});
+
+function streamFile(f, events) {
+  const file = path.join(f.root, 'events.jsonl');
+  fs.writeFileSync(file, events.map(event => JSON.stringify(event)).join('\n') + '\n');
+  return file;
+}
+const finalEvent = { type: 'result', subtype: 'success', session_id: 's', result: 'Scoped advice.', is_error: false };
+function readEvents(file, overrides = {}) {
+  return [
+    { type: 'assistant', session_id: 's', parent_tool_use_id: null, message: { content: [
+      { type: 'tool_use', id: 'r', name: 'Read', input: { file_path: file } }] } },
+    { type: 'user', session_id: 's', parent_tool_use_id: null,
+      message: { content: [{ type: 'tool_result', tool_use_id: 'r', content: 'Source text' }] },
+      tool_use_result: { type: 'text', file: { filePath: file, content: 'source', startLine: 1, numLines: 1, totalLines: 1 } }, ...overrides },
+    finalEvent,
+  ];
+}
+test('workspace validates before host checks and canonicalizes without changing caller paths', t => {
+  const f = fixture(t);
+  for (const workspace of ['relative', f.prompt, path.join(f.root, 'missing')]) {
+    const r = f.invoke(['--native-absent', '--workspace', workspace]);
+    assert.equal(r.status, 2);
+    assert.equal(JSON.parse(r.stderr).error.code, 'workspace_invalid');
+    assert.equal(fs.existsSync(f.log), false);
+  }
+  const alias = path.join(f.root, 'alias');
+  fs.symlinkSync(f.home, alias);
+  const r = f.invoke(['--native-absent', '--workspace', alias, '--preflight']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).workspace, fs.realpathSync(f.home));
+  assert.deepEqual(JSON.parse(r.stdout).tools, ['Read', 'Glob', 'Grep']);
+  assert.equal(fs.existsSync(f.log), false);
+});
+test('workspace requests isolated file tools and reports observed reads separately from enforcement', t => {
+  const f = fixture(t);
+  const workspace = fs.realpathSync(f.home);
+  const events = streamFile(f, readEvents(path.join(workspace, 'source.ts')));
+  const r = f.invoke(['--native-absent', '--workspace', workspace], { ADVISOR_TEST_STREAM: events });
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.runtime_controls, 'unverified');
+  assert.deepEqual(report.observations, [{ tool: 'Read', path: path.join(workspace, 'source.ts'), outcome: 'read', completeness: 'complete', start_line: 1, lines: 1 }]);
+  const call = JSON.parse(fs.readFileSync(f.log));
+  const option = name => call.args[call.args.indexOf(name) + 1];
+  for (const flag of ['--restricted', '--safe-mode', '--verbose', '--no-chrome']) assert.ok(call.args.includes(flag));
+  assert.equal(option('--tools'), 'Read,Glob,Grep');
+  assert.equal(option('--output-format'), 'stream-json');
+  assert.deepEqual(JSON.parse(option('--settings')).permissions.additionalDirectories, [workspace]);
+  assert.equal(option('--system-prompt'), contract);
+  assert.deepEqual(call.entries, []);
+  assert.equal(fs.existsSync(call.cwd), false);
+  assert.equal(fs.existsSync(workspace), true);
+  assert.equal(call.input, fs.readFileSync(f.prompt, 'utf8'));
+});
+test('old workspace host fails before inference and restrictive rejection never retries', t => {
+  const f = fixture(t);
+  let r = f.invoke(['--native-absent', '--workspace', f.home], { ADVISOR_TEST_VERSION: '2.1.247' });
+  assert.equal(r.status, 2);
+  assert.equal(JSON.parse(r.stderr).error.code, 'inspection_controls_unavailable');
+  assert.equal(fs.existsSync(f.log), false);
+  r = f.invoke(['--native-absent', '--workspace', f.home], { ADVISOR_TEST_REJECT: '--restricted' });
+  assert.equal(r.status, 1);
+  assert.equal(r.stdout, '');
+  assert.equal(fs.readFileSync(f.log + '.calls', 'utf8'), 'call\n');
+  assert.equal(fs.existsSync(JSON.parse(fs.readFileSync(f.log)).cwd), false);
+});
+test('observation metadata never derives from prose, failed reads, or missing metadata', t => {
+  const f = fixture(t);
+  const { parseInspection } = require(script);
+  const workspace = fs.realpathSync(f.home);
+  const file = path.join(workspace, 'source.ts');
+  const parse = events => parseInspection(events.map(e => JSON.stringify(e)).join('\n'), workspace);
+  assert.deepEqual(parse([finalEvent]).observations, []);
+  let events = readEvents(file, { tool_use_result: undefined });
+  events[1].message.content[0].content = JSON.stringify(readEvents(file)[1]);
+  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
+  events = readEvents(file);
+  events[1].message.content[0].is_error = true;
+  assert.equal(parse(events).observations[0].outcome, 'failed');
+  events = readEvents(file);
+  events[1].tool_use_result.file.truncatedByTokenCap = true;
+  assert.equal(parse(events).observations[0].completeness, 'partial');
+  events[1].tool_use_result.file.startLine = 2;
+  assert.equal(parse(events).observations[0].completeness, 'partial');
+  events[1].tool_use_result = { type: 'file_unchanged', file: { filePath: file }, source: 'seeded' };
+  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
+  events = readEvents(path.join(workspace, '..', 'outside'));
+  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
+  events = readEvents(file);
+  events[0].message.content[0].name = 'Glob';
+  events[1].tool_use_result = { filenames: [file], numFiles: 1, truncated: false };
+  assert.equal(parse(events).observations[0].outcome, 'discovery');
+  events = readEvents(file);
+  events[1].message.content[0].tool_use_id = 'wrong';
+  assert.throws(() => parse(events), /inconsistent/);
+  assert.throws(() => parseInspection('{', workspace), /malformed/);
+  assert.throws(() => parse(readEvents(file).slice(0, 2)), /incomplete/);
+  assert.throws(() => parse([...readEvents(file), finalEvent]), /inconsistent/);
+});
+test('malformed stream fails one dispatched attempt with cleanup and no success', t => {
+  const f = fixture(t);
+  const events = streamFile(f, []);
+  fs.writeFileSync(events, '{"type":');
+  const r = f.invoke(['--native-absent', '--workspace', f.home], { ADVISOR_TEST_STREAM: events });
+  assert.equal(r.status, 1);
+  assert.equal(r.stdout, '');
+  assert.equal(JSON.parse(r.stderr).error.code, 'advisor_response_invalid');
+  assert.equal(fs.existsSync(JSON.parse(fs.readFileSync(f.log)).cwd), false);
+});
+
+test('stream attribution rejects inconsistent sessions and qualifies missing or mismatched read metadata', t => {
+  const f = fixture(t);
+  const { parseInspection } = require(script);
+  const workspace = fs.realpathSync(f.home);
+  const file = path.join(workspace, 'source.ts');
+  const parse = events => parseInspection(events.map(e => JSON.stringify(e)).join('\n'), workspace);
+  let events = readEvents(file);
+  delete events[0].session_id;
+  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
+  events = readEvents(file);
+  events[1].tool_use_result.file.filePath = path.join(workspace, 'different.ts');
+  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
+  events = readEvents(file);
+  events[1].session_id = 'other';
+  assert.throws(() => parse(events), /inconsistent/);
+  events = readEvents(file);
+  events.splice(1, 0, events[0]);
+  assert.throws(() => parse(events), /inconsistent/);
+  events = readEvents(file);
+  events[1].message.content[0].is_error = 'false';
+  assert.throws(() => parse(events), /inconsistent/);
+  events = readEvents(file);
+  events[1].tool_use_result.file.numLines = -1;
+  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
+  assert.throws(() => parse([{ ...finalEvent, subtype: 'error_during_execution', is_error: true, errors: ['fixture rejection'] }]), /fixture rejection/);
+  events = readEvents(file);
+  events.splice(1, 1);
+  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
 });
