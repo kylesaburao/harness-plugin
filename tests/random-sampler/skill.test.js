@@ -12,7 +12,7 @@ test('portable automatic routing and complete instructions', () => {
   assert.match(metadata,/name: random-sampler/);
   for (const fragment of ['random integers','samples','shuffle','dice','coins','recommendations','rankings','optimization','without requested randomness']) assert.ok(metadata.includes(fragment),fragment);
   for (const fragment of ['complete sampling space before execution','original array position','Preserve duplicates','2/3','scripts/sample.mjs','quoted heredoc','delimiter is absent','Never generate sampling code','Accept the returned values and original indices exactly','preference-reroll','Relay diagnostics verbatim','actual command','24.0.0','[1,101)','[1,21)','separate invocations']) assert.ok(text.includes(fragment),fragment);
-  assert.deepEqual(fs.readdirSync(skill).sort(),['SKILL.md','scripts']);
+  assert.deepEqual(fs.readdirSync(skill).sort(),['SKILL.md','agents','scripts']);
 });
 test('entropy boundary stays in built-in crypto with no fallback or randomized sorting', () => {
   const source = fs.readFileSync(path.join(skill,'scripts/sample.mjs'),'utf8');
