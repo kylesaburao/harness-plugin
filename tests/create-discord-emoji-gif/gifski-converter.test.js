@@ -141,7 +141,7 @@ test('skill instructions define the Discord target and fallback rules', () => {
 
   const agentMetadata = fs.readFileSync(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/agents/openai.yaml'), 'utf8');
   assert.match(agentMetadata, /display_name: "Discord Emoji GIF"/);
-  assert.match(agentMetadata, /\$create-discord-emoji-gif/);
+  assert.match(agentMetadata, /\$harness:create-discord-emoji-gif/);
 });
 
 test('usage and configuration failures exit 2 with stable codes', () => {
