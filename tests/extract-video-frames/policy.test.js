@@ -6,6 +6,7 @@ const path = require('node:path');
 const { analyzeFixture } = require('./frame-spool-fixture');
 
 const subject = require(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js'));
+const mediaModel = require(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/media-model'));
 const descriptors = subject.descriptorMap(require('./pixel-formats.json'));
 const classify = stream => subject.classifyStream(stream, subject.pixelProperties(stream, descriptors));
 
@@ -70,7 +71,7 @@ test('ambiguous color and Dolby Vision-only streams fail before work', () => {
 });
 
 test('non-orthogonal display rotation is rejected', () => {
-  assert.equal(subject.displayRotation({ tags: { rotate: '90' } }), 90);
+  assert.equal(subject.displayRotation({ tags: { rotate: '90' } }), 270);
   assert.throws(() => subject.displayRotation({ tags: { rotate: '12.5' } }), { code: 'display_transform_unsupported' });
 });
 
@@ -80,12 +81,30 @@ test('complete display matrices become explicit rotation and flip filters', () =
     [[-65536, 0, 0, 0, 65536, 0, 7, 9, 1073741824], ['hflip']],
     [[65536, 0, 0, 0, -65536, 0, 7, 9, 1073741824], ['vflip']],
     [[-65536, 0, 0, 0, -65536, 0, 7, 9, 1073741824], ['hflip', 'vflip']],
-    [[0, -65536, 0, 65536, 0, 0, 7, 9, 1073741824], ['transpose=clock']],
-    [[0, 65536, 0, -65536, 0, 0, 7, 9, 1073741824], ['transpose=cclock']],
+    [[0, -65536, 0, 65536, 0, 0, 7, 9, 1073741824], ['transpose=cclock']],
+    [[0, 65536, 0, -65536, 0, 0, 7, 9, 1073741824], ['transpose=clock']],
     [[0, -65536, 0, -65536, 0, 0, 7, 9, 1073741824], ['hflip', 'transpose=clock']],
     [[0, 65536, 0, 65536, 0, 0, 7, 9, 1073741824], ['vflip', 'transpose=clock']],
   ];
   for (const [matrix, filters] of cases) assert.deepEqual(subject.transformFromMatrix(matrix).filters, filters);
+});
+
+test('rotation without a matrix honors each source direction convention', () => {
+  const sideData = rotation => ({ side_data_list: [{ side_data_type: 'Display Matrix', rotation }] });
+  const cases = [
+    [sideData(90), 90, ['transpose=cclock']],
+    [sideData(-90), 270, ['transpose=clock']],
+    [sideData(-180), 180, ['hflip', 'vflip']],
+    [{ tags: { rotate: '90' } }, 270, ['transpose=clock']],
+    [{ tags: { rotate: '270' } }, 90, ['transpose=cclock']],
+    [{ tags: { rotate: '180' } }, 180, ['hflip', 'vflip']],
+  ];
+  for (const [stream, degrees, filters] of cases) {
+    const transform = mediaModel.displayTransform(stream);
+    assert.equal(transform.rotationDegrees, degrees);
+    assert.deepEqual(transform.filters, filters);
+    assert.equal(transform.swapsDimensions, degrees % 180 !== 0);
+  }
 });
 
 test('display matrices with scale, shear, perspective, or arbitrary angles are rejected', () => {
@@ -253,7 +272,7 @@ test('omitted fractional end uses exact duration ticks', async () => {
 
 test('textual display matrices accept translation and reject both perspective fields', () => {
   const stream = values => ({ side_data_list: [{ side_data_type: 'Display Matrix', displaymatrix: values.map((row, i) => `${i}: ${row.join(' ')}`).join('\n') }] });
-  assert.equal(subject.displayRotation(stream([[0,65536,0],[-65536,0,0],[7,9,1073741824]])), 90);
+  assert.equal(subject.displayRotation(stream([[0,65536,0],[-65536,0,0],[7,9,1073741824]])), 270);
   for (const rows of [[[65536,0,1],[0,65536,0],[0,0,1073741824]], [[65536,0,0],[0,65536,1],[0,0,1073741824]]]) {
     assert.throws(() => subject.displayRotation(stream(rows)), { code: 'display_transform_unsupported' });
   }
