@@ -15,7 +15,6 @@ The two `.claude-plugin/` and `.codex-plugin/` directories are thin packaging la
 | `create-discord-emoji-gif` | Convert a clip into a looping, under-256KB, 128x128 Discord emoji GIF. | Node ≥22, `ffmpeg` built with `libvmaf`, `ffprobe`, and `gifski` or `gifsicle` |
 | `diagnose-environment` | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. | |
 | `encode-for-llms` | Compress prose, technical material, or code into a compact LLM-decodable notation. | |
-| `handoff` | Write a durable brief for a fresh session to resume in-flight work. | |
 | `hello-world` | Print the exact text "Hello world" as an installation smoke test. | |
 | `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. | |
 | `natural-style` | Rewrite supplied text into natural, conversational technical prose. | |
