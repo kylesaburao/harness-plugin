@@ -489,7 +489,7 @@ class GeneratedBundlePathTests(unittest.TestCase):
 
 
 class RuntimeEntryPointTests(unittest.TestCase):
-    public_scripts = ("ste_lookup.py", "ste_check.py", "validate_dictionary.py", "validate_references.py")
+    public_scripts = ("ste_lookup.py", "ste_check.py", "validate_references.py")
 
     def make_runtime(self, root: Path, valid: bool) -> tuple[Path, Path]:
         home = root / "home"
@@ -548,6 +548,31 @@ class RuntimeEntryPointTests(unittest.TestCase):
                 ready = subprocess.run([sys.executable, str(scripts / name), "--preflight", "--json"], input="unused", capture_output=True, text=True)
                 self.assertEqual(ready.returncode, 0, ready.stderr)
                 self.assertEqual(json.loads(ready.stdout), {"ready": True})
+
+    def test_validate_references_cli_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scripts, document = self.make_runtime(Path(directory), valid=True)
+            script = str(scripts / "validate_references.py")
+            invalid = subprocess.run([sys.executable, script, "--json", "--bogus"], capture_output=True, text=True)
+            self.assertEqual(invalid.returncode, 2)
+            self.assertEqual(invalid.stdout, "")
+            error = json.loads(invalid.stderr)["error"]
+            self.assertEqual(error["code"], "invalid_arguments")
+            self.assertIn("--bogus", error["condition"])
+            self.assertIn("validate_references.py --help", error["remedy"])
+            plain = subprocess.run([sys.executable, script, "--bogus"], capture_output=True, text=True)
+            self.assertEqual(plain.returncode, 2)
+            self.assertTrue(plain.stderr.startswith("ERROR [invalid_arguments]: "), plain.stderr)
+            self.assertNotIn("usage:", plain.stderr)
+            normal = subprocess.run([sys.executable, script, "--json"], capture_output=True, text=True)
+            self.assertEqual(normal.returncode, 0, normal.stderr)
+            ready = subprocess.run([sys.executable, script, "--preflight", "--json"], capture_output=True, text=True)
+            self.assertEqual(ready.returncode, 0, ready.stderr)
+            self.assertEqual(json.loads(ready.stdout), json.loads(normal.stdout))
+            self.assertEqual(json.loads(ready.stdout)["status"], "ready")
+            usage = subprocess.run([sys.executable, script, "--help"], capture_output=True, text=True)
+            self.assertEqual(usage.returncode, 0)
+            self.assertIn("--preflight", usage.stdout)
 
     def test_every_entry_point_validates_automatically(self):
         with tempfile.TemporaryDirectory() as directory:
