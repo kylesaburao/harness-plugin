@@ -65,7 +65,7 @@ at every target.
    real run. The ready report's `outputDirectoryCreated` is that directory's path when this
    preflight created it, or `null` when it already existed. Exit status 2 with `dependency_missing` or `node_version_unsupported` means the
    environment is not ready; on `dependency_missing`, relay the `remedy` command and ask
-   before running it, since it writes to the skill directory. Exit status 3 with
+   before running it, since it writes to `~/.harness-plugin/back-up-directories/`. Exit status 3 with
    `config_invalid` means the configuration needs a fix, not the environment.
 
 3. Hand the run to the user:
@@ -86,9 +86,11 @@ at every target.
 | `129` / `130` / `143` | Interrupted by `SIGHUP`, `SIGINT`, or `SIGTERM`. Temporary artifacts were cleaned up |
 
 Exit `0` covers a cancelled run as well as a completed one, so read stdout to tell them
-apart: a cancellation prints `CANCELLED`. Copies are serial and stop at the first failure,
-so on exit `5` say which targets did get a copy rather than describing the backup as
-failed outright.
+apart: a cancellation prints `CANCELLED`. Without `outputDirectory`, copies run in parallel
+and a failed target does not stop the others; the exit `5` message names each failed
+destination and lists the installed copies. With a configured output directory that is also
+a target, copies are serial and stop at the first failure. Either way, on exit `5` say which
+targets did get a copy rather than describing the backup as failed outright.
 
 ## Before claiming a backup is safe
 
