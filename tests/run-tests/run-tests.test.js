@@ -421,6 +421,44 @@ test('backup dependencies must come from the user-level directory and the select
   }), /pypdfium2 is missing/);
 });
 
+test('setup skips the backup install only when the user-level install is ready', t =>
+{
+  const root = makeTestTree({empty:[]});
+  t.after(() => fs.rmSync(root,{recursive:true,force:true}));
+  const write = (name, text) =>
+  {
+    const file = path.join(root,name);
+    fs.mkdirSync(path.dirname(file),{recursive:true});
+    fs.writeFileSync(file,text);
+  };
+  const selected = path.join(root, '.build/harness');
+  write('.build/harness/skills/back-up-directories/package-lock.json','{"lockfileVersion":3}');
+  const {backupInstallProblem} = require('../../scripts/setup-tests');
+  const install = (name, lock, withArchiver = true) =>
+  {
+    const dependencyRoot = `homes/${name}/.harness-plugin/back-up-directories`;
+    fs.mkdirSync(path.join(root, dependencyRoot, 'node_modules'), {recursive:true});
+    if (withArchiver)
+    {
+      write(`${dependencyRoot}/node_modules/archiver/package.json`,'{"name":"archiver","main":"index.js"}');
+      write(`${dependencyRoot}/node_modules/archiver/index.js`,'module.exports = {};');
+    }
+    if (lock !== null) write(`${dependencyRoot}/package-lock.json`, lock);
+    return path.join(root, 'homes', name);
+  };
+  assert.equal(backupInstallProblem(selected, install('ready', '{"lockfileVersion":3}')), null);
+  assert.match(backupInstallProblem(selected, install('mismatched', '{"lockfileVersion":3,"stale":true}')), /not installed from the selected artifact's lockfile/);
+  assert.match(backupInstallProblem(selected, install('damaged', '{"lockfileVersion":3}', false)), /archiver must be installed/);
+
+  const { buildSetupPlan } = loadRunner();
+  const labels = plan => plan.map(stage => stage.label);
+  const skipped = ['create backup dependency directory', 'copy backup dependency manifest and lockfile', 'install backup dependencies'];
+  const full = labels(buildSetupPlan(root, 'development', path.join(root, 'home')));
+  assert.deepEqual(labels(buildSetupPlan(root, 'development', path.join(root, 'home'), { backupReady: true })),
+    full.filter(label => !skipped.includes(label)));
+  assert.ok(skipped.every(label => full.includes(label)));
+});
+
 test('cleanup empties a busy venv mount and reports child cleanup failure', async t => {
   const { runWithVenvCleanup } = loadRunner();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'run-tests-mount.'));

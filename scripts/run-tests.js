@@ -85,7 +85,9 @@ function backupDependencyRoot(home = os.homedir())
   return path.join(home, '.harness-plugin', 'back-up-directories');
 }
 
-function buildSetupPlan(repoRoot, target = 'development', home = os.homedir())
+// backupReady omits the backup install stages when the caller has confirmed
+// that the user-level install already came from the selected lockfile.
+function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), { backupReady = false } = {})
 {
   const selected = artifactRoot(repoRoot, target);
   const backupSkill = path.join(selected, 'skills/back-up-directories');
@@ -93,11 +95,13 @@ function buildSetupPlan(repoRoot, target = 'development', home = os.homedir())
   const python = path.join('.venv', 'bin', 'python');
   return [
     command('verify selected artifact', 'node', ['scripts/build.js', '--target', target, '--check'], repoRoot),
-    command('create backup dependency directory', 'mkdir', ['-p', backupRoot], repoRoot),
-    command('copy backup dependency manifest and lockfile', 'cp', [
-      path.join(backupSkill, 'package.json'), path.join(backupSkill, 'package-lock.json'), backupRoot,
-    ], repoRoot),
-    command('install backup dependencies', 'npm', ['ci', '--omit=dev', '--prefix', backupRoot], repoRoot),
+    ...(backupReady ? [] : [
+      command('create backup dependency directory', 'mkdir', ['-p', backupRoot], repoRoot),
+      command('copy backup dependency manifest and lockfile', 'cp', [
+        path.join(backupSkill, 'package.json'), path.join(backupSkill, 'package-lock.json'), backupRoot,
+      ], repoRoot),
+      command('install backup dependencies', 'npm', ['ci', '--omit=dev', '--prefix', backupRoot], repoRoot),
+    ]),
     command('create or reuse Python virtual environment', 'python3', [
       '-m', 'venv', '.venv',
     ], repoRoot),
