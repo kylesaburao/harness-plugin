@@ -118,12 +118,26 @@ test('tracked validation detects missing index entries, executable changes and t
   const root = fixture(t); build(root);
   execFileSync('git', ['init', '-q', root]);
   const files = inventory(path.join(root, 'dist/harness'));
-  assert.throws(() => validateTracked(root, files), /missing from index/);
+  const records = () => execFileSync('git', ['ls-files', '--stage', '-z', '--', 'dist'], { cwd: root, encoding: 'utf8' });
+  function rejectsBoth(pattern) {
+    assert.throws(() => validateTracked(root, files), pattern);
+    assert.throws(() => validateTracked(root, files, records()), pattern);
+  }
+  rejectsBoth(/missing from index/);
   execFileSync('git', ['add', 'dist'], { cwd: root }); validateTracked(root, files);
+  const exported = records();
+  // Supplied records work without any Git metadata or Git subprocess.
+  fs.renameSync(path.join(root, '.git'), path.join(root, 'saved-git'));
+  validateTracked(root, files, exported);
+  for (const name of ['build.js', 'validate-dist.js']) write(root, `scripts/${name}`, fs.readFileSync(path.join(repositoryRoot, 'scripts', name)));
+  write(root, 'index-records', exported);
+  const result = execFileSync(process.execPath, [path.join(root, 'scripts/validate-dist.js'), '--tracked-records', path.join(root, 'index-records')], { encoding: 'utf8' });
+  assert.match(result, /Distribution validation passed/);
+  fs.renameSync(path.join(root, 'saved-git'), path.join(root, '.git'));
   execFileSync('git', ['update-index', '--chmod=+x', 'dist/harness/package.json'], { cwd: root });
-  assert.throws(() => validateTracked(root, files), /wrong executable bit/);
+  rejectsBoth(/wrong executable bit/);
   execFileSync('git', ['update-index', '--chmod=-x', 'dist/harness/package.json'], { cwd: root });
   write(root, 'dist/harness/skills/back-up-directories/node_modules/bad.js', 'bad');
   execFileSync('git', ['add', 'dist'], { cwd: root });
-  assert.throws(() => validateTracked(root, files), /Forbidden\/stale tracked artifact/);
+  rejectsBoth(/Forbidden\/stale tracked artifact/);
 });

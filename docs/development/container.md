@@ -31,6 +31,13 @@ Ordinary commands never build or install implicitly. After source edits, run `./
 
 ## Persistence and reset
 
+The [pre-push hook](build.md#before-pushing) invokes this checkout's launcher for each
+outgoing snapshot under `/workspace/harness-plugin/.build/pre-push-*`. Snapshot
+`node_modules` stays inside that snapshot, outside the shared root dependency mount.
+Host Git exports its index alongside the snapshot for container-side tracked
+validation. No container Git access to the caller's metadata is required. The image
+and volumes must already exist, and isolated npm installation can need network access.
+
 The checkout is bind-mounted at `/workspace/harness-plugin`. Four named volumes mask root `node_modules`, `.venv`, `dist/harness/skills/back-up-directories/node_modules`, and `/home/node`. All use `volume-nocopy`, so host dependencies and image home contents are not imported. The `.venv` volume hands the Python environment from setup to one gate, then the gate empties it. The other volumes retain backup dependencies, generated references, and caches. Host dependency directories remain untouched. Docker may create empty mount-point directories if they do not exist.
 
 The home volume stores generated references under `/home/node/.harness-plugin/` and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the four volumes. The source checkout is never mounted into that root container.

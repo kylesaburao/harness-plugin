@@ -26,6 +26,15 @@ Choose one command, then run `npm run build`, setup, and the required gate. Comm
 
 The [bump script](../../scripts/bump-version.js), [level derivation](../../scripts/derive-bump-level.js), and [workflow](../../.github/workflows/bump-version.yml) implement this policy.
 
+## Hook installation
+
+Run `git config core.hooksPath .githooks` once per clone. This enables the timestamp
+`post-commit` hook and the distribution freshness `pre-push` hook. The latter checks
+outgoing committed snapshots with isolated locked build dependencies, so pushes can
+require network access and the platform's development environment. See the
+[push contract](build.md#before-pushing). Local hooks can be bypassed, and installation
+does not survive a fresh clone. CI retains its freshness checks.
+
 ## Commit timestamps
 
 Every commit in this repository, author and committer date alike, uses the fixed instant `1999-12-31T23:59:00-08:00`. Both dates must be set together: `git commit --date=` alone sets only the author date, and on `git commit --amend` even `GIT_AUTHOR_DATE` is silently ignored unless `--date=` is passed explicitly (amend preserves the original author date otherwise). Never use `git commit --date=` on its own for this.

@@ -58,6 +58,13 @@ node --test tests/git-hooks/*.test.js
 
 Backup and Python checks require setup dependencies. Media checks also need their host tools. The inventory group checks the public catalog against shipped files and validates local links in repository entry points and `docs/`. Use the container wrapper on Linux, with `sh -c` when shell glob expansion is needed inside the container.
 
+`tests/git-hooks/pre-push.test.js` uses temporary local bare remotes to verify real
+push rejection and a real TypeScript rebuild comparison. Other cases use command
+fixtures for ref selection, failure propagation, cleanup, and Linux dispatch. These
+fixtures do not establish live Docker coverage. The distribution tests retain the
+content/missing/extra/mode drift matrix and compare host-exported index validation
+with direct Git validation. Run the hook tests with the locked root toolchain installed.
+
 ## Interpret results
 
 Prerequisites run first and stop the gate on failure. Python tests overlap the dedicated full GIF search, then remaining Node files share a process-isolated pool sized to available parallelism. Tests that change process-global state remain sequential within their files.

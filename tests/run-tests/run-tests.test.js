@@ -153,6 +153,22 @@ test('setup is separate from the validation and test command plan', () => {
   assert.equal(hostedLabels.includes('Node tests: create-discord-emoji-gif'), false);
 });
 
+test('setup freshness failure stops before runtime dependency installation or initialization', () => {
+  const { buildSetupPlan, runCommandPlan } = loadRunner();
+  const calls = [];
+  const capture = captureOutput();
+  const status = runCommandPlan(buildSetupPlan(repoRoot), spec => {
+    calls.push([spec.command, ...spec.args]);
+    return { status: spec.args.includes('--check') ? 17 : 0 };
+  }, { ...capture, summaryLabel: 'Test setup' });
+  assert.equal(status, 17);
+  assert.deepEqual(calls, [
+    ['npm', 'ci', '--include=dev'],
+    ['node', 'scripts/build.js', '--check'],
+  ]);
+  assert.match(capture.output.stdout, /Test setup: Failed/);
+});
+
 test('every orchestration-stage failure stops later commands and returns its status', () => {
   const { runCommandPlan } = loadRunner();
   const plan = Array.from({ length: 8 }, (_, index) => ({

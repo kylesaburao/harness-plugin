@@ -25,6 +25,12 @@ Expose the intended `ffmpeg` and its matching `ffprobe` on `PATH` for GIF comman
 
 After provisioning these tools, follow [test setup and the full gate](testing.md).
 
+The enabled [pre-push hook](build.md#before-pushing) installs each outgoing snapshot's
+locked root build dependencies separately with `npm ci --include=dev`. Allow network
+access and temporary storage under `.build/`. It uses Node/npm directly on macOS and
+the existing development container on Linux/WSL2, without requiring host Node there.
+It does not install skill runtime dependencies or initialize reference data.
+
 ### Linux host and container
 
 The host needs local Docker with a working daemon, Git, a POSIX shell and standard POSIX utilities, a checkout, and a normal non-root account with Docker access. WSL2 needs Docker integration enabled. Host Node, Python, npm, and media tools are not required.
