@@ -1,13 +1,14 @@
 ---
 name: install-harness-plugin-capabilities
-description: Install, repair, or update Harness user-level integration for Codex or Claude Code, including Advisor activation, implementation-planning activation, and Skill discovery. Use when requested to configure Harness capabilities or repair their host integration.
+description: Install, repair, or update Harness user-level integration for Codex or Claude Code, including Advisor activation, implementation-planning activation, conceptual-first activation, and Skill discovery. Use when requested to configure Harness capabilities or repair their host integration.
 ---
 
 # Install Harness capabilities
 
-Use ordinary agent file operations to install three independent components in
+Use ordinary agent file operations to install four independent components in
 each selected host's effective user instructions: Advisor, implementation-planning
-activation, and Skill discovery. Follow these steps in order for each host.
+activation, conceptual-first activation, and Skill discovery. Follow these steps
+in order for each host.
 
 ## Bundled path authority
 
@@ -20,6 +21,13 @@ If the host-provided path is unavailable or a bundled file is missing, report th
 Establish whether the user wants Codex, Claude Code, or both. Verify that Harness
 skills are discoverable through the plugin. If the plugin is missing, follow
 its normal host installation flow first. Do not copy individual skills.
+
+Honor explicit component selections and exclusions. A general request to install
+or update Harness capabilities covers the applicable components for each selected
+host. A request limited to another component does not authorize conceptual-first
+activation. Ordinary skill use, reviewing these instructions, or updating the
+plugin alone does not authorize changes to personal instruction files. Do not
+ask again when the selected installation operation is already clearly authorized.
 
 Resolve the selected host's user directory:
 
@@ -45,7 +53,7 @@ pointer. Do not inspect the companion unnecessarily.
 ## 2. Read templates and identify existing integration
 
 Read the selected host's capabilities block, shared implementation-planning
-trigger, and shared Skill discovery template in
+trigger, shared conceptual-first trigger, and shared Skill discovery template in
 [activation-instructions.md](references/activation-instructions.md).
 Read the existing effective user instruction file before editing.
 
@@ -57,7 +65,7 @@ A heading alone does not establish ownership of its contents. Report the path
 and specific ambiguity when ownership or conflicting instructions make an edit
 unclear; preserve the uncertain content.
 
-Inspect all three components independently. A correct or blocked component must
+Inspect all authorized components independently. A correct or blocked component must
 not cause another component to be skipped. Leave correct components unchanged;
 with unchanged inputs a second run must make no edits. Do not rewrite the whole
 file to normalize whitespace or headings.
@@ -90,8 +98,8 @@ from this session, leave that host's existing planning integration untouched and
 report this component blocked. Direct the user to the normal plugin update/reload
 workflow and, when necessary, rerun capability installation in a fresh session of
 that host. Do not add a CLI dependency or use the legacy companion as the new
-contract. Continue Advisor and Skill discovery installation where their own
-prerequisites are satisfied.
+contract. Continue Advisor, conceptual-first, and Skill discovery installation
+where their own prerequisites are satisfied.
 
 Once availability is established, copy the shared implementation-planning trigger
 as active Markdown, including its ownership markers and excluding the surrounding
@@ -118,10 +126,63 @@ legacy companion itself untouched. Do not leave two active planning authorities.
 
 Update identifiable integration in place. If absent, insert before
 `# Engineering context` when present, otherwise append with blank-line separation.
-Avoid moving unrelated content. Keep `# Implementation planning` and
-`# Skill discovery` as sibling sections.
+Avoid moving unrelated content. Keep `# Implementation planning`,
+`# Conceptual-first implementation`, and `# Skill discovery` as sibling sections.
 
-## 5. Install Skill discovery
+## 5. Check availability and install conceptual-first activation
+
+Handle this component independently of Advisor, implementation planning, and
+Skill discovery, and only within the requested host and component scope.
+
+Before adding or replacing its integration, establish that the selected target
+host can discover and load the intended Harness `conceptual-first` Skill through
+its supported active catalogue mechanism. Use actual target-host evidence. A
+source file, a successful development build, or availability in a different host
+is insufficient. Do not search caches for a substitute or select another
+installation by version or timestamp.
+
+If the intended Skill is absent, stale, unloadable, ambiguous, or unverifiable in
+this session, leave that host's existing conceptual-first integration untouched
+and report this component blocked. Direct the normal plugin update/reload
+workflow and, when necessary, a fresh session of that host. Continue other
+independently authorized components whose prerequisites are met. Do not copy the
+Skill into a user companion, add a CLI dependency, or substitute a development
+artifact path.
+
+Read the conceptual-first template in `references/activation-instructions.md`.
+Inspect active integration in the effective user instructions. The matching
+ownership markers define the normal edit boundary. A heading alone, a quoted or
+fenced example, or a historical description does not establish active ownership.
+An unmarked equivalent may be migrated only when its Harness ownership and scope
+are clear. Incomplete markers, conflicting customization, or uncertain ownership
+require a specific ambiguity report and preservation of the uncertain content;
+do not add a competing trigger alongside it.
+
+Inspect host-recognized imported instructions only as needed to establish whether
+an active equivalent already exists. Do not assume every Markdown link is an
+import. If correct guidance is already active through an applicable import, do
+not duplicate it. If repair requires changing an imported file outside the
+selected write scope, report this component blocked and preserve both files.
+Do not build a general Markdown parser or import-rewriting mechanism for this.
+
+Once availability and ownership are established, install the complete template
+as active Markdown, including its markers and excluding its outer code fence.
+Update identifiable integration in place. If absent, insert before
+`# Engineering context` when present, otherwise append with blank-line separation.
+Keep conceptual-first, implementation planning, and Skill discovery as sibling
+sections; do not place conceptual-first under an Advisor-specific condition.
+
+If clearly owned duplicate active triggers exist, retain one canonical block and
+remove only confirmed duplicate Harness-owned spans. Preserve unrelated prose,
+examples, imported content outside scope, and other components. With unchanged
+inputs, a repeat invocation must make no edits.
+
+Verify that one correct, active conceptual-first trigger remains and unrelated
+content is preserved. Report changed, unchanged, blocked, or failed status for
+this component separately. A denied load is not successful availability, and an
+instruction-file edit does not establish runtime adherence or model access.
+
+## 6. Install Skill discovery
 
 Copy the shared Skill discovery template from `activation-instructions.md` as
 active Markdown without its surrounding code fence into the effective instruction
@@ -131,20 +192,24 @@ Update identifiable active guidance in place, preserving unrelated prose, nested
 content, and examples. Report specific ambiguities instead of guessing ownership.
 Leave matching guidance unchanged. If absent, insert before
 `# Engineering context` when present, otherwise append with blank-line separation.
-Avoid duplicate active guidance. Check this component even if Advisor or planning
-integration already matches or is blocked.
+Avoid duplicate active guidance. Check this component even if Advisor, planning,
+or conceptual-first integration already matches or is blocked.
 
-## 6. Verify and report
+## 7. Verify and report
 
 Inspect the effective instruction file and resulting edits. Verify each installed
 component is active text and correct. For a successful planning migration, verify
 one canonical Harness planning trigger remains and the migrated Harness pointer
-is removed. Do not claim removal of arbitrary user-authored references. Confirm
-unrelated content is preserved; do not inspect or modify the legacy companion
-for verification.
+is removed. Do not claim removal of arbitrary user-authored references. For
+conceptual-first, verify that exactly one active trigger remains outside the
+Advisor capabilities markers, or that the component was reported blocked,
+ambiguous, or outside the requested component scope with its prior content
+preserved. Confirm unrelated content is preserved; do not
+inspect or modify the legacy companion for verification.
 
 For each selected host report changed paths, unchanged components, blocked
-components, failures, and partial completion honestly. Mention an untouched legacy
-companion only when its presence is known. Remind the user to start a new host
+components, failures, and partial completion honestly, including a separate
+conceptual-first status. Mention an untouched legacy companion only when its
+presence is known. Remind the user to start a new host
 session. Installation does not establish account model access, effective runtime
 permissions, runtime compliance, or guaranteed skill invocation.

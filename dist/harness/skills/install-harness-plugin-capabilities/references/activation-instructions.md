@@ -1,9 +1,11 @@
 # Activation instruction templates
 
 Copy the selected host's Advisor capabilities block exactly, including its markers.
-Install the shared implementation-planning trigger and Skill discovery template
-independently for both hosts, directly as active instructions. Check replacement
-skill availability as required by the installer before changing planning integration.
+Install the shared implementation-planning trigger, conceptual-first trigger, and
+Skill discovery template independently for both hosts, directly as active
+instructions. Check replacement skill availability as required by the installer
+before changing planning integration. Install the conceptual-first trigger only
+after the selected host can discover and load the Harness `conceptual-first` Skill.
 
 ## Codex capabilities
 
@@ -69,6 +71,30 @@ keep any later action phase within the user's authorized scope.
 If the Skill cannot be resolved or loaded, report that blocker instead of
 presenting an unaudited final implementation plan.
 <!-- harness-plugin:implementation-planning:end -->
+```
+
+## Conceptual-first implementation (both hosts)
+
+```markdown
+<!-- harness-plugin:conceptual-first:start -->
+# Conceptual-first implementation
+
+Before planning, implementing, refactoring, or reviewing a change involving
+shared behavior, related components, repeated implementations, cross-cutting
+policy, state lifetimes, or public contracts, find and apply the Harness
+`conceptual-first` Skill through the active skill catalogue.
+
+Use the host-supplied identifier and loading mechanism, not a guessed
+installation path. Reuse its loaded contract and valid task decisions;
+reassess when relevant evidence changes. Trivial local edits with established
+ownership and verbatim export of an agreed plan do not require this workflow.
+
+This Skill governs implementation structure, not authority. Apply it alongside
+implementation-planning guidance without adding permissions, persistent
+artifacts, or a second planning process. If loading fails, report the specific
+blocker. Do not claim compliance or silently select another installation;
+pause dependent expansion while continuing unaffected authorized work.
+<!-- harness-plugin:conceptual-first:end -->
 ```
 
 ## Skill discovery (both hosts)
