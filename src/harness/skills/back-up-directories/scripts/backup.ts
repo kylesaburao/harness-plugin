@@ -82,7 +82,8 @@ const EXIT = Object.freeze({
 const MINIMUM_NODE = [22, 12, 0];
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
-const RUN_LOCK_FILENAME = '.backup-tool.lock';
+// Per-user Harness state lives under ~/.harness-plugin/<skill>/.
+const RUN_LOCK_RELATIVE_PATH = path.join('.harness-plugin', 'back-up-directories', 'run.lock');
 const INDENT_PREFIX = '  ';
 const LIST_DETAIL_PREFIX = '   ';
 
@@ -431,16 +432,22 @@ class RunLock {
 function resolveRunLockPath(environment = process.env, homeDirectory = os.homedir()) {
   if (environment.BACKUP_LOCK_PATH !== undefined) {
     if (!path.isAbsolute(environment.BACKUP_LOCK_PATH)) {
-      throw new Error('BACKUP_LOCK_PATH must be an absolute path.');
+      throw new StartupError(
+        'usage_error',
+        'BACKUP_LOCK_PATH must be an absolute path.',
+        'set BACKUP_LOCK_PATH to an absolute path or unset it to use the default lock location',
+        EXIT.VALIDATION,
+      );
     }
     return path.normalize(environment.BACKUP_LOCK_PATH);
   }
-  return path.join(homeDirectory, RUN_LOCK_FILENAME);
+  return path.join(homeDirectory, RUN_LOCK_RELATIVE_PATH);
 }
 
 async function acquireRunLock(lockPath = resolveRunLockPath()) {
   const token = crypto.randomUUID();
   const owner = { pid: process.pid, hostname: os.hostname(), token };
+  await fsp.mkdir(path.dirname(lockPath), { recursive: true, mode: 0o700 });
   try {
     await fsp.writeFile(lockPath, JSON.stringify(owner), { flag: 'wx' });
     return new RunLock(lockPath, token);
@@ -766,10 +773,16 @@ async function main() {
     return;
   }
 
-  let plan;
   let lockPath;
   try {
     lockPath = resolveRunLockPath();
+  } catch (error) {
+    failStartup(error);
+    return;
+  }
+
+  let plan;
+  try {
     plan = await readAndValidate(path.resolve(options.configPath));
     if (!options.preflightOnly || !jsonOutput) printPreview(plan);
   } catch (error) {

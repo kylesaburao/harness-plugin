@@ -95,7 +95,7 @@ about guarantees. Points that change what you should tell the user:
 - The source is archived live. There is no snapshot and no detection of a file changing
   mid-archive, so a valid ZIP can still hold a mixed point-in-time view. When consistency
   matters, the source has to be quiesced first.
-- One run lock lives at `.backup-tool.lock` in the invoking user's home directory. A
+- One run lock lives at `~/.harness-plugin/back-up-directories/run.lock` for the invoking user. A
   `SIGKILL` or power loss leaves it behind, and the next run reports the path. Removing it
   is the operator's call after confirming no backup is running. Do not delete it for them.
 - The tool is a same-user interactive utility. Its configuration and directory paths are

@@ -783,8 +783,20 @@ test('run lock rejects a second active backup and releases cleanly', async (t) =
 test('run lock path uses the home directory independently of TMPDIR', () => {
   assert.equal(
     resolveRunLockPath({ TMPDIR: '/different-temporary-directory' }, '/user-owned-home'),
-    path.join('/user-owned-home', '.backup-tool.lock'),
+    path.join('/user-owned-home', '.harness-plugin', 'back-up-directories', 'run.lock'),
   );
+});
+
+test('run lock acquisition creates a missing lock parent directory', async (t) => {
+  const root = await temporaryRoot(t);
+  const home = path.join(root, 'home');
+  const lockPath = resolveRunLockPath({}, home);
+
+  const lock = await acquireRunLock(lockPath);
+  assert.equal(JSON.parse(await fsp.readFile(lockPath, 'utf8')).pid, process.pid);
+  await assert.rejects(acquireRunLock(lockPath), /Another backup run may already be active/);
+  assert.deepEqual(lock.releaseSync(), []);
+  await assert.rejects(fsp.access(lockPath), { code: 'ENOENT' });
 });
 
 test('run lock path honors an absolute override and rejects a relative override', () => {
@@ -792,7 +804,7 @@ test('run lock path honors an absolute override and rejects a relative override'
   assert.equal(resolveRunLockPath({ BACKUP_LOCK_PATH: absolute }, '/unused-home'), absolute);
   assert.throws(
     () => resolveRunLockPath({ BACKUP_LOCK_PATH: 'relative.lock' }, '/unused-home'),
-    /BACKUP_LOCK_PATH must be an absolute path/,
+    { code: 'usage_error', exitCode: EXIT.VALIDATION, message: /BACKUP_LOCK_PATH must be an absolute path/ },
   );
 });
 
@@ -861,6 +873,31 @@ test('CLI rejects a relative BACKUP_LOCK_PATH before creating a lock', async (t)
 
   assert.equal(result.exitCode, EXIT.VALIDATION);
   assert.match(result.stderr, /BACKUP_LOCK_PATH must be an absolute path/);
+  assert.deepEqual(await fsp.readdir(output), []);
+});
+
+test('CLI reports a relative BACKUP_LOCK_PATH in the JSON error contract', async (t) => {
+  const root = await temporaryRoot(t, 'backup-cli-lock-json-');
+  const { source, output } = await makeDirectories(root, ['source', 'output']);
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: output,
+    targetDirectories: [output],
+  }));
+
+  const result = await runCli(t, ['--json', config], {
+    input: 'yes\n',
+    environment: { BACKUP_LOCK_PATH: 'relative.lock' },
+  });
+
+  assert.equal(result.exitCode, EXIT.VALIDATION);
+  assert.equal(result.stdout, '');
+  const { error } = JSON.parse(result.stderr);
+  assert.deepEqual(Object.keys(error).sort(), ['code', 'condition', 'remedy']);
+  assert.equal(error.code, 'usage_error');
+  assert.equal(error.condition, 'BACKUP_LOCK_PATH must be an absolute path.');
+  assert.match(error.remedy, /absolute path/);
   assert.deepEqual(await fsp.readdir(output), []);
 });
 
