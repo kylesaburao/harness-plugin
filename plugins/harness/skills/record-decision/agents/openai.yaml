@@ -1,0 +1,6 @@
+interface:
+  display_name: "Decision Record"
+  short_description: "Write down why a technical decision was made"
+  default_prompt: "Use $record-decision to capture why this decision was made."
+policy:
+  allow_implicit_invocation: true
