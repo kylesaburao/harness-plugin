@@ -11,20 +11,20 @@ on:
         options: [patch, minor, major]
         default: patch
 
-permissions:
-  contents: write
-
 concurrency:
   group: version-bump
   cancel-in-progress: false
 
 jobs:
   test:
+    permissions:
+      contents: read
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.sha }}
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -39,6 +39,8 @@ jobs:
 
   bump:
     needs: test
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     # Skip runs triggered by the bot's own bump commit, so this doesn't loop. In practice a push
     # made with the default GITHUB_TOKEN never re-triggers push events, so this is insurance for
@@ -54,7 +56,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
 
       - name: Bump, commit, and push (retries on a race)
         env:
@@ -104,6 +110,7 @@ jobs:
               exit 0
             fi
 
+            node scripts/run-tests.js --skip-gif
             node scripts/bump-version.js "--bump-${level}" --json | tee /tmp/bump.json
             next="$(jq -r .next /tmp/bump.json)"
 

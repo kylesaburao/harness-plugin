@@ -3,19 +3,27 @@
 
 from __future__ import annotations
 
-from ste_data import run_reference_readiness_entry_point
+import argparse
+import json
 
-
-def print_plain(result: dict) -> None:
-    print(f"READY: {result['generated_data_location']}")
-    print(
-        f"Dictionary: {result['dictionary_rows']} rows, "
-        f"SHA-256 {result['dictionary_sha256']}"
-    )
+from ste_data import ReferencesError, ensure_references_ready, report_reference_error
 
 
 def main() -> int:
-    return run_reference_readiness_entry_point("validate_references.py", "ready", print_plain)
+    parser = argparse.ArgumentParser(prog="validate_references.py")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    try:
+        result = ensure_references_ready()
+    except ReferencesError as error:
+        report_reference_error(error, args.json)
+        return 2
+    if args.json:
+        print(json.dumps({"status": "ready", **result}, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(f"READY: {result['generated_data_location']}")
+        print(f"Dictionary: {result['dictionary_rows']} rows, SHA-256 {result['dictionary_sha256']}")
+    return 0
 
 
 if __name__ == "__main__":

@@ -60,6 +60,21 @@ test('both Node entrypoints reject missing conversion arguments with a JSON erro
   }
 });
 
+test('both Node entrypoints reject malformed arguments before the Node version check', () => {
+  const preload = path.join(cliDirectory, 'unsupported-node.cjs');
+  fs.writeFileSync(preload, "Object.defineProperty(process.versions, 'node', { value: '21.9.0' });\n");
+  for (const runner of runners) {
+    const result = runEntrypoint(
+      runner.command,
+      path.join(skillDir, runner.file),
+      ['--json', '--unknown'],
+      { NODE_OPTIONS: `--require=${preload}` },
+    );
+    assert.equal(result.status, 2, `${runner.name}: ${result.stderr}`);
+    assert.equal(JSON.parse(result.stderr).error.code, 'usage_error');
+  }
+});
+
 test('both Node entrypoints accept the exact integer boundary and reject larger values before work', () => {
   const directory = temporaryDirectory('integer-boundary.');
   const input = path.join(directory, 'input.mp4');
@@ -117,7 +132,7 @@ for (const runner of runners) {
   });
 }
 
-test('Node gifsicle removes its work directory when KEEP_WORK=1', { timeout: 120000 }, t => {
+test('Node gifsicle keeps its work directory when KEEP_WORK=1', { timeout: 120000 }, t => {
   const runner = runners.find(candidate => candidate.backend === 'gifsicle');
   if (!prepareRealCli(t, runner)) return;
   const temporaryRoot = temporaryDirectory('gifsicle-keep-work-cleanup.');
@@ -128,8 +143,8 @@ test('Node gifsicle removes its work directory when KEEP_WORK=1', { timeout: 120
       KEEP_WORK: '1', TMPDIR: temporaryRoot,
     });
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stderr, '');
-    assert.deepEqual(fs.readdirSync(temporaryRoot), []);
+    assert.match(result.stderr, /^Kept work directory: .+\n$/);
+    assert.equal(fs.readdirSync(temporaryRoot).length, 1);
   } finally {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
   }

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import re
@@ -11,7 +10,7 @@ import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, NamedTuple, NoReturn
+from typing import NamedTuple, NoReturn
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_CONFIG = SKILL_ROOT / "references" / "source-config.json"
@@ -94,74 +93,33 @@ def _load_json(path: Path, label: str) -> dict:
 
 
 def load_source_config(path: Path = SOURCE_CONFIG) -> dict:
+    """Load the tracked source configuration.
+
+    This is a hand-edited, git-tracked file, so validation is light: the keys the
+    runtime and the extractor read must exist, and the two SHA-256 fields must be
+    well formed. `extract_dictionary.load_config` re-checks page geometry before it
+    is used, and `_validate_dictionary` re-checks row counts against the real
+    dictionary, so this does not duplicate either.
+    """
     if not path.is_file():
         _invalid(f"tracked source configuration is missing: {path.resolve()}")
     config = _load_json(path, "tracked source configuration")
     try:
         source = config["source"]
-        extraction = config["extraction"]
         dictionary = config["dictionary"]
-        reconciliation = dictionary["reconciliation"]
-        counts = (
-            dictionary["part_of_speech_rows"],
-            dictionary["approved_rows"],
+        digests = (("source.pdf_sha256", source["pdf_sha256"]), ("dictionary.sha256", dictionary["sha256"]))
+        _ = (
+            config["schema_version"], source["title"], source["issue"], source["issue_date"], source["url"],
+            config["extraction"], dictionary["reconciliation"],
+            dictionary["required_source_anchors"], dictionary["known_source_cases"],
+            dictionary["part_of_speech_rows"], dictionary["approved_rows"],
             dictionary["unapproved_rows"],
-            dictionary["declared_approved_words"],
-            dictionary["declared_unapproved_words"],
         )
-        geometry = (
-            extraction["content_y_min"],
-            extraction["content_y_max"],
-            extraction["even_left_margin"],
-            extraction["odd_left_margin"],
-            extraction["column_boundary_tolerance"],
-            extraction["glyph_space_threshold"],
-        )
-        required = (
-            config["schema_version"] == 1,
-            source["issue"] == 9,
-            all(isinstance(source[name], str) and source[name] for name in ("title", "issue_date", "publisher")),
-            isinstance(source["url"], str) and source["url"].startswith("https://"),
-            isinstance(source["pdf_sha256"], str)
-            and bool(re.fullmatch(r"[0-9a-f]{64}", source["pdf_sha256"])),
-            isinstance(extraction["page_count"], int) and extraction["page_count"] > 0,
-            isinstance(extraction["physical_page_start"], int)
-            and extraction["physical_page_start"] > 0,
-            isinstance(extraction["physical_page_end"], int)
-            and extraction["physical_page_start"] <= extraction["physical_page_end"]
-            <= extraction["page_count"],
-            isinstance(extraction["column_offsets"], list)
-            and len(extraction["column_offsets"]) == 5
-            and all(isinstance(value, (int, float)) for value in extraction["column_offsets"])
-            and extraction["column_offsets"] == sorted(extraction["column_offsets"]),
-            all(isinstance(value, (int, float)) for value in geometry),
-            isinstance(dictionary["sha256"], str)
-            and bool(re.fullmatch(r"[0-9a-f]{64}", dictionary["sha256"])),
-            all(isinstance(value, int) and value >= 0 for value in counts),
-            dictionary["part_of_speech_rows"] > 0,
-            dictionary["approved_rows"] + dictionary["unapproved_rows"]
-            == dictionary["part_of_speech_rows"],
-            isinstance(dictionary["required_source_anchors"], list)
-            and len(dictionary["required_source_anchors"]) >= 2
-            and all(
-                isinstance(anchor, str) and re.fullmatch(r"2-1-[A-Z][0-9]+", anchor)
-                for anchor in dictionary["required_source_anchors"]
-            ),
-            isinstance(reconciliation, dict),
-            all(
-                isinstance(reconciliation[name], list)
-                and all(isinstance(value, str) for value in reconciliation[name])
-                for name in (
-                    "approved_multi_word_rows_not_in_word_count",
-                    "unapproved_multi_word_rows_not_in_word_count",
-                )
-            ),
-            isinstance(dictionary["known_source_cases"], dict),
-        )
-    except (AttributeError, KeyError, TypeError, ValueError):
-        _invalid("tracked source configuration has an incomplete schema")
-    if not all(required):
-        _invalid("tracked source configuration has an invalid value")
+    except (KeyError, TypeError) as error:
+        _invalid(f"tracked source configuration has an incomplete schema: {error}")
+    for label, value in digests:
+        if not (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)):
+            _invalid(f"tracked source configuration has an invalid {label}")
     return config
 
 
@@ -183,28 +141,6 @@ def read_jsonl(path: Path):
             yield value
 
 
-_ENTRIES_CACHE: dict = {}
-
-
-def _read_dictionary_entries(path: Path) -> list:
-    """Parse dictionary.jsonl once and memoize by path identity, mtime, and size.
-
-    `validate_bundle` and `load_dictionary` both parse the same file on a normal
-    invocation, so this avoids reading and re-parsing it twice. The cache holds
-    at most one entry, so a change of path (as in the test suite, where every
-    test builds its own temporary bundle) simply replaces it rather than growing.
-    """
-    resolved = path.resolve()
-    info = resolved.stat()
-    key = (str(resolved), info.st_mtime_ns, info.st_size)
-    cached = _ENTRIES_CACHE.get(key)
-    if cached is None:
-        cached = list(read_jsonl(resolved))
-        _ENTRIES_CACHE.clear()
-        _ENTRIES_CACHE[key] = cached
-    return cached
-
-
 def _validate_dictionary(path: Path, validation: dict, config: dict) -> tuple[int, str]:
     digest = sha256_file(path)
     expected = config["dictionary"]
@@ -213,7 +149,7 @@ def _validate_dictionary(path: Path, validation: dict, config: dict) -> tuple[in
     if validation.get("dictionary_sha256") != digest:
         _invalid("dictionary validation metadata has the wrong dictionary SHA-256")
     try:
-        entries = _read_dictionary_entries(path)
+        entries = list(read_jsonl(path))
     except (OSError, UnicodeError, ValueError) as error:
         _invalid(f"dictionary JSONL is malformed: {error}")
     counts = Counter(entry.get("status") for entry in entries)
@@ -300,9 +236,9 @@ def validate_bundle(
         path = generated / name
         if not isinstance(record, dict) or set(record) != {"bytes", "sha256"}:
             _invalid(f"generated manifest has an incomplete record for {name}")
-        actual_size = path.stat().st_size
-        if record["bytes"] != actual_size:
-            _invalid(f"generated manifest size for {name} is {record['bytes']}, actual size is {actual_size}")
+        actual_bytes = path.stat().st_size
+        if record["bytes"] != actual_bytes:
+            _invalid(f"generated manifest byte count for {name} is {record['bytes']}, actual byte count is {actual_bytes}")
         actual_digest = sha256_file(path)
         if record["sha256"] != actual_digest:
             _invalid(f"generated manifest SHA-256 for {name} is {record['sha256']}, actual SHA-256 is {actual_digest}")
@@ -328,16 +264,15 @@ def ensure_references_ready() -> dict:
         ) from error
 
 
-def reference_error_details(error: ReferencesError) -> dict:
+def report_reference_error(error: ReferencesError, json_output: bool = False) -> None:
     try:
-        config = load_source_config()
-        source = config["source"]
+        source = load_source_config()["source"]
         source_url = source["url"]
         issue_identity = f"{source['title']}, Issue {source['issue']} ({source['issue_date']})"
     except ReferencesError:
         source_url = "unavailable because the tracked source configuration is invalid"
         issue_identity = "ASD-STE100 Issue 9"
-    return {
+    details = {
         "code": error.code,
         "condition": error.condition,
         "generated_data_location": str(GENERATED.resolve()),
@@ -346,10 +281,6 @@ def reference_error_details(error: ReferencesError) -> dict:
         "source_url": source_url,
         "issue_identity": issue_identity,
     }
-
-
-def report_reference_error(error: ReferencesError, json_output: bool = False) -> None:
-    details = reference_error_details(error)
     if json_output:
         print(json.dumps({"error": details}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
         return
@@ -359,30 +290,6 @@ def report_reference_error(error: ReferencesError, json_output: bool = False) ->
     print("Online download required: yes", file=sys.stderr)
     print(f"Pinned source: {details['source_url']}", file=sys.stderr)
     print(f"Source identity: {details['issue_identity']}", file=sys.stderr)
-
-
-def run_reference_readiness_entry_point(
-    prog: str, status: str, print_plain: Callable[[dict], None]
-) -> int:
-    """Shared body for the public bundle-readiness scripts.
-
-    `prog` names the script for argparse. `status` is the JSON success value.
-    `print_plain` renders the plain-text success report from the
-    `ensure_references_ready()` result.
-    """
-    parser = argparse.ArgumentParser(prog=prog)
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args()
-    try:
-        result = ensure_references_ready()
-    except ReferencesError as error:
-        report_reference_error(error, args.json)
-        return 2
-    if args.json:
-        print(json.dumps({"status": status, **result}, ensure_ascii=False, indent=2, sort_keys=True))
-    else:
-        print_plain(result)
-    return 0
 
 
 def plural(base: str) -> str:
@@ -413,7 +320,7 @@ class DictionaryData(NamedTuple):
 
 
 def load_dictionary(path: Path = DICTIONARY) -> DictionaryData:
-    entries = _read_dictionary_entries(path)
+    entries = list(read_jsonl(path))
     by_headword = defaultdict(list)
     approved_forms = defaultdict(list)
     unapproved = defaultdict(list)

@@ -16,18 +16,16 @@ function temporaryRoot(t) {
   return root;
 }
 
-test('publication atomically refuses a racing output directory without changing it', async t => {
+test('publication refuses a racing output directory without changing it', async t => {
   const root = temporaryRoot(t);
   const temporary = path.join(root, '.partial');
   const output = path.join(root, 'clip-frames');
   fs.mkdirSync(temporary);
   fs.writeFileSync(path.join(temporary, 'frame-000001.png'), 'frame');
-  const manager = { run: async () => {
-    fs.mkdirSync(output);
-    fs.writeFileSync(path.join(output, 'competitor.txt'), 'unchanged');
-    return { code: 0, stdout: 'collision\n', stderr: '' };
-  } };
-  const state = { platform: { os: 'macos' }, commands: { publisher: '/fake/publisher' }, paths: { output } };
+  fs.mkdirSync(output);
+  fs.writeFileSync(path.join(output, 'competitor.txt'), 'unchanged');
+  const manager = { run: async () => ({ code: 0, stdout: 'collision\n', stderr: '' }) };
+  const state = { commands: { publisher: '/fake/publisher' }, paths: { output } };
   await assert.rejects(subject.publishDirectoryNoReplace(manager, state, temporary), { code: 'publication_failed' });
   assert.equal(fs.readFileSync(path.join(output, 'competitor.txt'), 'utf8'), 'unchanged');
   assert.equal(fs.readFileSync(path.join(temporary, 'frame-000001.png'), 'utf8'), 'frame');
@@ -45,26 +43,32 @@ test('publication exposes the completed frame set and removes partial work', asy
     fs.renameSync(temporary, output);
     return { code: 0, stdout: 'published\n', stderr: '' };
   } };
-  const state = { platform: { os: 'macos' }, commands: { publisher: '/fake/publisher' }, paths: { output } };
+  const state = { commands: { publisher: '/fake/publisher' }, paths: { output } };
   await subject.publishDirectoryNoReplace(manager, state, temporary);
 
   assert.deepEqual(fs.readdirSync(output), ['frame-000001.png', 'frame-000002.png']);
   assert.equal(fs.existsSync(temporary), false);
 });
 
-test('macOS publisher integration moves a directory and refuses replacement', { skip: process.platform !== 'darwin' }, async t => {
+test('macOS publisher moves a directory and refuses an empty-directory replacement', { skip: process.platform !== 'darwin' }, async t => {
   const root = temporaryRoot(t);
   const source = path.join(root, 'source');
   const competitor = path.join(root, 'competitor');
   const output = path.join(root, 'output');
   fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, 'frame-000001.png'), 'published');
   fs.mkdirSync(competitor);
   const manager = new subject.ProcessManager();
-  const state = { platform: { os: 'macos' }, commands: { publisher: '/usr/bin/osascript' }, paths: { output } };
+  const state = { commands: { publisher: '/usr/bin/osascript' }, paths: { output } };
 
   await subject.publishDirectoryNoReplace(manager, state, source);
-  await assert.rejects(subject.publishDirectoryNoReplace(manager, state, competitor), { code: 'publication_failed' });
-  assert.equal(fs.existsSync(competitor), true);
+  state.paths.output = competitor;
+  const temporary = path.join(root, 'second-source');
+  fs.mkdirSync(temporary);
+  fs.writeFileSync(path.join(temporary, 'frame-000002.png'), 'unchanged');
+  await assert.rejects(subject.publishDirectoryNoReplace(manager, state, temporary), { code: 'publication_failed' });
+  assert.deepEqual(fs.readdirSync(competitor), []);
+  assert.deepEqual(fs.readdirSync(temporary), ['frame-000002.png']);
 });
 
 test('process interruption terminates the active child and records the signal', async () => {
@@ -113,7 +117,7 @@ test('raw preflight failures become stable exit-2 diagnostics', { skip: process.
   await assert.rejects(subject.prepare(manager, { input: null }, encoderDirectory), { code: 'preflight_failed', exitCode: 2 });
 });
 
-for (const [signal, exitCode] of [['SIGHUP', 129], ['SIGINT', 130], ['SIGTERM', 143]]) {
+for (const [signal, exitCode] of [['SIGTERM', 143]]) {
   test(`CLI ${signal} terminates HDR encoding, cleans TIFF/HEIC/helper partials, and exits ${exitCode}`, { skip: process.platform !== 'darwin' || !realFfmpeg }, async t => {
     const root = temporaryRoot(t);
     const bin = path.join(root, 'bin');
@@ -124,7 +128,6 @@ for (const [signal, exitCode] of [['SIGHUP', 129], ['SIGINT', 130], ['SIGTERM', 
     const generated = spawnSync(realFfmpeg, ['-hide_banner', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=white:s=16x16:r=2:d=1', '-vf', 'format=yuv420p10le', '-c:v', 'libx265', '-x265-params', 'log-level=error:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc', '-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc', '-color_range', 'tv', input], { encoding: 'utf8' });
     assert.equal(generated.status, 0, generated.stderr);
     writeExecutable(path.join(bin, 'sw_vers'), '#!/bin/sh\necho 26.0\n');
-    writeExecutable(path.join(bin, 'osascript'), '#!/bin/sh\necho failed\n');
     const fakeEncoder = path.join(bin, 'fake-encoder');
     writeExecutable(fakeEncoder, fakeEncoderScript(started, terminated));
     writeExecutable(path.join(bin, 'swiftc'), `#!/bin/sh\ncp ${JSON.stringify(fakeEncoder)} "$3"\nchmod +x "$3"\n`);

@@ -259,11 +259,8 @@ async function verifyFinalGif(manager, commands, file, expected) {
 }
 
 function createPublicationTemp(outputDir, prefix) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const file = path.join(outputDir, `.${prefix}-output.${crypto.randomBytes(6).toString('hex')}`);
-    try { fs.closeSync(fs.openSync(file, 'wx', 0o600)); return file; } catch (error) { if (error.code !== 'EEXIST') throw new RunError('publication_failed', 'could not create the destination temporary file', 'make the output directory writable and ensure it has free space'); }
-  }
-  throw new RunError('publication_failed', 'could not create the destination temporary file', 'make the output directory writable and ensure it has free space');
+  const file = path.join(outputDir, `.${prefix}-output.${crypto.randomBytes(6).toString('hex')}`);
+  try { fs.closeSync(fs.openSync(file, 'wx', 0o600)); return file; } catch { throw new RunError('publication_failed', 'could not create the destination temporary file', 'make the output directory writable and ensure it has free space'); }
 }
 async function publishVerified(source, output, prefix, verify, onTemporary = () => {}) {
   const temporary = createPublicationTemp(path.dirname(output), prefix);
@@ -281,10 +278,10 @@ async function publishVerified(source, output, prefix, verify, onTemporary = () 
     throw error;
   }
 }
-function cleanupArtifacts({ workDir, outputTemp, keepWork }) {
+function cleanupArtifacts({ workDir, outputTemp, config }) {
   if (outputTemp) { try { fs.rmSync(outputTemp, { force: true }); } catch {} }
-  if (workDir && fs.existsSync(workDir) && !keepWork) fs.rmSync(workDir, { recursive: true, force: true });
-  if (workDir && fs.existsSync(workDir) && keepWork) process.stderr.write(`Kept work directory: ${workDir}\n`);
+  if (workDir && fs.existsSync(workDir) && !config.keepWork) fs.rmSync(workDir, { recursive: true, force: true });
+  if (workDir && fs.existsSync(workDir) && config.keepWork) process.stderr.write(`Kept work directory: ${workDir}\n`);
 }
 
 function emitError(error, json = false) {
@@ -387,4 +384,4 @@ function usage(backend, basename) {
   return `Usage: ${basename} [OPTIONS] INPUT_VIDEO [OUTPUT.gif]\n\nOptions:\n  --preflight [INPUT_VIDEO]\n                  Check the environment and optional input, convert nothing, then exit\n  --json          Report readiness and errors as JSON\n  --help, -h      Print this message\n  --              Stop option parsing\n\nEnvironment:\n  MAX_BYTES       Strict byte ceiling (default: 256000, maximum: ${MAX_EXACT_INTEGER})\n  GIF_SIZE        Square width and height (default: 128, maximum: ${MAX_EXACT_INTEGER})\n  MIN_FPS         Minimum frame rate (default: 15, maximum: ${MAX_EXACT_INTEGER})\n  MAX_FPS         Maximum frame rate (default: 24, maximum: ${maxFpsMaximum})\n  JOBS            Parallel work limit (default: logical CPUs minus 2, minimum 1, maximum: ${MAX_EXACT_INTEGER})\n${quality}  KEEP_WORK       Keep the work directory when set to 1 (default: unset)\n\nAll positive integers have an exact-value ceiling of ${MAX_EXACT_INTEGER}.\n\nExit status:\n  0    Success or passed preflight\n  1    Conversion work started and failed\n  2    Work did not start\n  129  SIGHUP\n  130  SIGINT\n  143  SIGTERM\n`;
 }
 
-module.exports = { StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, defaultJobs, platformPolicy, checkCommonPreflight, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, sha256File, verifyFinalGif, createPublicationTemp, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, formatParameters, resultPayload, emitResult, preflightError, usage };
+module.exports = { StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, platformPolicy, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, sha256File, verifyFinalGif, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, resultPayload, emitResult, preflightError, usage };

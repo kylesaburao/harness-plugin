@@ -50,7 +50,7 @@ test('interruption during final copy validation prevents destination replacement
   await assert.rejects(copying, (error) => error.exitCode === 130);
   assert.equal(await fsp.readFile(destination, 'utf8'), 'old');
   assert.equal(context.temporaryPaths.size, 1);
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
 });
 
 test('interruption during retained archive validation prevents archive replacement', async (t) => {
@@ -74,7 +74,7 @@ test('interruption during retained archive validation prevents archive replaceme
   await assert.rejects(execution, (error) => error.exitCode === 143);
   assert.equal(await fsp.readFile(archivePath, 'utf8'), 'old archive');
   assert.equal(context.temporaryPaths.size, 1);
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
 });
 
 test('interruption during final staging cleanup remains authoritative', async (t) => {

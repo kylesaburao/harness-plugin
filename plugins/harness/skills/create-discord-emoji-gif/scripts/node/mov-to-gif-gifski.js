@@ -115,6 +115,8 @@ async function regenerateWinner(state, winner) {
 }
 
 async function convert(state) {
+  state.workers = calculateGifskiWorkers(state.config);
+  state.rayonThreads = calculateRayonThreads(state.config, state.workers);
   if (!state.json) process.stderr.write(`Searching ${state.config.minFps}-${state.config.maxFps} FPS, gifski quality ${state.config.minQuality}-${state.config.maxQuality} under ${state.config.maxBytes} bytes at ${state.config.gifSize}x${state.config.gifSize} with ${state.workers} encoder workers and ${state.rayonThreads} gifski threads each...\n`);
   await prepareReference(state);
   const fpsValues = Array.from({ length: state.config.maxFps - state.config.minFps + 1 }, (_, i) => state.config.minFps + i);
@@ -134,16 +136,9 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     backend: 'gifski',
     defaultScriptName: 'mov-to-gif-gifski.js',
     workPrefix: 'mov-to-gif-gifski.',
-    buildState(state) {
-      const { config } = state;
-      state.keepWork = config.keepWork;
-      state.workers = calculateGifskiWorkers(config);
-      state.rayonThreads = calculateRayonThreads(config, state.workers);
-      return state;
-    },
     convert,
   });
 }
 
 if (require.main === module) main().then(code => { process.exitCode = code; });
-module.exports = { calculateGifskiWorkers, calculateRayonThreads, candidateSequence, selectWinner, prepareReference, prepareSourceCache, encodeCandidate, regenerateWinner, main };
+module.exports = { calculateGifskiWorkers, calculateRayonThreads, candidateSequence, selectWinner };

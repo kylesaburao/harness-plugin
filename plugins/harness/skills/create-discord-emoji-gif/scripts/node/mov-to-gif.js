@@ -112,10 +112,9 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     backend: 'gifsicle',
     defaultScriptName: 'mov-to-gif.js',
     workPrefix: 'mov-to-gif.',
-    buildState(state) { return state; },
     convert,
   });
 }
 
 if (require.main === module) main().then(code => { process.exitCode = code; });
-module.exports = { DITHER_GRAPH, candidateTasks, selectWinner, prepareReference, prepareScaledSource, evaluateColorTask, regenerateWinner, main };
+module.exports = { candidateTasks, selectWinner };

@@ -361,18 +361,11 @@ def main(argv: list[str] | None = None) -> int:
     except InitializationInputError as error:
         report_error(error.code, error.condition, error.remedy, json_output)
         return 2
-    except InitializationError as error:
+    except (InitializationError, KeyError, OSError, ReferencesError, TypeError, UnicodeError, ValueError) as error:
+        condition = str(error) if isinstance(error, InitializationError) else f"initialization could not complete: {error}"
         report_error(
             "preflight_failed" if args.preflight else "initialization_failed",
-            str(error),
-            initialization_command(),
-            json_output,
-        )
-        return 2 if args.preflight else 1
-    except (KeyError, OSError, ReferencesError, TypeError, UnicodeError, ValueError) as error:
-        report_error(
-            "preflight_failed" if args.preflight else "initialization_failed",
-            f"initialization could not complete: {error}",
+            condition,
             initialization_command(),
             json_output,
         )

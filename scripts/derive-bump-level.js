@@ -156,6 +156,4 @@ module.exports = {
   deriveFromLog,
   isRelevantPath,
   parseLog,
-  BUMP_COMMIT_PATTERN,
-  RELEVANT_PATH_PREFIXES,
 };

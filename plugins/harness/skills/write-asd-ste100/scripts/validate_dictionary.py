@@ -3,19 +3,27 @@
 
 from __future__ import annotations
 
-from ste_data import run_reference_readiness_entry_point
+import argparse
+import json
 
-
-def print_plain(result: dict) -> None:
-    print(
-        f"PASS: {result['dictionary_rows']} dictionary rows; "
-        f"SHA-256 {result['dictionary_sha256']}"
-    )
-    print("PASS: generated manifest, source identity, hashes, schema, and row reconciliation")
+from ste_data import ReferencesError, ensure_references_ready, report_reference_error
 
 
 def main() -> int:
-    return run_reference_readiness_entry_point("validate_dictionary.py", "valid", print_plain)
+    parser = argparse.ArgumentParser(prog="validate_dictionary.py")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    try:
+        result = ensure_references_ready()
+    except ReferencesError as error:
+        report_reference_error(error, args.json)
+        return 2
+    if args.json:
+        print(json.dumps({"status": "valid", **result}, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(f"PASS: {result['dictionary_rows']} dictionary rows; SHA-256 {result['dictionary_sha256']}")
+        print("PASS: generated manifest, source identity, hashes, schema, and row reconciliation")
+    return 0
 
 
 if __name__ == "__main__":

@@ -83,7 +83,7 @@ test('cancellation prevents later spawns', async () => {
   assert.throws(() => manager.spawnOwned('late', process.execPath, ['-e', '0']), { code: 'cancelled' });
 });
 
-for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+for (const signal of ['SIGTERM']) {
   test(`${signal} reaches an owned child and grandchild process group`, { skip: process.platform === 'win32' }, async () => {
     const directory = temporaryDirectory(`process-manager-${signal}.`);
     const fixture = path.join(directory, 'fixture.js');

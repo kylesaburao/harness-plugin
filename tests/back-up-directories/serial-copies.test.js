@@ -142,5 +142,5 @@ test('a failed second copy preserves the first installed destination', async (t)
   await assert.rejects(fsp.access(plan.copyTargets[1].destination), { code: 'ENOENT' });
   assert.deepEqual(await fsp.readdir(plan.output.canonicalPath), []);
   assert.equal(context.temporaryPaths.size, 1);
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
 });

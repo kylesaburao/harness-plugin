@@ -12,15 +12,14 @@ async function runConverter({
   backend,
   defaultScriptName,
   workPrefix,
-  buildState = state => state,
   convert,
 }) {
   let parsed = { json: argv.includes('--json') };
   let state;
   try {
-    shared.validateNodeVersion();
     const scriptName = path.basename(process.argv[1] || defaultScriptName);
     parsed = shared.parseArguments(argv, scriptName);
+    shared.validateNodeVersion();
     if (parsed.help) {
       process.stdout.write(shared.usage(backend, scriptName));
       return 0;
@@ -48,7 +47,6 @@ async function runConverter({
       throw new shared.StartupError('work_directory_unusable', `could not create a work directory under ${env.TMPDIR || os.tmpdir()}`, 'set TMPDIR to a writable local directory and try again');
     }
     state = { ...outputState, input: parsed.positional[0], config, manager, commands: preflight.commands, workDir, outputTemp: '', json: parsed.json, scriptName };
-    state = buildState(state);
     const uninstall = manager.installSignalHandlers((_signal, exitCode) => {
       shared.cleanupArtifacts(state);
       process.exit(exitCode);
@@ -62,7 +60,7 @@ async function runConverter({
     return 0;
   } catch (error) {
     if (state) {
-      try { await state.manager.cancel('SIGTERM'); } catch {}
+      await state.manager.cancel('SIGTERM');
       shared.cleanupArtifacts(state);
     }
     shared.emitError(error, parsed.json || error.json);

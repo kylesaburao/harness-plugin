@@ -22,13 +22,14 @@ import extract_dictionary
 import initialize_references
 import ste_check
 import ste_data
-from ste_check import check, check_file, count_words
+from ste_check import check_file, count_words
 from ste_data import (
     DictionaryData,
     ReferencesError,
     generated_bundle_path,
     load_dictionary,
     load_software_terms,
+    load_terms,
     merge_layers,
     validate_bundle,
 )
@@ -167,16 +168,11 @@ class ExtractDictionaryTests(unittest.TestCase):
             extract_dictionary.page_anchor("no anchor here", 149)
         self.assertIn("missing dictionary source-page anchor", str(raised.exception))
 
-    def test_normalize_char_maps_noncharacter_glyph_to_hyphen(self):
+    def test_normalize_char_known_values(self):
         # U+FFFE: this PDF's unmapped discretionary line-wrap hyphen glyph.
-        self.assertEqual(extract_dictionary.normalize_char("￾", 149), "-")
-
-    def test_normalize_char_drops_whitespace(self):
-        self.assertIsNone(extract_dictionary.normalize_char(" ", 149))
-        self.assertIsNone(extract_dictionary.normalize_char("", 149))
-
-    def test_normalize_char_passes_through_ordinary_characters(self):
-        self.assertEqual(extract_dictionary.normalize_char("A", 149), "A")
+        for value, expected in [("￾", "-"), (" ", None), ("", None), ("A", "A")]:
+            with self.subTest(value=value):
+                self.assertEqual(extract_dictionary.normalize_char(value, 149), expected)
 
     def test_normalize_char_fails_loudly_on_an_unexpected_format_character(self):
         with self.assertRaises(SystemExit) as raised:
@@ -424,6 +420,16 @@ class ReadinessValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ReferencesError, "manifest SHA-256 for dictionary.jsonl"):
                 validate_bundle(generated, config)
 
+    def test_wrong_byte_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config, generated, _ = make_bundle(Path(directory))
+            manifest_path = generated / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["files"]["dictionary.jsonl"]["bytes"] = 0
+            manifest_path.write_bytes(json_bytes(manifest))
+            with self.assertRaisesRegex(ReferencesError, "manifest byte count for dictionary.jsonl"):
+                validate_bundle(generated, config)
+
     def test_wrong_source_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             config, generated, _ = make_bundle(Path(directory))
@@ -592,6 +598,24 @@ class RuntimeEntryPointTests(unittest.TestCase):
         error = json.loads(result.stderr)["error"]
         self.assertEqual(error["code"], "references_invalid")
         self.assertIn("tracked source configuration is missing", error["condition"])
+
+    def test_missing_diagnostic_source_fields_are_structured_at_every_entry_point(self):
+        for missing_field in ("title", "issue_date"):
+            with self.subTest(field=missing_field), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                scripts, document = self.make_runtime(root, valid=True)
+                config_path = root / "references" / "source-config.json"
+                config = json.loads(config_path.read_text())
+                del config["source"][missing_field]
+                config_path.write_bytes(json_bytes(config))
+                for name in self.public_scripts:
+                    with self.subTest(field=missing_field, name=name):
+                        result = self.run_public(scripts, document, name, json_output=True)
+                        self.assertEqual(result.returncode, 2)
+                        self.assertNotIn("Traceback", result.stderr)
+                        error = json.loads(result.stderr)["error"]
+                        self.assertEqual(error["code"], "references_invalid")
+                        self.assertIn("incomplete schema", error["condition"])
 
     def test_runtime_entry_points_do_not_open_network_sockets(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1235,7 +1259,11 @@ class CheckerTests(unittest.TestCase):
         cls.temporary.cleanup()
 
     def result(self, text, mode="descriptive", terms=None):
-        return check(text, mode, terms, self.dictionary)
+        dictionary = load_dictionary(self.dictionary)
+        return check_file(
+            text, mode, dictionary.by_headword, dictionary.approved_forms,
+            dictionary.unapproved, load_terms(terms),
+        )
 
     def sentence(self, count):
         return " ".join(["use"] * count).capitalize() + "."

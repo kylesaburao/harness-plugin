@@ -8,6 +8,7 @@ import json
 import re
 from collections import defaultdict
 from pathlib import Path
+from typing import NoReturn
 
 from ste_data import read_jsonl
 
@@ -28,7 +29,7 @@ PAGE_WRAP_TOP_Y = 640  # continues on the next page near its top
 PARAGRAPH_GAP_THRESHOLD = 15.5  # vertical gap that separates two paragraphs
 
 
-def fail(message: str) -> None:
+def fail(message: str) -> NoReturn:
     raise SystemExit(f"error: {message}")
 
 

@@ -28,16 +28,10 @@ Options:
 Exit status: 0 success, 2 bad usage, or the first failed child command's status.`;
 
 function parseArguments(argv) {
-  if (argv.length === 0) return { help: false, skipGif: false };
-  if (argv.length === 1 && argv[0] === '--skip-gif') return { help: false, skipGif: true };
-  if (argv.length === 1 && argv[0] === '--help') return { help: true, skipGif: false };
-  if (argv.some((argument) => argument !== '--skip-gif' && argument !== '--help')) {
-    const unknown = argv.find((argument) => argument !== '--skip-gif' && argument !== '--help');
-    throw Object.assign(new Error(`unrecognized argument: ${unknown}`), { code: 'UNKNOWN_ARGUMENT' });
-  }
-  throw Object.assign(new Error('use either --skip-gif or --help, not both'), {
-    code: 'INVALID_ARGUMENTS',
-  });
+  const unknown = argv.find(argument => argument !== '--skip-gif' && argument !== '--help');
+  if (unknown) throw Object.assign(new Error(`unrecognized argument: ${unknown}`), { code: 'UNKNOWN_ARGUMENT' });
+  if (argv.length > 1 || new Set(argv).size !== argv.length) throw Object.assign(new Error('use at most one of --skip-gif or --help'), { code: 'INVALID_ARGUMENTS' });
+  return { help: argv[0] === '--help', skipGif: argv[0] === '--skip-gif' };
 }
 
 function nodeTestFiles(repoRoot, group) {

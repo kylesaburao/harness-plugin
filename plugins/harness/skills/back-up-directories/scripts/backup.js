@@ -531,17 +531,8 @@ class OperationContext {
     await Promise.allSettled(handlers);
   }
 
-  async cleanup() {
-    const paths = [...this.temporaryPaths];
-    const results = await Promise.allSettled(paths.map((temporaryPath) => fsp.rm(temporaryPath, { force: true })));
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') this.temporaryPaths.delete(paths[index]);
-    });
-    return results
-      .map((result, index) => result.status === 'rejected' ? { path: paths[index], error: result.reason } : null)
-      .filter(Boolean);
-  }
-
+  // Cleanup runs at end of run or from the 'exit' handler, where nothing else is
+  // waiting on the event loop, so it is synchronous.
   cleanupSync() {
     const failures = [];
     for (const temporaryPath of this.temporaryPaths) {
@@ -561,22 +552,6 @@ class RunLock {
     this.lockPath = lockPath;
     this.token = token;
     this.held = true;
-  }
-
-  async release() {
-    if (!this.held) return [];
-    try {
-      const owner = JSON.parse(await fsp.readFile(this.lockPath, 'utf8'));
-      if (owner.token === this.token) await fsp.unlink(this.lockPath);
-      this.held = false;
-      return [];
-    } catch (error) {
-      if (error.code === 'ENOENT') {
-        this.held = false;
-        return [];
-      }
-      return [{ path: this.lockPath, error }];
-    }
   }
 
   releaseSync() {
@@ -855,12 +830,6 @@ function reportCleanupFailures(failures) {
   if (failures.length && !process.exitCode) process.exitCode = EXIT.ARCHIVE;
 }
 
-function reportCleanupRetries(failures) {
-  for (const failure of failures) {
-    console.error(`Warning: Asynchronous cleanup failed for ${failure.path}; retrying synchronously: ${failure.error.code || failure.error.message}`);
-  }
-}
-
 async function main() {
   let options;
   try {
@@ -877,6 +846,17 @@ async function main() {
     return;
   }
 
+  if (!options.configPath && !options.preflightOnly) {
+    if (!jsonOutput) usage();
+    fail(
+      'Provide exactly one configuration file path.',
+      EXIT.USAGE,
+      'usage_error',
+      'run with --help to see the accepted arguments',
+    );
+    return;
+  }
+
   try {
     checkEnvironment();
   } catch (error) {
@@ -885,17 +865,7 @@ async function main() {
   }
 
   if (!options.configPath) {
-    if (options.preflightOnly) {
-      reportReady();
-      return;
-    }
-    if (!jsonOutput) usage();
-    fail(
-      'Provide exactly one configuration file path.',
-      EXIT.USAGE,
-      'usage_error',
-      'run with --help to see the accepted arguments',
-    );
+    reportReady();
     return;
   }
 
@@ -996,12 +966,8 @@ async function main() {
   } finally {
     process.removeListener('SIGINT', onSigint);
     process.removeListener('SIGTERM', onSigterm);
-    reportCleanupRetries(await context.cleanup());
     reportCleanupFailures(context.cleanupSync());
-    if (runLock) {
-      reportCleanupRetries(await runLock.release());
-      reportCleanupFailures(runLock.releaseSync());
-    }
+    if (runLock) reportCleanupFailures(runLock.releaseSync());
     process.removeListener('exit', onExit);
   }
 }
@@ -1017,9 +983,6 @@ if (require.main === module) {
 module.exports = {
   EXIT,
   InterruptedError,
-  StartupError,
-  nodeVersionAtLeast,
-  parseArguments,
   OperationContext,
   assertDirectoryUnchanged,
   backupFilename,

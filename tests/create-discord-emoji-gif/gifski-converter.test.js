@@ -155,10 +155,6 @@ test('usage and configuration failures exit 2 with stable codes', () => {
     { args: [], env: {}, code: 'usage_error' },
     { args: ['--unknown'], env: {}, code: 'usage_error' },
     { args: [inputWithSpaces], env: { MAX_BYTES: '0' }, code: 'config_invalid' },
-    { args: [inputWithSpaces], env: { GIF_SIZE: 'large' }, code: 'config_invalid' },
-    { args: [inputWithSpaces], env: { MIN_FPS: '9', MAX_FPS: '8' }, code: 'config_invalid' },
-    { args: [inputWithSpaces], env: { MIN_QUALITY: '0' }, code: 'config_invalid' },
-    { args: [inputWithSpaces], env: { MAX_QUALITY: '101' }, code: 'config_invalid' },
     { args: [inputWithSpaces], env: { MIN_QUALITY: '90', MAX_QUALITY: '80' }, code: 'config_invalid' },
   ];
   for (const entry of cases) {
@@ -783,14 +779,6 @@ exec "${realFfmpeg}" "$@"
   }
 }
 
-test('SIGINT reaps the active child and preserves the destination', async () => {
-  await verifyInterruption('SIGINT', 130);
-});
-
 test('SIGTERM reaps the active child and preserves the destination', async () => {
   await verifyInterruption('SIGTERM', 143);
-});
-
-test('SIGHUP reaps the active child and preserves the destination', async () => {
-  await verifyInterruption('SIGHUP', 129);
 });

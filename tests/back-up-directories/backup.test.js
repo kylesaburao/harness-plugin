@@ -82,6 +82,23 @@ test('readAndValidate reports unreadable and malformed configurations', async (t
   await assert.rejects(readAndValidate(invalid), /contains invalid JSON/);
 });
 
+test('CLI rejects a missing configuration before checking dependencies', async (t) => {
+  const root = await temporaryRoot(t);
+  const preload = path.join(root, 'missing-archiver.cjs');
+  await fsp.writeFile(preload, `const Module = require('node:module');
+const original = Module._load;
+Module._load = function(request, ...args) {
+  if (request === 'archiver') { const error = new Error('missing'); error.code = 'MODULE_NOT_FOUND'; throw error; }
+  return original.call(this, request, ...args);
+};
+`);
+  const result = await runCli(t, ['--json'], {
+    environment: { NODE_OPTIONS: `--require=${preload}` },
+  });
+  assert.equal(result.exitCode, 2);
+  assert.equal(JSON.parse(result.stderr).error.code, 'usage_error');
+});
+
 test('readAndValidate rejects each invalid configuration shape', async (t) => {
   const root = await temporaryRoot(t);
   const cases = [
@@ -418,12 +435,12 @@ test('OperationContext cleanup removes successfully tracked artifacts', async (t
   const context = new OperationContext();
   context.track(artifact);
 
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
   assert.equal(context.temporaryPaths.size, 0);
   await assert.rejects(fsp.access(artifact), { code: 'ENOENT' });
 });
 
-test('OperationContext retains failed asynchronous cleanup for a synchronous retry', async (t) => {
+test('OperationContext cleanup reports and keeps an artifact it cannot remove', async (t) => {
   const root = await temporaryRoot(t);
   const nonDirectory = path.join(root, 'file');
   await fsp.writeFile(nonDirectory, 'content');
@@ -431,12 +448,9 @@ test('OperationContext retains failed asynchronous cleanup for a synchronous ret
   const context = new OperationContext();
   context.track(impossiblePath);
 
-  const asynchronousFailures = await context.cleanup();
-  assert.equal(asynchronousFailures.length, 1);
-  assert(context.temporaryPaths.has(impossiblePath));
-
-  const synchronousFailures = context.cleanupSync();
-  assert.equal(synchronousFailures.length, 1);
+  const failures = context.cleanupSync();
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].path, impossiblePath);
   assert(context.temporaryPaths.has(impossiblePath));
 });
 
@@ -496,7 +510,7 @@ test('createArchive treats warnings as failures and includes the omitted entry',
     /Archiver warning for secret\.txt: EACCES/,
   );
   assert(context.temporaryPaths.has(destination));
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
 });
 
 test('createArchive does not start an archive for an already interrupted context', async (t) => {
@@ -515,7 +529,7 @@ test('createArchive does not start an archive for an already interrupted context
 
   assert.equal(started, false);
   assert(context.temporaryPaths.has(destination));
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
 });
 
 test('copyAtomically overwrites the destination and leaves no temporary artifact', async (t) => {
@@ -551,7 +565,7 @@ test('copyAtomically tracks partial output after a stream failure for later clea
   );
   assert.equal(context.temporaryPaths.size, 1);
   await assert.rejects(fsp.access(destination), { code: 'ENOENT' });
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
   assert.deepEqual(await fsp.readdir(target), []);
 });
 
@@ -634,7 +648,7 @@ test('execute classifies archive creation failures and leaves cleanup to the con
     (error) => error.exitCode === EXIT.ARCHIVE && /Failed to create archive.*disk full/.test(error.message),
   );
   assert.equal(context.temporaryPaths.size, 1);
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
 });
 
 test('execute classifies copy failures and always removes a staging-only archive', async (t) => {
@@ -665,7 +679,7 @@ test('execute classifies copy failures and always removes a staging-only archive
   );
   assert.deepEqual(await fsp.readdir(outputPath), []);
   assert.equal(context.temporaryPaths.size, 1);
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
 });
 
 test('execute preserves a copy failure when staging cleanup also fails', async (t) => {
@@ -695,7 +709,7 @@ test('execute preserves a copy failure when staging cleanup also fails', async (
       /Failed to copy archive.*copy failed.*Cleanup also failed.*cleanup failed/.test(error.message),
   );
   assert.equal(context.temporaryPaths.size, 2);
-  assert.deepEqual(await context.cleanup(), []);
+  assert.deepEqual(context.cleanupSync(), []);
 });
 
 test('run lock rejects a second active backup and releases cleanly', async (t) => {
@@ -704,7 +718,7 @@ test('run lock rejects a second active backup and releases cleanly', async (t) =
 
   const first = await acquireRunLock(lockPath);
   await assert.rejects(acquireRunLock(lockPath), /Another backup run may already be active/);
-  assert.deepEqual(await first.release(), []);
+  assert.deepEqual(first.releaseSync(), []);
   await assert.rejects(fsp.access(lockPath), { code: 'ENOENT' });
 });
 
@@ -731,7 +745,7 @@ test('resolved singleton lock paths conflict', async (t) => {
   const first = await acquireRunLock(resolved);
 
   await assert.rejects(acquireRunLock(resolved), /Another backup run may already be active/);
-  assert.deepEqual(await first.release(), []);
+  assert.deepEqual(first.releaseSync(), []);
 });
 
 test('run lock leaves stale ownership decisions to the local operator', async (t) => {
@@ -754,7 +768,7 @@ test('run lock release does not delete a lock whose ownership token changed', as
   const lock = await acquireRunLock(lockPath);
   await fsp.writeFile(lockPath, JSON.stringify({ pid: process.pid, hostname: os.hostname(), token: 'replacement' }));
 
-  assert.deepEqual(await lock.release(), []);
+  assert.deepEqual(lock.releaseSync(), []);
   assert.equal(JSON.parse(await fsp.readFile(lockPath, 'utf8')).token, 'replacement');
 });
 

@@ -106,12 +106,17 @@ test('every orchestration-stage failure stops later commands and returns its sta
   }
 });
 
-test('workflow tests the push SHA or manual main before bump becomes eligible', () => {
+test('workflow limits credentials and tests each exact revision before bumping it', () => {
   const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/bump-version.yml'), 'utf8');
-  assert.match(workflow, /test:\n\s+runs-on: ubuntu-24\.04/);
+  assert.match(workflow, /test:\n\s+permissions:\n\s+contents: read\n\s+runs-on: ubuntu-24\.04/);
   assert.match(workflow, /ref: \$\{\{ github\.event_name == 'workflow_dispatch' && 'main' \|\| github\.sha \}\}/);
-  assert.match(workflow, /node-version: '22'/);
-  assert.match(workflow, /python-version: '3\.12'/);
-  assert.match(workflow, /node scripts\/run-tests\.js --skip-gif/);
-  assert.match(workflow, /bump:\n\s+needs: test/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /bump:\n\s+needs: test\n\s+permissions:\n\s+contents: write/);
+  assert.equal((workflow.match(/node-version: '22'/g) || []).length, 2);
+  assert.equal((workflow.match(/python-version: '3\.12'/g) || []).length, 2);
+  const reset = workflow.indexOf('git reset --hard origin/main');
+  const derive = workflow.indexOf('level="$(git log', reset);
+  const testGate = workflow.indexOf('node scripts/run-tests.js --skip-gif', derive);
+  const bump = workflow.indexOf('node scripts/bump-version.js', testGate);
+  assert.ok(reset !== -1 && reset < derive && derive < testGate && testGate < bump);
 });

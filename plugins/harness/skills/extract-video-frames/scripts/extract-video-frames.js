@@ -22,7 +22,7 @@ class DraftError extends Error {
 }
 
 function versionAtLeast(actual, minimum) {
-  const parts = String(actual).replace(/^v/, '').split('.').map(part => Number.parseInt(part, 10) || 0);
+  const parts = String(actual).match(/\d+/g)?.map(Number) || [];
   for (let index = 0; index < minimum.length; index += 1) {
     if ((parts[index] || 0) > minimum[index]) return true;
     if ((parts[index] || 0) < minimum[index]) return false;
@@ -206,14 +206,11 @@ function boundedTail(previous, chunk, limit = STDERR_TAIL_BYTES) {
 async function platformPreflight(manager) {
   if (!versionAtLeast(process.version, MINIMUM_NODE)) throw new DraftError('node_version_unsupported', `Node.js 20.6.0 or newer is required, running ${process.version}`, 'install Node.js 20.6.0 or newer');
   if (process.platform !== 'darwin') throw new DraftError('platform_unsupported', `unsupported platform: ${process.platform}`, 'run this skill on macOS 26.0 or newer');
-  let version = null;
-  if (process.platform === 'darwin') {
-    const swVers = resolveCommand('sw_vers');
-    if (!swVers) throw new DraftError('command_missing', 'macOS sw_vers was not found', 'restore /usr/bin/sw_vers, which ships with macOS');
-    const result = await manager.run(swVers, ['-productVersion']);
-    version = result.stdout.trim();
-    if (result.code !== 0 || !versionAtLeast(version, MINIMUM_MACOS)) throw new DraftError('platform_unsupported', `macOS 26.0 or newer is required, running ${version || 'an unknown version'}`, 'upgrade this Mac to macOS 26.0 or newer');
-  }
+  const swVers = resolveCommand('sw_vers');
+  if (!swVers) throw new DraftError('command_missing', 'macOS sw_vers was not found', 'restore /usr/bin/sw_vers, which ships with macOS');
+  const result = await manager.run(swVers, ['-productVersion']);
+  const version = result.stdout.trim();
+  if (result.code !== 0 || !versionAtLeast(version, MINIMUM_MACOS)) throw new DraftError('platform_unsupported', `macOS 26.0 or newer is required, running ${version || 'an unknown version'}`, 'upgrade this Mac to macOS 26.0 or newer');
   return { os: 'macos', version };
 }
 
@@ -247,10 +244,12 @@ async function resolveFfmpegPair(manager) {
 
 async function toolchainPreflight(manager, platform) {
   const mediaTools = await resolveFfmpegPair(manager);
-  const commands = { ...mediaTools, publisher: resolveCommand('osascript'), swiftc: resolveCommand('swiftc'), sips: resolveCommand('sips') };
+  let publisher = null;
+  try { fs.accessSync('/usr/bin/osascript', fs.constants.X_OK); publisher = '/usr/bin/osascript'; } catch {}
+  const commands = { ...mediaTools, publisher, swiftc: resolveCommand('swiftc'), sips: resolveCommand('sips') };
   const failures = [];
   for (const name of ['ffmpeg', 'ffprobe']) if (!commands[name]) failures.push({ code: 'command_missing', condition: `required command not found: ${name}`, remedy: commandRemedy() });
-  if (!commands.publisher) failures.push({ code: 'publication_unsupported', condition: 'required publication command not found: osascript', remedy: 'restore /usr/bin/osascript, which ships with macOS' });
+  if (!commands.publisher) failures.push({ code: 'publication_unsupported', condition: 'required publication command not found: /usr/bin/osascript', remedy: 'restore /usr/bin/osascript, which ships with macOS' });
   if (!commands.swiftc) failures.push({ code: 'command_missing', condition: 'required command not found: swiftc', remedy: 'install the macOS Command Line Tools with xcode-select --install' });
   if (!commands.sips) failures.push({ code: 'command_missing', condition: 'required command not found: sips', remedy: 'restore /usr/bin/sips, which ships with macOS' });
   if (commands.ffmpeg) {
@@ -709,8 +708,7 @@ async function publishDirectoryNoReplace(manager, state, temporary) {
   try { result = await manager.run(state.commands.publisher, args); } catch (error) {
     throw new DraftError('publication_failed', `atomic publication command could not start: ${errorText(error)}`, 'restore the required system publication command, then run again', EXIT.FAILED);
   }
-  const published = result.code === 0 && result.stdout.trim() === 'published';
-  if (published) return;
+  if (result.code === 0 && result.stdout.trim() === 'published') return;
   const detail = result.stderr.trim() || result.stdout.trim();
   throw new DraftError('publication_failed', `output was not published without replacement: ${output}${detail ? `: ${detail}` : ''}`, 'move or remove any competing output, fix destination permissions, then run again', EXIT.FAILED);
 }
@@ -755,4 +753,4 @@ async function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then(code => { process.exitCode = code; }, error => { emitError(error, process.argv.includes('--json')); process.exitCode = EXIT.FAILED; });
 
-module.exports = { ProcessManager, analyzePresentedFrames, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, inspectHeic, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resolveFfmpegPair, resultPayload, selectVideoStream, structuralChecks, syntheticEncoderPreflight, transformFromMatrix };
+module.exports = { ProcessManager, analyzePresentedFrames, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };

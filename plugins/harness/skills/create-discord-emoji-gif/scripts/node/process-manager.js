@@ -109,7 +109,7 @@ class ProcessManager {
       const outcome = await Promise.race([...pending].map(entry => entry.promise));
       pending.delete(outcome.entry);
       if (!outcome.ok) {
-        try { await this.cancel('SIGTERM'); } catch {}
+        await this.cancel('SIGTERM');
         await Promise.all([...pending].map(entry => entry.promise));
         throw outcome.error;
       }
@@ -128,11 +128,7 @@ class ProcessManager {
       } else if (child.pid) {
         child.kill(signal);
       }
-      return null;
-    } catch (error) {
-      if (error.code === 'ESRCH') return null;
-      return error;
-    }
+    } catch (error) { if (error.code !== 'ESRCH') throw error; }
   }
 
   groupExists(subject) {
@@ -156,7 +152,7 @@ class ProcessManager {
       this.cancelSignal = signal;
     }
     const groups = [...this.active];
-    const errors = groups.map(group => this.signalChild(group, signal)).filter(Boolean);
+    for (const group of groups) this.signalChild(group, signal);
     if (groups.length) {
       const deadline = Date.now() + this.killTimeout;
       while (Date.now() < deadline && groups.some(group => this.groupExists(group))) {
@@ -164,13 +160,11 @@ class ProcessManager {
       }
       for (const group of groups) {
         if (this.groupExists(group)) {
-          const error = this.signalChild(group, 'SIGKILL');
-          if (error) errors.push(error);
+          this.signalChild(group, 'SIGKILL');
         }
       }
       await Promise.all(groups.map(group => group.gone));
     }
-    if (errors.length) throw new AggregateError(errors, 'one or more process groups could not be signalled');
   }
 
   installSignalHandlers(onSignal) {
@@ -193,4 +187,4 @@ class ProcessManager {
 
 // POSIX descendants remain owned only while they stay in the spawned process group.
 // A descendant that deliberately starts a new session cannot be reaped portably here.
-module.exports = { ProcessManager, SIGNAL_EXIT };
+module.exports = { ProcessManager };

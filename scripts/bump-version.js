@@ -9,11 +9,9 @@
 //
 // Exit status:
 //   0  bumped successfully, or a passed --help
-//   2  the work never started: bad usage, missing/unreadable/unwritable/malformed manifest,
-//      invalid or mismatched version
-//   1  a manifest write failed partway through. Every manifest already written in this run is
-//      rolled back to its previous content; the error says whether that rollback succeeded. If it
-//      didn't, the error names which files are left inconsistent and what to restore them to.
+//   2  the work never started: bad usage, missing/unreadable/malformed manifest, invalid or
+//      mismatched version
+//   1  a manifest write failed.
 //
 // Minimum Node: 18 (node:fs, node:path only).
 //
@@ -27,7 +25,7 @@ const path = require('node:path');
 
 const EXIT = Object.freeze({
   OK: 0,
-  FAILED_PARTWAY: 1,
+  FAILED: 1,
   CANNOT_START: 2,
 });
 
@@ -53,9 +51,8 @@ Options:
   --json           Report the result, or any error, as JSON
   -h, --help       Print this message
 
-Exit status: 0 success, 2 cannot start (bad usage, missing/invalid/mismatched/unwritable
-manifest), 1 write failed partway (manifests rolled back, or left inconsistent if rollback also
-failed).`;
+Exit status: 0 success, 2 cannot start (bad usage, missing/invalid/mismatched manifest), or 1
+write failed.`;
 
 class StartupError extends Error {
   constructor(code, condition, remedy) {
@@ -75,7 +72,7 @@ class WriteFailedError extends Error {
     this.code = code;
     this.condition = condition;
     this.remedy = remedy;
-    this.exitCode = EXIT.FAILED_PARTWAY;
+    this.exitCode = EXIT.FAILED;
   }
 }
 
@@ -217,38 +214,20 @@ function run(argv) {
   const previous = manifests[0].manifest.version;
   const next = bumpVersion(previous, options.level);
 
-  // Fail before touching anything if any manifest can't be written. Catches the realistic case
-  // (read-only file, wrong permissions) with nothing changed yet. Not sufficient on its own: it
-  // can't promise against a write that starts succeeding and then fails (ENOSPC mid-write, a
-  // TOCTOU race between this check and the write, a mode bit a root process ignores) - the
-  // try/catch around the write loop below covers that half.
-  for (const entry of manifests) {
-    try {
-      fs.accessSync(entry.absolutePath, fs.constants.W_OK);
-    } catch (error) {
-      throw new StartupError(
-        'MANIFEST_UNWRITABLE',
-        `manifest is not writable: ${entry.absolutePath}`,
-        `check write permissions on ${entry.absolutePath}`,
-      );
-    }
-  }
-
   const written = [];
+  const attempted = [];
   try {
     for (const entry of manifests) {
       entry.manifest.version = next;
+      attempted.push(entry);
       fs.writeFileSync(entry.absolutePath, `${JSON.stringify(entry.manifest, null, 2)}\n`, 'utf8');
       written.push(entry);
     }
   } catch (writeError) {
     const rollbackFailures = [];
-    for (const entry of written) {
-      try {
-        fs.writeFileSync(entry.absolutePath, entry.raw, 'utf8');
-      } catch (rollbackError) {
-        rollbackFailures.push(entry.absolutePath);
-      }
+    for (const entry of attempted) {
+      try { fs.writeFileSync(entry.absolutePath, entry.raw, 'utf8'); }
+      catch { rollbackFailures.push(entry.absolutePath); }
     }
     if (rollbackFailures.length === 0) {
       throw new WriteFailedError(
@@ -260,7 +239,7 @@ function run(argv) {
     throw new WriteFailedError(
       'MANIFEST_WRITE_FAILED_INCONSISTENT',
       `write failed after updating ${written.length} of ${manifests.length} manifest(s) (${writeError.message}); rollback also failed for: ${rollbackFailures.join(', ')} - manifests are now inconsistent`,
-      `manually set "version" to ${previous} in: ${rollbackFailures.join(', ')}, then re-run`,
+      `manually restore the original contents in: ${rollbackFailures.join(', ')}, then re-run`,
     );
   }
 
@@ -302,7 +281,7 @@ function main() {
       process.exit(error.exitCode);
     }
     process.stderr.write(`ERROR [UNEXPECTED]: ${error.stack || error.message}\n`);
-    process.exit(EXIT.FAILED_PARTWAY);
+    process.exit(EXIT.FAILED);
   }
 }
 
@@ -313,10 +292,6 @@ if (require.main === module) {
 module.exports = {
   parseArguments,
   bumpVersion,
-  readManifest,
   run,
-  StartupError,
-  WriteFailedError,
-  EXIT,
   MANIFEST_RELATIVE_PATHS,
 };

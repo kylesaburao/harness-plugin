@@ -13,8 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from typing import NoReturn
+
 from ste_data import (
-    DICTIONARY,
     LAYERS,
     SOURCE_SOFTWARE,
     ReferencesError,
@@ -45,65 +47,10 @@ PROTECTED = [
 ]
 DIAGNOSTIC = re.compile(r"^\s*(?:error|warning|fatal|traceback|exception|caused by|at )[:\s]", re.I)
 
-if TYPE_CHECKING:
-    from typing import Literal, NoReturn, TypedDict
-
-    Severity = Literal["error", "warning", "review"]
-    Category = Literal[
-        "semicolon",
-        "contraction",
-        "long_sentence",
-        "long_paragraph",
-        "unapproved_word",
-        "unapproved_expression",
-        "unapproved_form",
-        "passive_voice",
-        "unapproved_ing_form",
-        "long_multiword_noun",
-        "unknown_term",
-        "overused_term",
-    ]
-    ActionType = Literal[
-        "rewrite_without_semicolon",
-        "expand_contraction",
-        "shorten_sentence",
-        "split_paragraph",
-        "replace",
-        "use_approved_form",
-        "review_active_voice",
-        "review_word_form",
-        "shorten_noun_phrase",
-        "review_terminology",
-        "review_overused_term",
-    ]
-
-    class Position(TypedDict):
-        offset: int
-        line: int
-        column: int
-
-    class SourceSpan(TypedDict):
-        text: str
-        start: Position
-        end: Position
-
-    class Action(TypedDict):
-        type: ActionType
-        instruction: str
-        candidates: list[str]
-
-    class Finding(TypedDict):
-        id: str
-        severity: Severity
-        rule: str
-        category: Category
-        problem: str
-        source: SourceSpan
-        action: Action
-        evidence: dict[str, Any]
-else:
-    Severity = Category = ActionType = str
-    Position = SourceSpan = Action = Finding = dict
+# Annotation aliases. The repo configures no type checker, so these are plain runtime
+# names kept only to document intent at the annotation sites.
+Severity = Category = ActionType = str
+Position = SourceSpan = Action = Finding = dict
 
 
 def mask_span(text: str, start: int, end: int) -> str:
@@ -175,8 +122,6 @@ def make_finding(
     candidates: list[str],
     evidence: dict[str, Any],
 ) -> Finding:
-    if not 0 <= start < end <= len(text):
-        raise ValueError(f"invalid finding span: {start}:{end}")
     return {
         "id": "",
         "severity": severity,
@@ -443,17 +388,6 @@ def check_file(
         },
         "findings": findings,
     }
-
-
-def check(
-    text: str,
-    mode: str,
-    term_path: Path | None,
-    dictionary_path: Path = DICTIONARY,
-) -> dict:
-    dictionary = load_dictionary(dictionary_path)
-    terms = load_terms(term_path)
-    return check_file(text, mode, dictionary.by_headword, dictionary.approved_forms, dictionary.unapproved, terms)
 
 
 def plain_message(item: Finding) -> str:

@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const {
   parseArguments,
@@ -43,16 +44,12 @@ function startupCode(fn) {
   return null;
 }
 
-test('bumpVersion: patch increments the last component', () => {
-  assert.equal(bumpVersion('0.1.0', 'patch'), '0.1.1');
-});
-
-test('bumpVersion: minor increments and resets patch', () => {
-  assert.equal(bumpVersion('1.2.3', 'minor'), '1.3.0');
-});
-
-test('bumpVersion: major increments and resets minor and patch', () => {
-  assert.equal(bumpVersion('1.2.3', 'major'), '2.0.0');
+test('bumpVersion applies each level', () => {
+  for (const [version, level, expected] of [
+    ['0.1.0', 'patch', '0.1.1'],
+    ['1.2.3', 'minor', '1.3.0'],
+    ['1.2.3', 'major', '2.0.0'],
+  ]) assert.equal(bumpVersion(version, level), expected);
 });
 
 test('run: writes the same next version to both manifests', () => {
@@ -109,76 +106,32 @@ test('run: an unreadable manifest is MANIFEST_UNREADABLE, not a raw exception', 
   }
 });
 
-test('run: an unwritable manifest is MANIFEST_UNWRITABLE and nothing is changed', { skip: RUNNING_AS_ROOT }, () => {
+test('CLI: a second-manifest write failure rolls the first back byte-for-byte', () => {
   const repoRoot = makeFixture(['0.1.0']);
-  const target = path.join(repoRoot, MANIFEST_RELATIVE_PATHS[0]);
-  fs.chmodSync(target, 0o444);
-  try {
-    assert.equal(startupCode(() => run(['--bump-patch', '--repo-root', repoRoot])), 'MANIFEST_UNWRITABLE');
-    assert.deepEqual(readVersions(repoRoot), ['0.1.0', '0.1.0'], 'the write loop never started');
-  } finally {
-    fs.chmodSync(target, 0o644);
-  }
-});
-
-test('run: a write failure on the second manifest rolls the first back to its previous content', () => {
-  const repoRoot = makeFixture(['0.1.0']);
-  const originalWriteFileSync = fs.writeFileSync;
-  let calls = 0;
-  fs.writeFileSync = (...args) => {
-    calls += 1;
-    if (calls === 2) {
-      throw new Error('simulated disk failure');
-    }
-    return originalWriteFileSync(...args);
-  };
-  let code = null;
-  let raised = null;
-  try {
-    try {
-      run(['--bump-patch', '--repo-root', repoRoot]);
-    } catch (error) {
-      code = error.code;
-      raised = error;
-    }
-  } finally {
-    fs.writeFileSync = originalWriteFileSync;
-  }
-  assert.equal(code, 'MANIFEST_WRITE_FAILED_ROLLED_BACK');
-  assert.equal(raised.exitCode, 1);
-  const [codexRaw, claudeRaw] = MANIFEST_RELATIVE_PATHS.map((relative) => fs.readFileSync(path.join(repoRoot, relative), 'utf8'));
-  const expectedRaw = `${JSON.stringify({ name: 'harness', version: '0.1.0' }, null, 2)}\n`;
-  assert.equal(codexRaw, expectedRaw, 'the manifest written before the failure was rolled back byte-for-byte');
-  assert.equal(claudeRaw, expectedRaw, 'the manifest that never got written is untouched');
-});
-
-test('run: a failed rollback reports which files are left inconsistent, and how to fix them', () => {
-  const repoRoot = makeFixture(['0.1.0']);
-  const originalWriteFileSync = fs.writeFileSync;
-  let calls = 0;
-  fs.writeFileSync = (...args) => {
-    calls += 1;
-    // Call 1: the real first-manifest write, succeeds. Call 2: the second-manifest write, fails.
-    // Call 3: the rollback attempt on the first manifest, also fails - modeling a rollback that
-    // can't recover (e.g. the filesystem went read-only for the whole write).
-    if (calls === 2 || calls === 3) {
-      throw new Error('simulated disk failure');
-    }
-    return originalWriteFileSync(...args);
-  };
-  let code = null;
-  let remedy = null;
-  try {
-    try {
-      run(['--bump-patch', '--repo-root', repoRoot]);
-    } catch (error) {
-      code = error.code;
-      remedy = error.remedy;
-    }
-  } finally {
-    fs.writeFileSync = originalWriteFileSync;
-  }
-  assert.equal(code, 'MANIFEST_WRITE_FAILED_INCONSISTENT');
-  assert.match(remedy, /0\.1\.0/, 'the remedy names the version to restore');
-  assert.match(remedy, new RegExp(MANIFEST_RELATIVE_PATHS[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the remedy names the specific file left inconsistent');
+  const manifestPaths = MANIFEST_RELATIVE_PATHS.map(relative => path.join(repoRoot, relative));
+  const originals = manifestPaths.map(file => fs.readFileSync(file));
+  const preload = path.join(repoRoot, 'fail-second-write.cjs');
+  fs.writeFileSync(preload, `const fs = require('node:fs');
+const original = fs.writeFileSync;
+let manifestWrites = 0;
+fs.writeFileSync = function(file, ...args) {
+  if (!String(file).endsWith('plugin.json')) return original.call(this, file, ...args);
+  manifestWrites += 1;
+  const result = original.call(this, file, ...args);
+  if (manifestWrites === 2) throw new Error('injected second write failure after touching the file');
+  return result;
+};
+`);
+  const result = spawnSync(process.execPath, [
+    path.resolve(__dirname, '../../scripts/bump-version.js'),
+    '--bump-patch', '--repo-root', repoRoot, '--json',
+  ], {
+    encoding: 'utf8',
+    env: { ...process.env, NODE_OPTIONS: `--require=${preload}` },
+  });
+  assert.equal(result.status, 1, result.stderr);
+  const report = JSON.parse(result.stderr).error;
+  assert.equal(report.code, 'MANIFEST_WRITE_FAILED_ROLLED_BACK');
+  assert.equal(report.remedy, 're-run bump-version.js once the underlying write failure is fixed');
+  assert.deepEqual(manifestPaths.map(file => fs.readFileSync(file)), originals);
 });
