@@ -27,7 +27,7 @@ Options:
               tests/create-discord-emoji-gif/
   --help      Print this message
 
-Exit status: 0 success, 2 bad usage, or the first failed child command's status.`;
+Exit status: 0 success, 2 bad usage, prerequisite child status, 1 test failure, or 128 + interruption signal.`;
 
 function parseArguments(argv) {
   const unknown = argv.find(argument => argument !== '--skip-gif' && argument !== '--help');
@@ -150,10 +150,20 @@ function main(argv) {
     return EXIT.OK;
   }
   const repoRoot = path.resolve(__dirname, '..');
-  return runCommandPlan(buildCommandPlan(repoRoot, options.skipGif));
+  const { runGate } = require('./test-gate');
+  const plan = buildCommandPlan(repoRoot, options.skipGif);
+  const groups = Object.fromEntries(discoverNodeTestGroups(repoRoot, options.skipGif).map(group => [group, nodeTestFiles(repoRoot, group)]));
+  return runGate({
+    root: repoRoot,
+    prerequisites: plan.filter(stage => !stage.label.startsWith('Node tests:') && stage.label !== 'ASD-STE100 Python tests'),
+    groups,
+    fullSearch: options.skipGif ? undefined : 'tests/create-discord-emoji-gif/full-search.test.js',
+    python: command('ASD-STE100 Python tests', path.join('.venv', 'bin', 'python'), ['scripts/python-test-reporter.py'], repoRoot),
+    excluded: options.skipGif ? [GIF_GROUP] : [],
+  });
 }
 
-if (require.main === module) process.exitCode = main(process.argv.slice(2));
+if (require.main === module) Promise.resolve(main(process.argv.slice(2))).then(status => { process.exitCode = status; }).catch(error => { console.error(error); process.exitCode = 1; });
 
 module.exports = {
   buildSetupPlan,

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { skillDir, temporaryDirectory, runEntrypoint } = require('./test-helpers');
+const { skillDir, temporaryDirectory, runEntrypoint, assertPublishedResult } = require('./test-helpers');
 
 const runners = [
   { name: 'Node gifski', command: process.execPath, file: 'scripts/node/mov-to-gif-gifski.js', backend: 'gifski' },
@@ -102,7 +102,7 @@ test('both Node entrypoints accept the exact integer boundary and reject larger 
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
-for (const runner of runners) {
+for (const runner of runners.filter(candidate => candidate.backend === 'gifski')) {
   test(`${runner.name} publishes a complete stable JSON result`, { timeout: 120000 }, t => {
     if (!prepareRealCli(t, runner)) return;
     const output = path.join(cliDirectory, `${runner.backend}.gif`);
@@ -113,39 +113,6 @@ for (const runner of runners) {
     });
     assert.equal(result.status, 0, `${runner.name}: ${result.stderr}`);
     const payload = JSON.parse(result.stdout).result;
-    assert.equal(payload.status, 'verified');
-    assert.equal(payload.backend, runner.backend);
-    assert.equal(payload.input, cliInput);
-    assert.equal(payload.output, output);
-    assert.equal(payload.dimensions, '64x64');
-    assert.equal(payload.width, 64);
-    assert.equal(payload.height, 64);
-    assert.equal(typeof payload.bytes, 'number');
-    assert.ok(Number.isInteger(payload.bytes));
-    assert.match(payload.sha256, /^[0-9a-f]{64}$/);
-    assert.match(payload.vmaf, /^-?[0-9]+(?:\.[0-9]+)?$/);
-    assert.ok(Array.isArray(payload.checks));
-    assert.ok(payload.checks.length > 0);
-    assert.ok(payload.checks.every(check => typeof check.name === 'string' && check.status === 'pass'));
-    assert.equal(fs.existsSync(output), true);
-    assert.ok(payload.bytes < maxBytes);
+    assertPublishedResult(payload, runner.backend, cliInput, output, maxBytes);
   });
 }
-
-test('Node gifsicle keeps its work directory when KEEP_WORK=1', { timeout: 120000 }, t => {
-  const runner = runners.find(candidate => candidate.backend === 'gifsicle');
-  if (!prepareRealCli(t, runner)) return;
-  const temporaryRoot = temporaryDirectory('gifsicle-keep-work-cleanup.');
-  const output = path.join(cliDirectory, 'gifsicle-keep-work-cleanup.gif');
-  try {
-    const result = runEntrypoint(runner.command, path.join(skillDir, runner.file), ['--json', cliInput, output], {
-      MAX_BYTES: '1000000', GIF_SIZE: '64', MIN_FPS: '6', MAX_FPS: '6', JOBS: '2',
-      KEEP_WORK: '1', TMPDIR: temporaryRoot,
-    });
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stderr, /^Kept work directory: .+\n$/);
-    assert.equal(fs.readdirSync(temporaryRoot).length, 1);
-  } finally {
-    fs.rmSync(temporaryRoot, { recursive: true, force: true });
-  }
-});

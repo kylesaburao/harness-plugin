@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { temporaryDirectory, skillDir, runEntrypoint } = require('./test-helpers');
+const { temporaryDirectory, skillDir, runEntrypoint, narrowSearch } = require('./test-helpers');
 const shared = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/shared');
 const { ProcessManager } = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/process-manager');
 function ffmpeg(args) {
@@ -73,11 +73,8 @@ for (const backend of ['gifski', 'gifsicle']) for (const fps of [15, 24]) test(`
   try {
     const input = path.join(dir, 'input.mkv');
     const output = path.join(dir, 'output.gif');
-    const preload = path.join(dir, 'narrow.cjs');
+    const preload = narrowSearch(dir, [32]);
     ffmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=24:duration=0.625', '-c:v', 'ffv1', input]);
-    fs.writeFileSync(preload, `const { ProcessManager } = require(${JSON.stringify(path.join(skillDir, 'scripts/node/process-manager'))});
-const run = ProcessManager.prototype.runOldestBounded;
-ProcessManager.prototype.runOldestBounded = function(items, jobs, worker) { return run.call(this, items.filter(item => !item.colors || item.colors === 32), jobs, worker); };`);
     const result = runEntrypoint(process.execPath, path.join(skillDir, 'scripts/node', backend === 'gifski' ? 'mov-to-gif-gifski.js' : 'mov-to-gif.js'), ['--json', input, output], { NODE_OPTIONS: `--require=${preload}`, GIF_SIZE: '64', MIN_FPS: String(fps), MAX_FPS: String(fps), MIN_QUALITY: '80', MAX_QUALITY: '80', JOBS: '2', MAX_BYTES: '1000000', KEEP_WORK: '0' });
     assert.equal(result.status, 0, result.stderr);
     assert.ok(JSON.parse(result.stdout).result.checks.some(check => check.name === 'duration agrees with the decoded reference' && check.status === 'pass'));

@@ -76,7 +76,11 @@ MIT: see [LICENSE](LICENSE).
 
 Run `node scripts/setup-tests.js` once to install test dependencies and initialize references. Run `node scripts/run-tests.js` for the complete local gate. The test command validates the existing environment and does not install dependencies. Use `--skip-gif` to omit GIF tests and converter preflights.
 
-Each stage reports its status and wall-clock duration, followed by one total test-gate summary, including on failure. Framework summaries cover individual test groups. The gate timer measures the complete command plan, including time between stages, but excludes Node startup and any external container wrapper.
+Prerequisites run sequentially and stop the gate on failure. Then sequential Python tests overlap the dedicated full GIF search. After that search finishes, all remaining Node files share one process-isolated pool sized by `os.availableParallelism()`. The full search uses that many encoding workers, and independent retained-candidate scenarios use `max(1, floor(availableParallelism / 4))` concurrent tests. Tests that change process-global state remain sequential inside their files.
+
+Test failures do not stop other groups. The final terminal report includes actual wall time, selected concurrency, prerequisite timings, per-group counts and elapsed spans, aggregate counts, five slowest tests, and failure locations. Group spans overlap and must not be summed. Excluded groups are omitted by `--skip-gif`, unrun groups never started, and skipped tests come from the test frameworks. No report files are written. Exit status is 0 on success, the failed prerequisite's status, 1 after test failures, or the conventional 128 plus signal number on interruption. Setup remains a separate sequential command.
+
+The gate timer includes prerequisites and scheduling time, but excludes Node startup and any external container wrapper.
 
 ## Development container
 

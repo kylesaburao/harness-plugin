@@ -4,32 +4,26 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { temporaryDirectory, skillDir, runEntrypoint } = require('./test-helpers');
+const os = require('node:os');
+const { promisify } = require('node:util');
+const execFile = promisify(require('node:child_process').execFile);
+async function spawnAsync(command, args, options = {}) {
+  try { return { status: 0, ...await execFile(command, args, options) }; }
+  catch (error) { return { ...error, status: error.code }; }
+}
+const { temporaryDirectory, skillDir, runEntrypointAsync, narrowSearch } = require('./test-helpers');
 const shared = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/shared');
 
-// Limit only the test search. Preparation, encoders, scoring, and publication remain real.
-function narrowSearch(directory) {
-  const preload = path.join(directory, 'narrow.cjs');
-  fs.writeFileSync(preload, `
-const { ProcessManager } = require(${JSON.stringify(path.join(skillDir, 'scripts/node/process-manager'))});
-const original = ProcessManager.prototype.runOldestBounded;
-ProcessManager.prototype.runOldestBounded = function(items, jobs, worker) {
-  return original.call(this, items.filter(item => !item.colors || item.colors <= 5), jobs, worker);
-};
-`);
-  return preload;
-}
-
+test.describe('retained candidates', { concurrency: Math.max(1, Math.floor(os.availableParallelism() / 4)) }, () => {
 for (const backend of ['gifski', 'gifsicle']) {
-  test(`${backend} prepares the first video stream and publishes its retained candidate`, () => {
+  test(`${backend} prepares the first video stream and publishes its retained candidate`, async () => {
     const directory = temporaryDirectory('gif-streams.');
     try {
       const input = path.join(directory, 'two-streams.mkv');
       const output = path.join(directory, 'output.gif');
-      const fixture = spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=red:size=32x24:rate=8:duration=0.5,drawbox=x=0:y=0:w=8:h=8:color=white:t=fill:enable=lt(n\\,2)', '-f', 'lavfi', '-i', 'color=blue:size=96x64:rate=8:duration=0.5,drawbox=x=0:y=0:w=8:h=8:color=white:t=fill:enable=lt(n\\,2)', '-map', '0:v', '-map', '1:v', '-c:v', 'ffv1', '-disposition:v:0', '0', '-disposition:v:1', 'default', input], { encoding: 'utf8' });
+      const fixture = await spawnAsync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=red:size=32x24:rate=8:duration=0.5,drawbox=x=0:y=0:w=8:h=8:color=white:t=fill:enable=lt(n\\,2)', '-f', 'lavfi', '-i', 'color=blue:size=96x64:rate=8:duration=0.5,drawbox=x=0:y=0:w=8:h=8:color=white:t=fill:enable=lt(n\\,2)', '-map', '0:v', '-map', '1:v', '-c:v', 'ffv1', '-disposition:v:0', '0', '-disposition:v:1', 'default', input], { encoding: 'utf8' });
       assert.equal(fixture.status, 0, fixture.stderr);
-      const result = runEntrypoint(process.execPath, path.join(skillDir, 'scripts/node', backend === 'gifski' ? 'mov-to-gif-gifski.js' : 'mov-to-gif.js'), ['--json', input, output], {
+      const result = await runEntrypointAsync(process.execPath, path.join(skillDir, 'scripts/node', backend === 'gifski' ? 'mov-to-gif-gifski.js' : 'mov-to-gif.js'), ['--json', input, output], {
         NODE_OPTIONS: `--require=${narrowSearch(directory)}`, TMPDIR: directory,
         KEEP_WORK: '1', GIF_SIZE: '32', MIN_FPS: '8', MAX_FPS: '8', MIN_QUALITY: '80', MAX_QUALITY: '80', JOBS: '2', MAX_BYTES: '100000',
       });
@@ -38,7 +32,7 @@ for (const backend of ['gifski', 'gifsicle']) {
       const kept = result.stderr.match(/^Kept work directory: (.+)$/m)?.[1];
       assert.ok(kept, result.stderr);
       for (const file of ['vmaf-reference.mkv', backend === 'gifski' ? 'source-f8.y4m' : 'source-f8.nut', output]) {
-        const pixel = spawnSync('ffmpeg', ['-v', 'error', '-i', path.isAbsolute(file) ? file : path.join(kept, file), '-frames:v', '1', '-vf', 'scale=1:1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-']);
+        const pixel = await spawnAsync('ffmpeg', ['-v', 'error', '-i', path.isAbsolute(file) ? file : path.join(kept, file), '-frames:v', '1', '-vf', 'scale=1:1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'], { encoding: 'buffer' });
         assert.equal(pixel.status, 0, pixel.stderr.toString());
         assert.ok(pixel.stdout[0] > 200 && pixel.stdout[2] < 50, `${file}: expected red, got ${[...pixel.stdout]}`);
       }
@@ -53,13 +47,13 @@ for (const backend of ['gifski', 'gifsicle']) {
 
 for (const backend of ['gifski', 'gifsicle']) {
   for (const scenario of ['forward', 'reverse', 'keep', 'corrupt', 'missing', 'rename', 'no-candidate', 'interrupt']) {
-    test(`${backend} retained-file lifecycle: ${scenario}`, () => {
+    test(`${backend} retained-file lifecycle: ${scenario}`, async () => {
       const directory = temporaryDirectory('gif-retention.');
       try {
         const input = path.join(directory, 'input.mkv');
         const output = path.join(directory, 'output.gif');
         const evidence = path.join(directory, 'evidence.json');
-        const fixture = spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=32x32:rate=8:duration=0.5', '-c:v', 'ffv1', input], { encoding: 'utf8' });
+        const fixture = await spawnAsync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=32x32:rate=8:duration=0.5', '-c:v', 'ffv1', input], { encoding: 'utf8' });
         assert.equal(fixture.status, 0, fixture.stderr);
         fs.writeFileSync(output, 'existing destination');
         const preload = narrowSearch(directory);
@@ -105,7 +99,7 @@ if (scenario === 'rename') {
   };
 }
 `);
-        const result = runEntrypoint(process.execPath, path.join(skillDir, 'scripts/node', backend === 'gifski' ? 'mov-to-gif-gifski.js' : 'mov-to-gif.js'), ['--json', input, output], {
+        const result = await runEntrypointAsync(process.execPath, path.join(skillDir, 'scripts/node', backend === 'gifski' ? 'mov-to-gif-gifski.js' : 'mov-to-gif.js'), ['--json', input, output], {
           NODE_OPTIONS: `--require=${preload}`, TMPDIR: directory,
           KEEP_WORK: scenario === 'keep' ? '1' : '0', GIF_SIZE: '32', MIN_FPS: '8', MAX_FPS: backend === 'gifski' ? '9' : '8', MIN_QUALITY: '70', MAX_QUALITY: '90', JOBS: '4', MAX_BYTES: scenario === 'no-candidate' ? '1' : '100000',
         });
@@ -143,3 +137,5 @@ if (scenario === 'rename') {
     });
   }
 }
+
+});
