@@ -46,3 +46,33 @@ jobs:
         run: |
           git diff --exit-code
           git diff --cached --exit-code
+
+  gif:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Name the development image as scripts/dev does
+        id: image
+        run: |
+          key=$(printf '%s\n%s:%s\n' "$(pwd -P)" "$(id -u)" "$(id -g)" | git hash-object --stdin)
+          echo "tag=harness-dev-$key:latest" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the development image with cached layers
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ steps.image.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - run: ./scripts/dev setup
+      - run: ./scripts/dev exec npm test
+      - name: Verify tracked checkout remained unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code

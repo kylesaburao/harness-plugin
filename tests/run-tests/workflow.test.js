@@ -131,3 +131,31 @@ test('every gate job caches npm, pip and the ASD-STE100 bundle before setup init
     assert.ok(setup >= 0 && job.indexOf(bundle[0]) < setup);
   }
 });
+
+test('PR GIF job runs the complete container gate on a cached image named as scripts/dev expects', () =>
+{
+  const gif = workflowSteps(verification, 'gif');
+  assert.match(verification, /\n  gif:\n    runs-on: ubuntu-24.04\n/);
+  assert.doesNotMatch(verification.split('\n  gif:\n')[1].split('    steps:')[0], /\b(?:needs|if|permissions):/);
+  const checkout = gif.find(step => step.uses === 'actions/checkout@v4');
+  assert.match(checkout.raw, /ref: \$\{\{ github.sha \}\}\n          fetch-depth: 0\n          persist-credentials: false/);
+  const naming = gif.findIndex(step => step.id === 'image');
+  const buildx = gif.findIndex(step => step.uses === 'docker/setup-buildx-action@v3');
+  const image = gif.findIndex(step => step.uses === 'docker/build-push-action@v6');
+  const setup = gif.findIndex(step => step.run === './scripts/dev setup');
+  const gate = gif.findIndex(step => step.run === './scripts/dev exec npm test');
+  const integrity = gif.findIndex(step => step.name === 'Verify tracked checkout remained unchanged');
+  assert.ok(naming >= 0 && naming < buildx && buildx < image && image < setup && setup < gate && gate < integrity);
+  assert.equal(integrity, gif.length - 1);
+  assert.match(gif[integrity].run, /git diff --exit-code\n.*git diff --cached --exit-code/);
+  assert.ok(gif.every(step => step.if === undefined && !step.run?.includes('--skip-gif')));
+  for (const line of ['context: .', 'load: true', 'tags: ${{ steps.image.outputs.tag }}', 'cache-from: type=gha', 'cache-to: type=gha,mode=max'])
+  {
+    assert.ok(gif[image].raw.includes(`\n          ${line}`), line);
+  }
+  // The tag must be the launcher's own image name, or setup fails with a missing image.
+  const launcher = fs.readFileSync(path.join(root, 'scripts/dev'), 'utf8');
+  assert.ok(launcher.includes(`key=$(printf '%s\\n%s:%s\\n' "$root" "$uid" "$gid" | git hash-object --stdin)\nname=harness-dev-$key\nimage=$name:latest\n`));
+  assert.ok(gif[naming].run.includes(`key=$(printf '%s\\n%s:%s\\n' "$(pwd -P)" "$(id -u)" "$(id -g)" | git hash-object --stdin)\necho "tag=harness-dev-$key:latest" >> "$GITHUB_OUTPUT"`));
+  assert.ok(workflowSteps(verification, 'verify').some(step => step.run === 'npm test -- --skip-gif'));
+});
