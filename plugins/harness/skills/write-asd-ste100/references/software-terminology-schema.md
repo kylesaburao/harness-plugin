@@ -2,7 +2,7 @@
 
 A repository loads this skill's own additive vocabulary layer from
 `references/software-terminology.jsonl`. Each nonblank line is one JSON object. Unlike
-`references/generated/dictionary.jsonl`, this file is hand-edited and version-controlled
+the generated ASD dictionary in `~/.harness-plugin/write-asd-ste100/bundles/`, this file is hand-edited and version-controlled
 directly. It is not a pinned download, and it has no SHA-256 check.
 
 This layer supplies software-domain specifics for ASD-STE100 Rule 1.10 ("Do not use

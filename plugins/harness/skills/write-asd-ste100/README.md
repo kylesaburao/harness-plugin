@@ -6,9 +6,9 @@ The skill helps an assistant draft, revise, and examine procedures, descriptions
 
 ## Install
 
-This skill does not use a harness skill installer or a plugin marketplace. Do not install it through a Claude Code plugin command or an equivalent Codex feature. It is not a Claude Code plugin, so it has no `.claude-plugin/plugin.json` manifest.
-
-Install this skill through a plain clone and a symlink. Clone the repository to one location that is independent of every harness. Then create one symlink per harness that points at that clone. Neither harness manages or copies this clone. See `INSTALL.md` for the complete procedure, including the exact clone location, the symlink command for each harness, and verification.
+This skill installs as part of the `harness` plugin for Claude Code and Codex. See the repository
+root `README.md` for the marketplace and plugin commands. See `INSTALL.md` for the additional
+reference-bundle setup.
 
 ### Prerequisites
 
@@ -30,7 +30,7 @@ commands do not need the virtual environment.
 
 ### Initialize
 
-After you clone the repository, initialize the local reference bundle:
+From the installed skill directory or a repository clone, initialize the reference bundle:
 
 ```sh
 python3 scripts/initialize_references.py
@@ -39,7 +39,7 @@ python3 scripts/initialize_references.py
 (or `.venv/bin/python scripts/initialize_references.py` if you installed `pypdfium2` into a venv,
 per Prerequisites above)
 
-The default command downloads the pinned official Issue 9 PDF to a temporary directory. It verifies the PDF SHA-256 before extraction. It then extracts and validates the dictionary before it replaces `references/generated/`. The command removes the downloaded PDF and intermediate geometry when it finishes.
+The default command downloads the pinned official Issue 9 PDF to a temporary directory. It verifies the PDF SHA-256 before extraction. It then extracts and validates the dictionary before it installs the shared user-level bundle. The command removes the downloaded PDF and intermediate geometry when it finishes.
 
 To use a local copy of the pinned PDF, run this command:
 
@@ -54,38 +54,57 @@ python3 scripts/initialize_references.py --force
 python3 scripts/initialize_references.py --pdf ASD-STE100_ISSUE9.pdf --force
 ```
 
+To import a valid bundle from an older skill installation without downloading or extracting the
+PDF, run:
+
+```sh
+python3 scripts/initialize_references.py --import-from /old/skill/references/generated
+```
+
+The initializer validates the imported bundle against the current tracked source configuration.
+Use `--force` with `--import-from` to replace a shared bundle that is already valid.
+
+Use `--preflight` to validate the selected source, tracked configuration, and extraction
+dependency without creating or replacing a bundle. Add `--json` to a preflight or real run for a
+machine-readable error or artifact report:
+
+```sh
+python3 scripts/initialize_references.py --preflight --json
+python3 scripts/initialize_references.py --import-from /old/skill/references/generated --json
+```
+
 ## Harness support
 
-One clone serves both harnesses. Each harness reads the same tracked files and the same generated reference bundle through a symlink, not through a harness install feature.
+Both harnesses read the generated reference bundle from the same user-level plugin data directory. The bundle location does not depend on either harness's plugin cache or plugin version.
 
-| Harness | Symlink target | Interface manifest | Ask-user API |
-| --- | --- | --- | --- |
-| Codex | `~/.codex/skills/write-asd-ste100` | `agents/openai.yaml` | `request_user_input` |
-| Claude Code | `~/.claude/skills/write-asd-ste100`, or a project's `.claude/skills/` | none | `AskUserQuestion` |
-
-The symlink target column names the path where each harness expects to find the skill. That path is a symlink to the clone, not a copy that a harness installer created and manages.
+| Harness | Interface manifest | Ask-user API |
+| --- | --- | --- |
+| Codex | `agents/openai.yaml` | `request_user_input` |
+| Claude Code | none | `AskUserQuestion` |
 
 `agents/openai.yaml` is a Codex-only interface manifest. It sets the display name, short description, and default prompt that Codex shows for this skill. Claude Code reads the `name` and `description` fields from the `SKILL.md` frontmatter directly, so it needs no equivalent manifest.
 
 ## Architecture
 
-The repository has a tracked configuration path and a local generated-data path. The runtime path always validates generated data before use.
+The plugin has a tracked configuration path and a shared user-level generated-data path. The runtime path always validates generated data before use.
 
 ```mermaid
 flowchart TD
     A[Assistant request] --> B[SKILL.md]
     B --> C[ste_lookup.py or ste_check.py]
     C --> D[Shared readiness check]
-    D -->|Valid| E[Generated dictionary]
+    D -->|Valid| E[Shared user-level dictionary]
     D -->|Missing or invalid| F[Deterministic exit status 2]
     E --> G[Lookup or prose results]
 
     H[Tracked source-config.json] --> I[initialize_references.py]
     J[Pinned official Issue 9 PDF] --> I
-    I --> K[Verify PDF SHA-256]
+    P[Validated legacy bundle] --> I
+    I -->|PDF source| K[Verify PDF SHA-256]
     K --> L[pypdfium2 extraction]
     L --> M[Dictionary build]
     M --> N[Staged bundle validation]
+    I -->|Legacy import| N
     N --> O[Atomic local replacement]
     O --> E
 ```
@@ -98,18 +117,18 @@ The writing-rule summary covers the 53 Issue 9 rules and eight general recommend
 
 ### Generated data
 
-The initializer creates these local files:
+The initializer creates these files under a configuration-keyed directory:
 
 ```text
-references/generated/
+~/.harness-plugin/write-asd-ste100/bundles/<source-config-sha256>/
 ├── dictionary.jsonl
 ├── dictionary-validation.json
 └── manifest.json
 ```
 
-The complete directory is ignored by Git. `dictionary.jsonl` contains the extracted part-of-speech records. `dictionary-validation.json` records the source identity, expected counts, reconciliation data, and dictionary hash. `manifest.json` binds both generated files to the tracked source configuration with hashes and byte counts.
+The source-configuration hash makes the location independent of plugin version while letting bundles for changed configurations coexist. `dictionary.jsonl` contains the extracted part-of-speech records. `dictionary-validation.json` records the source identity, expected counts, reconciliation data, and dictionary hash. `manifest.json` binds both generated files to the tracked source configuration with hashes and byte counts.
 
-The initializer builds a staged directory first. It replaces the installed generated directory only after the staged bundle passes all validation. A download, hash, extraction, build, or validation failure leaves the installed bundle unchanged.
+The initializer builds a staged directory next to the destination. It replaces the shared bundle only after the staged bundle passes all validation. A download, import, hash, extraction, build, or validation failure leaves an installed bundle unchanged.
 
 ## Automatic runtime validation
 
@@ -154,7 +173,7 @@ Readiness validation checks all of these conditions:
 
 - Source pages, row counts, source anchors, and declared counts reconcile.
 
-Runtime commands never download data. After initialization, lookup, checking, and diagnostics work without a network connection. The `--pdf` initializer also works without a network connection when the local PDF matches the pinned hash.
+Runtime commands never download data. After initialization, lookup, checking, and diagnostics work without a network connection. The `--pdf` initializer works offline when the local PDF matches the pinned hash, and `--import-from` works offline with a valid generated bundle.
 
 ## Runtime commands
 
@@ -253,7 +272,7 @@ See `references/software-terminology-schema.md` for the complete format, the ent
 
 `build_dictionary.py` converts geometry records into dictionary records. It joins wrapped headwords, handles page continuations, collects approved forms, and preserves examples and source identifiers.
 
-`initialize_references.py` controls source acquisition, extraction, build, validation, cleanup, and local installation. Direct extractor and builder use is for development only. Normal setup uses the initializer.
+`initialize_references.py` controls source acquisition or legacy import, extraction, build, validation, cleanup, and user-level installation. Direct extractor and builder use is for development only. Normal setup uses the initializer.
 
 ## Tests
 
@@ -272,17 +291,12 @@ The tests cover valid bundles, missing files, incomplete manifests, wrong hashes
 
 ```text
 write-asd-ste100/
-├── .gitignore
 ├── SKILL.md
 ├── README.md
 ├── INSTALL.md
 ├── agents/
 │   └── openai.yaml
 ├── references/
-│   ├── generated/                  # Local and ignored
-│   │   ├── dictionary.jsonl
-│   │   ├── dictionary-validation.json
-│   │   └── manifest.json
 │   ├── project-terminology-schema.md
 │   ├── source-config.json
 │   └── writing-rules.md

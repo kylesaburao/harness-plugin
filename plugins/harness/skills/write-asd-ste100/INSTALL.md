@@ -17,10 +17,24 @@ your harness reports, or `plugins/harness/skills/write-asd-ste100` in a local cl
 repository). The command needs the `pypdfium2` package and a network connection on first run. See
 `README.md` for the install command, and for the `--pdf` and `--force` options.
 
-The generated bundle is written to `references/generated/` inside the skill directory and is not
-distributed with the plugin. If your harness installs the skill into a versioned cache directory,
-re-run this command after every plugin upgrade — an upgrade can replace the cache directory and
-drop a previously generated bundle.
+The generated bundle is written under `~/.harness-plugin/write-asd-ste100/bundles/`. The final
+directory name is the SHA-256 of the tracked `references/source-config.json`. Codex and Claude Code
+therefore share the same bundle, and a plugin version bump does not remove it.
+
+To import a valid bundle from an older installation without a download or `pypdfium2`, run:
+
+```sh
+python3 <skill-directory>/scripts/initialize_references.py \
+  --import-from <old-skill-directory>/references/generated
+```
+
+The initializer validates the old bundle against the current source configuration before it
+copies the three generated files. Use `--force` with `--import-from` only when a valid shared
+bundle must be replaced.
+
+To check the selected source, configuration, and initialization dependency without creating or
+replacing a bundle, use `--preflight`. Add `--json` to a preflight or real run for machine-readable
+errors and success metadata.
 
 ## Verify
 
@@ -33,6 +47,6 @@ An exit status of `0` means the reference bundle is valid.
 ## Update
 
 Update the skill through your harness's plugin update mechanism (for example,
-`codex plugin marketplace upgrade harness-plugin`). Re-run `initialize_references.py` when
-`references/source-config.json` changed, or whenever the reference bundle did not survive the
-update.
+`codex plugin marketplace upgrade harness-plugin`). A normal plugin version bump reuses the shared
+bundle. Run `initialize_references.py` only when the current source configuration has no valid
+bundle.

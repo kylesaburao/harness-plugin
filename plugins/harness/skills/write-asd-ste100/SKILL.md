@@ -46,7 +46,7 @@ Send one question with the prompt `Run the reported initialization command now?`
 
 - `Do not initialize`: Leave the generated reference data unchanged and stop the skill workflow.
 
-If the user selects `Initialize now`, run the exact initialization command from the diagnosis. Request command approval separately if the execution environment requires it. If no ask-user API is available, ask the same question through a plain chat message and wait for the answer. Do not mention API availability or the fallback to the user.
+If the user selects `Initialize now`, run the exact initialization command from the diagnosis. Request command approval separately if the execution environment requires it. Relay a failure diagnosis verbatim. On success, relay the reported generated-data location, dictionary row count, and SHA-256; do not measure the artifact again. If no ask-user API is available, ask the same question through a plain chat message and wait for the answer. Do not mention API availability or the fallback to the user.
 
 ## Procedures and descriptions
 
@@ -60,7 +60,7 @@ Use consistent technical nouns and technical verbs. Prefer a repository term tha
 
 ## Validation and claims
 
-The lookup and checker validate the local reference bundle before they read it. They never download reference data. Exit status 2 supplies a stable error code, the failed condition, the generated-data path, and the initialization command.
+The lookup and checker validate the local reference bundle before they read it. Generated bundles are stored under `~/.harness-plugin/write-asd-ste100/bundles/`, keyed by the tracked source configuration rather than the plugin version. Codex and Claude Code therefore use the same bundle. They never download reference data. Exit status 2 supplies a stable error code, the failed condition, the generated-data path, and the initialization command.
 
 The checker is an aid. It cannot verify meaning, part of speech, every passive construction, or every multi-word noun. A human or assistant semantic review remains necessary.
 

@@ -15,10 +15,6 @@ from typing import Callable, NamedTuple, NoReturn
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_CONFIG = SKILL_ROOT / "references" / "source-config.json"
-GENERATED = SKILL_ROOT / "references" / "generated"
-DICTIONARY = GENERATED / "dictionary.jsonl"
-VALIDATION = GENERATED / "dictionary-validation.json"
-MANIFEST = GENERATED / "manifest.json"
 SOFTWARE_TERMS = SKILL_ROOT / "references" / "software-terminology.jsonl"
 VALID_PARTS = {"art", "adj", "adv", "conj", "n", "prep", "pron", "v"}
 REQUIRED_FILES = ("dictionary.jsonl", "dictionary-validation.json", "manifest.json")
@@ -57,6 +53,30 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def generated_bundle_path(config_path: Path = SOURCE_CONFIG, home: Path | None = None) -> Path:
+    """Return the user-level bundle selected by the tracked source configuration."""
+    user_home = Path.home() if home is None else home
+    try:
+        config_digest = sha256_file(config_path)
+    except OSError:
+        # Keep imports safe. The normal readiness path validates the tracked
+        # configuration and reports its precise error before it uses this path.
+        config_digest = "unresolved-source-config"
+    return (
+        user_home
+        / ".harness-plugin"
+        / "write-asd-ste100"
+        / "bundles"
+        / config_digest
+    )
+
+
+GENERATED = generated_bundle_path()
+DICTIONARY = GENERATED / "dictionary.jsonl"
+VALIDATION = GENERATED / "dictionary-validation.json"
+MANIFEST = GENERATED / "manifest.json"
 
 
 def _invalid(condition: str) -> NoReturn:
@@ -254,13 +274,13 @@ def validate_bundle(
 ) -> dict:
     """Validate one complete generated bundle and return its identity."""
     generated = generated.resolve()
+    config = load_source_config(config_path)
     if not generated.is_dir():
         raise ReferencesError("references_missing", f"generated directory does not exist: {generated}")
     for name in REQUIRED_FILES:
         path = generated / name
         if not path.is_file():
             raise ReferencesError("references_missing", f"required generated file is missing: {path}")
-    config = load_source_config(config_path)
     validation = _load_json(generated / "dictionary-validation.json", "dictionary validation metadata")
     manifest = _load_json(generated / "manifest.json", "generated manifest")
     config_digest = sha256_file(config_path)

@@ -26,6 +26,7 @@ from ste_check import check, check_file, count_words
 from ste_data import (
     DictionaryData,
     ReferencesError,
+    generated_bundle_path,
     load_dictionary,
     load_software_terms,
     merge_layers,
@@ -105,6 +106,12 @@ class SkillInstructionTests(unittest.TestCase):
             instructions,
         )
 
+    def test_skill_documents_shared_user_level_references(self):
+        instructions = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("`~/.harness-plugin/write-asd-ste100/bundles/`", instructions)
+        self.assertIn("plugin version", instructions)
+
 
 class InstallGuideTests(unittest.TestCase):
     def test_install_guide_documents_reference_initialization(self):
@@ -112,6 +119,8 @@ class InstallGuideTests(unittest.TestCase):
 
         self.assertIn("initialize_references.py", guide)
         self.assertIn("validate_references.py", guide)
+        self.assertIn("--import-from", guide)
+        self.assertIn("~/.harness-plugin/write-asd-ste100/bundles/", guide)
 
 
 class ExtractDictionaryTests(unittest.TestCase):
@@ -441,18 +450,75 @@ class ReadinessValidationTests(unittest.TestCase):
                 validate_bundle(generated, config)
 
 
+class GeneratedBundlePathTests(unittest.TestCase):
+    def test_bundle_is_stored_under_the_plugin_user_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config, _, _ = make_bundle(root / "skill")
+            home = root / "user"
+            digest = hashlib.sha256(config.read_bytes()).hexdigest()
+
+            self.assertEqual(
+                generated_bundle_path(config, home),
+                home / ".harness-plugin" / "write-asd-ste100" / "bundles" / digest,
+            )
+
+    def test_plugin_versions_with_the_same_config_share_a_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_config, _, _ = make_bundle(root / "plugin-3.0.1")
+            second_config, _, _ = make_bundle(root / "plugin-3.0.2")
+            home = root / "user"
+
+            self.assertEqual(
+                generated_bundle_path(first_config, home),
+                generated_bundle_path(second_config, home),
+            )
+
+    def test_changed_source_config_selects_a_separate_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_config, _, _ = make_bundle(root / "first")
+            second_config, _, _ = make_bundle(root / "second")
+            changed = json.loads(second_config.read_text(encoding="utf-8"))
+            changed["source"]["title"] += " revised"
+            second_config.write_bytes(json_bytes(changed))
+            home = root / "user"
+
+            self.assertNotEqual(
+                generated_bundle_path(first_config, home),
+                generated_bundle_path(second_config, home),
+            )
+
+
 class RuntimeEntryPointTests(unittest.TestCase):
     public_scripts = ("ste_lookup.py", "ste_check.py", "validate_dictionary.py", "validate_references.py")
 
     def make_runtime(self, root: Path, valid: bool) -> tuple[Path, Path]:
+        home = root / "home"
+        home.mkdir()
+        previous_home = os.environ.get("HOME")
+        os.environ["HOME"] = str(home)
+
+        def restore_home():
+            if previous_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = previous_home
+
+        self.addCleanup(restore_home)
         scripts = root / "scripts"
         scripts.mkdir()
         for name in (*self.public_scripts, "ste_data.py"):
             shutil.copy2(SCRIPTS / name, scripts / name)
-        _, generated, _ = make_bundle(root)
+        config, generated, _ = make_bundle(root)
+        shared_generated = generated_bundle_path(config, home)
+        shared_generated.parent.mkdir(parents=True)
+        shutil.move(generated, shared_generated)
         (root / "references" / "software-terminology.jsonl").write_bytes(software_terminology_bytes())
         if not valid:
-            shutil.rmtree(generated)
+            shutil.rmtree(shared_generated)
+        self.runtime_generated = shared_generated
         document = root / "input.md"
         document.write_text("Use.", encoding="utf-8")
         return scripts, document
@@ -483,7 +549,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 2)
                     self.assertIn("ERROR [references_missing]", result.stderr)
                     self.assertIn("generated directory does not exist", result.stderr)
-                    self.assertIn(str((Path(directory) / "references" / "generated").resolve()), result.stderr)
+                    self.assertIn(str(self.runtime_generated.resolve()), result.stderr)
                     self.assertIn("initialize_references.py", result.stderr)
                     self.assertIn("Online download required: yes", result.stderr)
                     self.assertIn("ASD-STE100", result.stderr)
@@ -512,6 +578,20 @@ class RuntimeEntryPointTests(unittest.TestCase):
                     self.assertTrue(Path(error["generated_data_location"]).is_absolute())
                     self.assertIn("initialize_references.py", error["initialization_command"])
                     self.assertIn("ASD-STE100", error["issue_identity"])
+
+    def test_missing_source_config_uses_a_structured_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts, document = self.make_runtime(root, valid=False)
+            (root / "references" / "source-config.json").unlink()
+
+            result = self.run_public(scripts, document, "ste_lookup.py", json_output=True)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("Traceback", result.stderr)
+        error = json.loads(result.stderr)["error"]
+        self.assertEqual(error["code"], "references_invalid")
+        self.assertIn("tracked source configuration is missing", error["condition"])
 
     def test_runtime_entry_points_do_not_open_network_sockets(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -846,6 +926,9 @@ class BatchOrchestrationTests(unittest.TestCase):
 class InitializerRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
+        dependency_patcher = mock.patch.object(initialize_references, "check_extractor_dependency")
+        self.dependency_check = dependency_patcher.start()
+        self.addCleanup(dependency_patcher.stop)
         self.root = Path(self.temporary.name)
         self.config, generated, self.raw = make_bundle(self.root)
         shutil.rmtree(generated)
@@ -936,12 +1019,15 @@ class InitializerRecoveryTests(unittest.TestCase):
         self.assertEqual(validate_bundle(self.generated, self.config)["dictionary_rows"], 2)
 
     def test_missing_pypdfium2_fails_before_running_the_extractor(self):
+        self.dependency_check.side_effect = initialize_references.InitializationError(
+            "the 'pypdfium2' package is required. Install it with: python3 -m pip install pypdfium2"
+        )
         with mock.patch.object(initialize_references, "download_pdf", self.fake_download), mock.patch.object(
             initialize_references, "verify_pdf_hash"
-        ), mock.patch.dict(sys.modules, {"pypdfium2": None}), mock.patch(
+        ), mock.patch(
             "initialize_references.subprocess.run"
         ) as run:
-            with self.assertRaises(initialize_references.InitializationError) as raised:
+            with self.assertRaises(initialize_references.InitializationInputError) as raised:
                 initialize_references.initialize(None, True, self.config, self.generated)
         self.assertIn("pip install pypdfium2", str(raised.exception))
         run.assert_not_called()
@@ -957,6 +1043,142 @@ class InitializerRecoveryTests(unittest.TestCase):
         ):
             initialize_references.initialize(local_pdf, True, self.config, self.generated)
         download.assert_not_called()
+
+    def test_import_installs_a_valid_legacy_bundle_without_extraction(self):
+        legacy_root = self.root / "legacy"
+        legacy_config, legacy_generated, _ = make_bundle(legacy_root, self.raw)
+        (legacy_generated / "unrelated.txt").write_text("do not import", encoding="utf-8")
+        self.config.write_bytes(legacy_config.read_bytes())
+        with mock.patch.object(initialize_references, "download_pdf") as download, mock.patch.object(
+            initialize_references, "run_extractor"
+        ) as extract, mock.patch.object(initialize_references, "run_builder") as build:
+            result = initialize_references.initialize(
+                None, True, self.config, self.generated, import_from=legacy_generated
+            )
+        download.assert_not_called()
+        extract.assert_not_called()
+        build.assert_not_called()
+        self.assertEqual(result["dictionary_rows"], 2)
+        self.assertEqual(validate_bundle(self.generated, self.config)["dictionary_rows"], 2)
+        self.assertFalse((self.generated / "unrelated.txt").exists())
+
+    def test_invalid_import_leaves_the_existing_bundle_unchanged(self):
+        legacy_root = self.root / "legacy"
+        legacy_config, legacy_generated, _ = make_bundle(legacy_root, self.raw)
+        self.config.write_bytes(legacy_config.read_bytes())
+        (legacy_generated / "manifest.json").unlink()
+
+        with self.assertRaises(initialize_references.InitializationInputError) as raised:
+            initialize_references.initialize(
+                None, True, self.config, self.generated, import_from=legacy_generated
+            )
+        self.assertEqual(raised.exception.code, "import_invalid")
+        self.assert_existing_survives()
+
+    def test_import_from_and_pdf_are_mutually_exclusive(self):
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            status = initialize_references.main(
+                ["--pdf", "source.pdf", "--import-from", "legacy", "--json"]
+            )
+        self.assertEqual(status, 2)
+        error = json.loads(stderr.getvalue())["error"]
+        self.assertEqual(error["code"], "invalid_arguments")
+        self.assertIn("not allowed", error["condition"])
+
+    def test_invalid_import_reports_that_work_did_not_start(self):
+        failure = initialize_references.InitializationInputError(
+            "import_invalid", "legacy bundle is invalid", "python3 initialize_references.py"
+        )
+        with mock.patch.object(initialize_references, "initialize", side_effect=failure), mock.patch(
+            "sys.stderr", new_callable=io.StringIO
+        ) as stderr:
+            status = initialize_references.main(["--import-from", "legacy", "--force"])
+        self.assertEqual(status, 2)
+        self.assertEqual(
+            stderr.getvalue(),
+            "ERROR [import_invalid]: legacy bundle is invalid\n"
+            "Remedy: python3 initialize_references.py\n",
+        )
+
+    def test_preflight_validates_an_import_without_writing(self):
+        legacy_root = self.root / "legacy"
+        legacy_config, legacy_generated, _ = make_bundle(legacy_root, self.raw)
+        self.config.write_bytes(legacy_config.read_bytes())
+
+        result = initialize_references.preflight(
+            None, legacy_generated, self.config, self.generated
+        )
+
+        self.assertEqual(result["source_mode"], "import")
+        self.assertEqual(result["generated_data_location"], str(self.generated.resolve()))
+        self.assert_existing_survives()
+
+    def test_json_preflight_does_not_dispatch_initialization(self):
+        result = {
+            "source_mode": "download",
+            "generated_data_location": str(self.generated),
+            "source": {"issue": 9},
+        }
+        with mock.patch.object(initialize_references, "preflight", return_value=result), mock.patch.object(
+            initialize_references, "initialize"
+        ) as initialize, mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            status = initialize_references.main(["--preflight", "--json"])
+        self.assertEqual(status, 0)
+        initialize.assert_not_called()
+        self.assertEqual(
+            json.loads(stdout.getvalue()),
+            {"status": "ready", "preflight": True, **result},
+        )
+
+    def test_json_success_reports_the_installed_artifact(self):
+        result = {
+            "generated_data_location": str(self.generated),
+            "dictionary_rows": 2,
+            "dictionary_sha256": "a" * 64,
+            "source": {"issue": 9},
+        }
+        with mock.patch.object(initialize_references, "initialize", return_value=result), mock.patch(
+            "sys.stdout", new_callable=io.StringIO
+        ) as stdout:
+            status = initialize_references.main(["--json"])
+        self.assertEqual(status, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), {"status": "ready", **result})
+
+    def test_child_progress_never_contaminates_success_stdout(self):
+        completed = subprocess.CompletedProcess(["builder"], 0, stdout="building\n", stderr="")
+        with mock.patch("initialize_references.subprocess.run", return_value=completed), mock.patch(
+            "sys.stdout", new_callable=io.StringIO
+        ) as stdout, mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            initialize_references.run_command(["builder"], "dictionary build")
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "building\n")
+
+    def test_preflight_matches_a_valid_bundle_no_op_without_dependencies(self):
+        shutil.rmtree(self.generated)
+        config, valid_generated, _ = make_bundle(self.root / "valid", self.raw)
+        self.config.write_bytes(config.read_bytes())
+        shutil.copytree(valid_generated, self.generated)
+        self.dependency_check.side_effect = initialize_references.InitializationError("missing dependency")
+
+        result = initialize_references.preflight(
+            None, None, self.config, self.generated
+        )
+
+        self.assertEqual(result["source_mode"], "existing")
+        self.dependency_check.assert_not_called()
+
+    def test_preflight_and_real_run_match_for_invalid_source_config(self):
+        self.config.unlink()
+
+        for action in (
+            lambda: initialize_references.preflight(None, None, self.config, self.generated),
+            lambda: initialize_references.initialize(None, False, self.config, self.generated),
+        ):
+            with self.subTest(action=action):
+                with self.assertRaises(initialize_references.InitializationInputError) as raised:
+                    action()
+                self.assertEqual(raised.exception.code, "source_config_invalid")
+        self.dependency_check.assert_not_called()
 
 
 try:
