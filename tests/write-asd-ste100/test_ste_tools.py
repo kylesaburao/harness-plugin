@@ -210,6 +210,101 @@ class ExtractDictionaryTests(unittest.TestCase):
         ]
         self.assertEqual(extract_dictionary.line_text(glyphs, space_threshold=1.25), "ab (")
 
+    EXTRACTION_CONFIG = {
+        "even_left_margin": 50.4,
+        "odd_left_margin": 72.0,
+        "column_offsets": [0.0, 102.7, 237.6, 367.3, 507.0],
+        "column_boundary_tolerance": 1.0,
+        "content_y_min": 80.0,
+        "content_y_max": 700.0,
+        "glyph_space_threshold": 1.25,
+    }
+
+    def test_page_text_is_fetched_once_when_it_aligns_with_char_slots(self):
+        slots = fake_line_slots("COLUMN", 72.0, 600.0) + fake_line_slots("WORD", 180.0, 600.0)
+        page = FakePdfPage(fake_anchor_slots() + slots)
+        records = extract_dictionary.page_glyph_lines(page, self.EXTRACTION_CONFIG, 149)
+        self.assertEqual(
+            [(record["column"], record["text"]) for record in records],
+            [(1, "COLUMN"), (2, "WORD")],
+        )
+        self.assertEqual(records[0]["standardPage"], "2-1-A1")
+        self.assertEqual(page.textpage.text_range_calls, 1)
+
+    def test_misaligned_page_text_keeps_per_character_text(self):
+        # A non-BMP glyph fills two char slots but is one Python character in
+        # the page text, and an excluded char is missing from it. Indexing the
+        # page text would shift every later character; the per-character call
+        # drops the surrogate halves and the excluded char, as it always has.
+        slots = (
+            fake_anchor_slots()
+            + fake_line_slots("\U0001d400", 72.0, 600.0)
+            + [FakeSlot("X", (80.0, 600.0, 86.0, 610.0), excluded=True)]
+            + fake_line_slots("AB", 86.0, 600.0)
+            + fake_line_slots("CD", 180.0, 600.0)
+        )
+        page = FakePdfPage(slots)
+        records = extract_dictionary.page_glyph_lines(page, self.EXTRACTION_CONFIG, 149)
+        self.assertEqual(
+            [(record["column"], record["text"], record["x"]) for record in records],
+            [(1, "AB", 86.0), (2, "CD", 180.0)],
+        )
+        self.assertNotEqual(len(page.textpage.get_text_range(0, len(slots))), len(slots))
+
+
+class FakeSlot:
+    """One pdfium char slot: a UTF-16 code unit and its loose char box."""
+
+    def __init__(self, unit: str, box: tuple[float, float, float, float], excluded: bool = False):
+        self.unit = unit
+        self.box = box
+        self.excluded = excluded
+
+
+def fake_line_slots(text: str, start_x: float, y: float, width: float = 6.0) -> list[FakeSlot]:
+    slots = []
+    for offset, character in enumerate(text):
+        box = (start_x + offset * width, y, start_x + (offset + 1) * width, y + 10.0)
+        encoded = character.encode("utf-16-le")
+        for unit_index in range(0, len(encoded), 2):
+            slots.append(FakeSlot(encoded[unit_index:unit_index + 2].decode("utf-16-le", "surrogatepass"), box))
+    return slots
+
+
+def fake_anchor_slots() -> list[FakeSlot]:
+    # Below content_y_min, so the anchor is read from the page text but never emitted.
+    return fake_line_slots("Page 2-1-A1 ", 72.0, 40.0)
+
+
+class FakeTextPage:
+    """Mirrors pypdfium2's get_text_range: UCS-2 decoded with errors="ignore",
+    with excluded chars absent from the text view."""
+
+    def __init__(self, slots: list[FakeSlot]):
+        self.slots = slots
+        self.text_range_calls = 0
+
+    def count_chars(self) -> int:
+        return len(self.slots)
+
+    def get_text_range(self, index: int = 0, count: int = -1) -> str:
+        self.text_range_calls += 1
+        if count == -1:
+            count = len(self.slots) - index
+        units = "".join(slot.unit for slot in self.slots[index:index + count] if not slot.excluded)
+        return units.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "ignore")
+
+    def get_charbox(self, index: int, loose: bool = False):
+        return self.slots[index].box
+
+
+class FakePdfPage:
+    def __init__(self, slots: list[FakeSlot]):
+        self.textpage = FakeTextPage(slots)
+
+    def get_textpage(self) -> FakeTextPage:
+        return self.textpage
+
 
 def source_config(raw_dictionary: bytes) -> dict:
     return {
