@@ -68,6 +68,10 @@ The pre-existing in-tree location `plugins/harness/skills/write-asd-ste100/refer
 
 `README.md`'s "Plugin contents" section is the canonical, human-scannable catalog of what the plugin ships - skills and output styles, each with a one-line purpose. Adding, removing, or renaming a skill or output style requires updating that table in the same commit; `tests/inventory/readme-inventory.test.js` enforces it.
 
+## Development container
+
+When building, running, or changing the development container, read [CONTAINER.md](CONTAINER.md) for launcher commands, dependency volumes, failure remedies, and platform limits. Run the full container gate with `./scripts/dev exec node scripts/run-tests.js`. Keep Git operations on the host.
+
 ## Tests
 
 Tests live at the repository root, in `tests/<skill-name>/`, never inside the skill. The one exception is a whole-tree invariant test that isn't scoped to a single skill, such as `tests/inventory/`, which checks `README.md` against the plugin tree itself.

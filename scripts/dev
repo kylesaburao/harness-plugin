@@ -1,0 +1,91 @@
+#!/bin/sh
+# Host launcher: POSIX shell, Git, Docker, and standard POSIX utilities only.
+set -eu
+
+usage() {
+    echo 'Usage: ./scripts/dev {build|setup|exec <command> [args...]|shell|reset}'
+}
+fail() {
+    echo "ERROR: $1" >&2
+    echo "Remedy: $2" >&2
+    exit 2
+}
+[ "$#" -gt 0 ] || { usage >&2; exit 2; }
+action=$1
+shift
+case "$action" in
+    exec) [ "$#" -gt 0 ] || { usage >&2; exit 2; } ;;
+    build|setup|shell|reset) [ "$#" -eq 0 ] || { usage >&2; exit 2; } ;;
+    --help|-h) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+esac
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+uid=$(id -u)
+gid=$(id -g)
+[ "$uid" -ne 0 ] || fail 'Use a normal non-root host account.' 'Run ./scripts/dev as your normal user.'
+command -v git >/dev/null 2>&1 || fail 'Git is missing.' 'Install Git on the host.'
+command -v docker >/dev/null 2>&1 || fail 'Docker is missing.' 'Install and start local Docker.'
+key=$(printf '%s\n%s:%s\n' "$root" "$uid" "$gid" | git hash-object --stdin)
+name=harness-dev-$key
+image=$name:latest
+venv=$name-venv
+modules=$name-node-modules
+home=$name-home
+label=dev.harness.checkout=$name
+
+docker info >/dev/null 2>&1 || fail 'Docker is unavailable.' 'Start local Docker and check docker context show.'
+if [ "$action" = build ]; then
+    exec docker build -t "$image" "$root"
+fi
+
+# Include stopped containers: Docker also refuses to remove their volumes.
+require_idle() {
+    for volume in "$venv" "$modules" "$home"; do
+        users=$(docker ps -aq --filter "volume=$volume")
+        [ -z "$users" ] || fail "Development volume is in use: $volume ($users)." 'Finish development commands and remove any stopped containers using these volumes, then retry.'
+    done
+}
+if [ "$action" = reset ]; then
+    require_idle
+    for volume in "$venv" "$modules" "$home"; do
+        if docker volume inspect "$volume" >/dev/null 2>&1; then
+            docker volume rm "$volume"
+        fi
+    done
+    exit 0
+fi
+
+docker image inspect "$image" >/dev/null 2>&1 || fail "Development image is missing: $image." './scripts/dev build'
+if [ "$action" = setup ]; then
+    require_idle
+    for volume in "$venv" "$modules" "$home"; do
+        docker volume create "$volume" >/dev/null
+    done
+    # Root can access only dependency volumes, never the host checkout.
+    docker run --rm --init --user 0:0 \
+        --mount "type=volume,source=$venv,target=/vol/venv,volume-nocopy" \
+        --mount "type=volume,source=$modules,target=/vol/modules,volume-nocopy" \
+        --mount "type=volume,source=$home,target=/vol/home,volume-nocopy" \
+        "$image" chown "$uid:$gid" /vol/venv /vol/modules /vol/home
+    set -- node scripts/setup-tests.js
+else
+    for volume in "$venv" "$modules" "$home"; do
+        docker volume inspect "$volume" >/dev/null 2>&1 || fail "Dependency volume is missing: $volume." './scripts/dev setup'
+    done
+fi
+
+if [ "$action" = shell ]; then
+    set -- -it "$image" bash
+else
+    set -- -i "$image" "$@"
+fi
+# Docker --mount uses CSV. Quote the source field for commas and double quotes.
+source_field=$(printf '%s' "source=$root" | sed 's/"/""/g')
+exec docker run --rm --init --sig-proxy=true --label "$label" \
+    --user "$uid:$gid" --env HOME=/home/node --workdir /workspace/harness-plugin \
+    --mount "type=bind,\"$source_field\",target=/workspace/harness-plugin" \
+    --mount "type=volume,source=$venv,target=/workspace/harness-plugin/.venv,volume-nocopy" \
+    --mount "type=volume,source=$modules,target=/workspace/harness-plugin/plugins/harness/skills/back-up-directories/node_modules,volume-nocopy" \
+    --mount "type=volume,source=$home,target=/home/node,volume-nocopy" \
+    "$@"
