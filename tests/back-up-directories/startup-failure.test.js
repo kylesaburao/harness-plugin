@@ -9,7 +9,7 @@ for (const failure of ['SyntaxError', 'Error']) for (const json of [true, false]
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'backup-startup-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const skill = path.join(root, "installed skill's path");
-    fs.cpSync(path.resolve(__dirname, '../../dist/harness/skills/back-up-directories'), skill,
+    fs.cpSync(require('../helpers/plugin-paths').artifactPath('skills/back-up-directories'), skill,
       { recursive: true, filter: source => path.basename(source) !== 'node_modules' });
     const dependency = path.join(skill, 'node_modules/archiver');
     fs.mkdirSync(dependency, { recursive: true });

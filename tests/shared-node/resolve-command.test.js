@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
-const { resolveCommand } = require('../../dist/harness/shared/node/resolve-command');
+const { resolveCommand } = require(require('../helpers/plugin-paths').artifactPath('shared/node/resolve-command'));
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'resolve-command-'));
@@ -53,7 +53,7 @@ test('empty, missing, and relative PATH entries retain current-directory behavio
   const root = fixture(t);
   const local = executable(root, '.');
   const relative = executable(root, 'bin');
-  const modulePath = require.resolve('../../dist/harness/shared/node/resolve-command');
+  const modulePath = require.resolve(require('../helpers/plugin-paths').artifactPath('shared/node/resolve-command'));
   for (const [env, expected] of [
     [{ PATH: '' }, local],
     [{}, local],

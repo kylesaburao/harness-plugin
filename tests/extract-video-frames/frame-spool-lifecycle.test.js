@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const script = require.resolve('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames');
+const script = require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames'));
 const ffmpeg = ['/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg', '/usr/local/opt/ffmpeg-full/bin/ffmpeg'].find(fs.existsSync);
 for (const phase of ['malformed', 'write ENOSPC', 'read EIO', 'interruption']) {
   for (const denied of [false, true]) test(`metadata ${phase}, cleanup ${denied ? 'denied' : 'complete'}`, { skip: process.platform !== 'darwin' || !ffmpeg }, t => {

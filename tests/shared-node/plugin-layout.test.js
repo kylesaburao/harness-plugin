@@ -10,7 +10,7 @@ const { test } = require('node:test');
 test('copied plugin layout resolves shared imports for every media entrypoint', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-plugin-layout-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const source = path.resolve(__dirname, '../../dist/harness');
+  const source = require('../helpers/plugin-paths').artifactPath('');
   for (const directory of ['skills/create-discord-emoji-gif', 'skills/extract-video-frames', 'shared/node']) {
     fs.cpSync(path.join(source, directory), path.join(root, directory), { recursive: true });
   }

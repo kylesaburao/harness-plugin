@@ -6,7 +6,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { EventEmitter } = require('node:events');
 
-const SCRIPT = path.resolve(__dirname, '../../dist/harness/skills/back-up-directories/scripts/backup.js');
+const SCRIPT = require('../helpers/plugin-paths').artifactPath('skills/back-up-directories/scripts/backup.js');
 
 async function temporaryRoot(t, prefix = 'backup-test-') {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), prefix));

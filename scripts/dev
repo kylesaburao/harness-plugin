@@ -70,12 +70,25 @@ if [ "$action" = setup ]; then
         --mount "type=volume,source=$root_modules,target=/vol/root-modules,volume-nocopy" \
         --mount "type=volume,source=$home,target=/vol/home,volume-nocopy" \
         "$image" chown "$uid:$gid" /vol/venv /vol/modules /vol/root-modules /vol/home
-    set -- node scripts/setup-tests.js
+    set -- sh -c 'npm ci --include=dev && npm run build && node scripts/setup-tests.js'
 else
     for volume in "$venv" "$modules" "$root_modules" "$home"; do
         docker volume inspect "$volume" >/dev/null 2>&1 || fail "Dependency volume is missing: $volume." './scripts/dev setup'
     done
 fi
+
+# Create nested mount points as the caller, before Docker can create root-owned
+# paths in the bind-mounted checkout. Never follow a symlink here.
+candidate_parent=$root
+for component in .build harness skills back-up-directories node_modules; do
+    candidate_parent=$candidate_parent/$component
+    [ ! -L "$candidate_parent" ] || fail "Candidate mount path is a symlink: $candidate_parent." 'Replace the unexpected link deliberately before using the development container.'
+    if [ -e "$candidate_parent" ]; then
+        [ -d "$candidate_parent" ] || fail "Candidate mount path is not a directory: $candidate_parent." 'Resolve the conflicting file before using the development container.'
+    else
+        mkdir "$candidate_parent"
+    fi
+done
 
 if [ "$action" = shell ]; then
     set -- -it "$image" bash
@@ -88,7 +101,7 @@ exec docker run --rm --init --sig-proxy=true --label "$label" \
     --user "$uid:$gid" --env HOME=/home/node --workdir /workspace/harness-plugin \
     --mount "type=bind,\"$source_field\",target=/workspace/harness-plugin" \
     --mount "type=volume,source=$venv,target=/workspace/harness-plugin/.venv,volume-nocopy" \
-    --mount "type=volume,source=$modules,target=/workspace/harness-plugin/dist/harness/skills/back-up-directories/node_modules,volume-nocopy" \
+    --mount "type=volume,source=$modules,target=/workspace/harness-plugin/.build/harness/skills/back-up-directories/node_modules,volume-nocopy" \
     --mount "type=volume,source=$root_modules,target=/workspace/harness-plugin/node_modules,volume-nocopy" \
     --mount "type=volume,source=$home,target=/home/node,volume-nocopy" \
     "$@"

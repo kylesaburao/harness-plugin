@@ -9,7 +9,7 @@ const {
   nodeVersionAtLeast,
   parseArguments,
   validateConfiguration,
-} = require('../../dist/harness/skills/wake-desktop/scripts/wake-desktop.js');
+} = require(require('../helpers/plugin-paths').artifactPath('skills/wake-desktop/scripts/wake-desktop.js'));
 
 const MAC = 'a1:b2:c3:d4:e5:f6';
 

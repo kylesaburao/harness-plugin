@@ -14,6 +14,7 @@ on:
 concurrency:
   group: version-bump
   cancel-in-progress: false
+  queue: max
 
 jobs:
   test:
@@ -24,119 +25,230 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
-
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-
-      - name: Set up test dependencies
-        run: node scripts/setup-tests.js
-
-      - name: Run hosted test gate
+      - name: Validate source before generation
+        env:
+          SOURCE_BEFORE: ${{ github.event.before }}
+          SOURCE_HEAD: ${{ github.sha }}
         run: |
-          node scripts/validate-dist.js --tracked
-          node scripts/run-tests.js --skip-gif
+          set -euo pipefail
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo '::error::Publication requires the main workflow ref.' >&2
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            node scripts/check-source-policy.js --base "$SOURCE_BEFORE" --head "$SOURCE_HEAD"
+          else
+            anchor=$(node -e 'const p=require("./scripts/release-policy"); console.log(p.findReleaseAnchor(process.cwd(), "HEAD", {required:true}).commit)')
+            node scripts/check-source-policy.js --base "$anchor" --head HEAD
+          fi
+      - run: npm ci --include=dev
+      - run: npm run build
+      - run: node scripts/setup-tests.js
+      - run: node scripts/run-tests.js --skip-gif
+      - name: Verify tracked checkout remained unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
 
   bump:
     needs: test
     permissions:
       contents: write
-    runs-on: ubuntu-latest
-    # Skip runs triggered by the bot's own bump commit, so this doesn't loop. In practice a push
-    # made with the default GITHUB_TOKEN never re-triggers push events, so this is insurance for
-    # the day a PAT or GitHub App token replaces GITHUB_TOKEN (e.g. to satisfy branch protection).
-    # On workflow_dispatch there is no head_commit, GitHub coerces the null to '', startsWith('', ...)
-    # is false, and the job runs - that's intended, not an accident of this expression.
-    if: "${{ !startsWith(github.event.head_commit.message, 'chore: bump version to') }}"
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
-
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-
-      - name: Bump, commit, and push (retries on a race)
+      - name: Publish one validated versioned distribution
         env:
-          EVENT_NAME: ${{ github.event_name }}
           DISPATCH_LEVEL: ${{ inputs.level }}
         run: |
           set -euo pipefail
+          # Destructive retry operations are confined to this owned runner checkout.
+          test "$GITHUB_ACTIONS" = true
+          test "$GITHUB_REPOSITORY" = kylesaburao/harness-plugin
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(pwd -P)" = "$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+          case "$GITHUB_EVENT_NAME" in push|workflow_dispatch) ;; *) exit 1 ;; esac
+          case "$GITHUB_RUN_ID" in ''|*[!0-9]*) echo '::error::Invalid workflow run ID.' >&2; exit 1 ;; esac
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            case "$DISPATCH_LEVEL" in patch|minor|major) ;; *) echo '::error::Invalid manual level.' >&2; exit 1 ;; esac
+          fi
+          git config core.hooksPath /dev/null
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-          # Every commit in this repo carries this fixed author/committer date (see AGENTS.md).
-          # Both env vars must be set together: git commit --date= only sets the author date,
-          # and the offset must be explicit since the runner's ambient TZ is UTC.
           export GIT_AUTHOR_DATE='1999-12-31T23:59:00-08:00'
           export GIT_COMMITTER_DATE='1999-12-31T23:59:00-08:00'
-
-          # Each attempt re-fetches and hard-resets to origin/main before re-deriving the bump
-          # level and re-running the script, so a commit that lands on main between attempts (a
-          # direct push, or another run of this same workflow) is picked up rather than raced
-          # against with stale state. This reset is why it happens here and not in
-          # scripts/bump-version.js: it's destructive and only safe on a disposable CI checkout.
+          transaction_dir=$(mktemp -d "$RUNNER_TEMP/harness-release.XXXXXX")
+          export HARNESS_TRANSACTION_DIR="$transaction_dir"
+          source_sha=unknown
+          previous=unknown
+          next=unknown
+          level=unknown
+          anchor=unknown
+          release_sha=none
+          attempt=0
+          outcome='failed before publication'
+          report() {
+            {
+              echo "Result: $outcome"
+              echo "Selected source: $source_sha"
+              echo "Previous release: $anchor ($previous); next version: $next"
+              echo "Level: $level ($GITHUB_EVENT_NAME)"
+              echo 'Hosted gate: --skip-gif; no GIF or native macOS execution coverage.'
+              echo "Release SHA: $release_sha; attempt count: $attempt; run ID: $GITHUB_RUN_ID"
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+          trap report EXIT
+          trap 'outcome="failed at publication step line $LINENO (status $?)"' ERR
+          find_existing() {
+            node - <<'NODE'
+          const fs = require('node:fs');
+          const policy = require('./scripts/release-policy');
+          const root = process.cwd();
+          const record = policy.findReleaseByRunId(root, 'origin/main', process.env.GITHUB_RUN_ID);
+          if (record)
+          {
+            const anchor = policy.findReleaseAnchor(root, record.parent, { required: true }).commit;
+            fs.writeFileSync(process.env.HARNESS_TRANSACTION_DIR + '/existing.json', JSON.stringify({ ...record, anchor }));
+            console.log(record.commit);
+          }
+          NODE
+          }
+          read_field() {
+            node - "${2:-$transaction_dir/selection.json}" "$1" <<'NODE'
+          const fs = require('node:fs');
+          const [file, field] = process.argv.slice(2);
+          const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (typeof record[field] !== 'string')
+          {
+            throw new Error('Missing transaction field: ' + field);
+          }
+          console.log(record[field]);
+          NODE
+          }
           for attempt in 1 2 3; do
-            git fetch origin main
+            git fetch origin +refs/heads/main:refs/remotes/origin/main
+            # Resolve a prior successful push before discarding attempt residue.
+            existing=$(find_existing)
+            if [ -n "$existing" ]; then
+              release_sha=$existing
+              next=$(read_field version "$transaction_dir/existing.json")
+              previous=$(read_field previous "$transaction_dir/existing.json")
+              level=$(read_field level "$transaction_dir/existing.json")
+              source_sha=$(read_field parent "$transaction_dir/existing.json")
+              anchor=$(read_field anchor "$transaction_dir/existing.json")
+              outcome='already published'
+              exit 0
+            fi
             git reset --hard origin/main
+            git clean -ffdx
+            node - <<'NODE' > "$transaction_dir/selection.json"
+          const p = require('./scripts/release-policy');
+          const selected = p.inspectPublication(process.cwd(), {
+            head: 'HEAD', runId: process.env.GITHUB_RUN_ID,
+            workflowSha: process.env.GITHUB_WORKFLOW_SHA,
+            manualLevel: process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? process.env.DISPATCH_LEVEL : null,
+          });
+          process.stdout.write(JSON.stringify(selected));
+          NODE
+            source_sha=$(read_field source)
+            anchor=$(read_field anchor)
+            previous=$(read_field previous)
+            level=$(read_field level)
+            if [ "$level" = none ]; then
+              outcome='no eligible changes'
+              next=$previous
+              exit 0
+            fi
+            # A dependency path must not redirect installation outside this runner.
+            test ! -e node_modules && test ! -L node_modules
+            test -z "$(git ls-files -- node_modules)"
             npm ci --include=dev
-
-            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-              # A human picked this explicitly via the choice input; no derivation needed.
-              level="$DISPATCH_LEVEL"
-            else
-              # Derived from every commit since the last bump commit, not just the newest one, so
-              # a tag on an earlier commit in a batched push isn't dropped, and a run that only
-              # sees part of the picture (e.g. it got evicted from the concurrency queue) is
-              # caught up by whichever run executes next. That catch-up is also why the
-              # "did anything worth bumping change?" test lives in the script rather than in an
-              # `on: push: paths:` filter up top: a docs-only push still runs, still sees an
-              # earlier un-bumped dist/ commit in the range, and still bumps it. A paths:
-              # filter would skip that run and strand the bump.
-              #
-              # The script selects the first-parent anchor and reads each commit's files.
-              # Its --no-renames matters because
-              # with git's default rename detection a file moved out of dist/ shows only its
-              # destination path, so deleting something that ships would read as irrelevant.
-              level="$(node scripts/derive-bump-level.js)"
+            HARNESS_RELEASE_WRITE=1 node scripts/bump-version.js "--bump-${level}" --json > "$transaction_dir/bump.json"
+            next=$(node - "$transaction_dir/bump.json" "$previous" "$level" <<'NODE'
+          const fs = require('node:fs');
+          const { bumpVersion } = require('./scripts/release-policy');
+          const [file, previous, level] = process.argv.slice(2);
+          const result = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (result.previous !== previous || result.level !== level || result.next !== bumpVersion(previous, level))
+          {
+            throw new Error('Bump output disagrees with the selected transaction');
+          }
+          console.log(result.next);
+          NODE
+            )
+            HARNESS_RELEASE_WRITE=1 npm run build:dist
+            node scripts/setup-tests.js --target distribution
+            node scripts/run-tests.js --target distribution --skip-gif
+            npm run build:dist:check
+            node scripts/validate-dist.js --target distribution
+            node - "$source_sha" "$level" "$next" <<'NODE'
+          const p = require('./scripts/release-policy');
+          const [base, level, next] = process.argv.slice(2);
+          p.validateWorkingRelease(process.cwd(), {base, level, next});
+          NODE
+            node - <<'NODE' > "$transaction_dir/tested.json"
+          const policy = require('./scripts/release-policy');
+          process.stdout.write(JSON.stringify(policy.testedInventory(process.cwd())));
+          NODE
+            git add -A -- src/harness/package.json dist/
+            node scripts/validate-dist.js --target distribution --tracked
+            node scripts/check-release.js --base "$source_sha" --level "$level" --next "$next" --staged
+            node - <<'NODE'
+          const fs = require('node:fs');
+          const policy = require('./scripts/release-policy');
+          const tested = JSON.parse(fs.readFileSync(process.env.HARNESS_TRANSACTION_DIR + '/tested.json', 'utf8'));
+          policy.assertTestedInventory(process.cwd(), tested);
+          NODE
+            tested_tree=$(git write-tree)
+            message_file="$transaction_dir/message.txt"
+            printf 'chore: bump version to %s\n\nHarness-Source: %s\nHarness-Release-Run: %s\n' "$next" "$source_sha" "$GITHUB_RUN_ID" > "$message_file"
+            git commit -F "$message_file"
+            release_sha=$(git rev-parse HEAD)
+            test "$(git rev-parse HEAD^{tree})" = "$tested_tree"
+            node scripts/check-release.js --base "$source_sha" --level "$level" --next "$next" --commit "$release_sha" --run-id "$GITHUB_RUN_ID"
+            push_status=0
+            git push origin HEAD:refs/heads/main || push_status=$?
+            if ! git fetch origin +refs/heads/main:refs/remotes/origin/main; then
+              outcome="uncertain publication: remote inspection failed after push status $push_status; attempted $release_sha, run $GITHUB_RUN_ID"
+              echo "::error::$outcome" >&2
+              exit 1
             fi
-
-            if [ "$level" = "none" ]; then
-              echo "nothing to bump: no commit since the last version-bump commit changed anything that ships"
+            existing=$(find_existing)
+            if [ -n "$existing" ]; then
+              release_sha=$existing
+              outcome=published
               exit 0
             fi
-
-            node scripts/setup-tests.js
-            node scripts/validate-dist.js --tracked
-            node scripts/run-tests.js --skip-gif
-            node scripts/bump-version.js "--bump-${level}" --json | tee /tmp/bump.json
-            next="$(jq -r .next /tmp/bump.json)"
-            npm run build
-            node scripts/setup-tests.js
-            node scripts/run-tests.js --skip-gif
-
-            git add src/harness/package.json dist/harness
-            node scripts/validate-dist.js --tracked
-            git commit -m "chore: bump version to ${next}"
-
-            if git push origin HEAD:main; then
-              echo "pushed chore: bump version to ${next} on attempt ${attempt}"
-              exit 0
+            remote_sha=$(git rev-parse origin/main)
+            if [ "$remote_sha" = "$source_sha" ]; then
+              outcome="push rejected without source advancement (status $push_status)"
+              echo "::error::$outcome" >&2
+              exit 1
             fi
-
-            echo "push rejected on attempt ${attempt}, retrying with fresh state"
+            if ! git merge-base --is-ancestor "$source_sha" "$remote_sha"; then
+              outcome='remote history changed non-fast-forward; explicit recovery required'
+              echo "::error::$outcome" >&2
+              exit 1
+            fi
+            echo "Source advanced to $remote_sha; attempt $attempt will be rebuilt and retested."
           done
-
-          echo "::error::failed to push version bump after 3 attempts" >&2
+          outcome='failed after three source races'
+          echo "::error::$outcome" >&2
           exit 1

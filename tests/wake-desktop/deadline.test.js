@@ -5,9 +5,8 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
-const skillRequire = createRequire(path.resolve(__dirname, '../../dist/harness/skills/wake-desktop/scripts/wake-desktop.js'));
-const source = readFileSync(path.join(__dirname,
-  '../../dist/harness/skills/wake-desktop/scripts/wake-desktop.js'), 'utf8');
+const skillRequire = createRequire(require('../helpers/plugin-paths').artifactPath('skills/wake-desktop/scripts/wake-desktop.js'));
+const source = readFileSync(require('../helpers/plugin-paths').artifactPath('skills/wake-desktop/scripts/wake-desktop.js'), 'utf8');
 
 // Virtual monotonic time avoids timing tolerances in the scheduling contract.
 function clockHarness({ durations, replies, sleepOverrun = 0 }) {

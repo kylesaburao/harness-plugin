@@ -12,7 +12,7 @@ if (mode === 'produce') {
   fs.writeSync(1, ']}');
 } else {
   (async () => {
-    const subject = require(modulePath ? path.resolve(modulePath) : require.resolve('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js'));
+    const subject = require(modulePath ? path.resolve(modulePath) : require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js')));
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frame-benchmark-'));
     const spool = path.join(root, 'frames.json');
     try {

@@ -1,0 +1,120 @@
+#!/bin/sh
+set -eu
+
+usage='Usage: scripts/check-local-commit [--merge]'
+
+case "$#:$*" in
+    0:) merge_mode=0 ;;
+    1:--merge) merge_mode=1 ;;
+    *)
+        echo "ERROR [INVALID_ARGUMENTS]: $usage" >&2
+        exit 2
+        ;;
+esac
+
+protected_changed()
+{
+    comparison=$1
+    shift
+
+    if git diff --cached --quiet --no-ext-diff --no-renames "$@" -- \
+        ':(top)dist' ':(top)src/harness/package.json'
+    then
+        return 1
+    else
+        status=$?
+    fi
+
+    if [ "$status" -eq 1 ]
+    then
+        return 0
+    fi
+
+    echo "ERROR [GIT_INSPECTION_FAILED]: Git could not compare the active index with $comparison." >&2
+    echo 'Remedy: repair the repository or index, then retry the commit.' >&2
+    exit "$status"
+}
+
+if git rev-parse --verify -q 'HEAD^{commit}' >/dev/null
+then
+    if ! protected_changed HEAD HEAD
+    then
+        exit 0
+    fi
+else
+    status=$?
+    if [ "$status" -ne 1 ]
+    then
+        echo 'ERROR [GIT_INSPECTION_FAILED]: Git could not resolve HEAD.' >&2
+        echo 'Remedy: repair the repository metadata, then retry the commit.' >&2
+        exit "$status"
+    fi
+
+    if git rev-parse --verify -q HEAD >/dev/null
+    then
+        echo 'ERROR [GIT_INSPECTION_FAILED]: HEAD exists but does not resolve to a commit.' >&2
+        echo 'Remedy: repair the repository metadata, then retry the commit.' >&2
+        exit 1
+    else
+        status=$?
+        if [ "$status" -ne 1 ]
+        then
+            echo 'ERROR [GIT_INSPECTION_FAILED]: Git could not inspect HEAD.' >&2
+            echo 'Remedy: repair the repository metadata, then retry the commit.' >&2
+            exit "$status"
+        fi
+    fi
+
+    if ! protected_changed 'the empty tree'
+    then
+        exit 0
+    fi
+fi
+
+if [ "$merge_mode" -eq 0 ]
+then
+    git_directory=$(git rev-parse --absolute-git-dir) || {
+        status=$?
+        echo 'ERROR [GIT_INSPECTION_FAILED]: Git could not resolve the repository metadata directory.' >&2
+        echo 'Remedy: repair the repository metadata, then retry the commit.' >&2
+        exit "$status"
+    }
+
+    if [ -e "$git_directory/MERGE_HEAD" ]
+    then
+        if git rev-parse --verify -q 'MERGE_HEAD^{commit}' >/dev/null
+        then
+            merge_mode=1
+        else
+            status=$?
+            echo 'ERROR [GIT_INSPECTION_FAILED]: MERGE_HEAD does not resolve to a commit.' >&2
+            echo 'Remedy: repair or abort the merge, then retry the commit.' >&2
+            exit "$status"
+        fi
+    fi
+fi
+
+if [ "$merge_mode" -eq 1 ]
+then
+    if remote_main=$(git rev-parse --verify 'refs/remotes/origin/main^{commit}' 2>/dev/null)
+    then
+        :
+    else
+        echo 'ERROR [PUBLISHED_PAIR_UNAVAILABLE]: refs/remotes/origin/main is unavailable.' >&2
+        echo 'Remedy: fetch origin/main explicitly, then retry the merge commit.' >&2
+        exit 1
+    fi
+
+    if ! protected_changed refs/remotes/origin/main "$remote_main"
+    then
+        exit 0
+    fi
+
+    echo 'ERROR [PUBLISHED_PAIR_MISMATCH]: the staged protected paths do not exactly match refs/remotes/origin/main.' >&2
+    echo 'Remedy: fetch origin/main and resolve the source merge while inheriting its complete dist/ and src/harness/package.json pair.' >&2
+    exit 1
+fi
+
+echo 'ERROR [RELEASE_OWNED_CHANGE]: staged dist/ and src/harness/package.json changes are release-owned.' >&2
+echo 'Remedy: author and commit implementation changes under src/harness/; use npm run build for the development candidate and let the release workflow publish the protected pair.' >&2
+exit 1

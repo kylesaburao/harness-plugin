@@ -1,11 +1,20 @@
 #!/usr/bin/env node
 'use strict';
 
-// Development-only assembly. Publication is an in-place reconciliation because
-// a dependency directory inside dist may be a mounted volume.
+// Repository-only assembly. Reconciliation stays in place because a selected
+// artifact may contain mounted dependency/cache overlays.
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const {
+  TARGETS,
+  DEFAULT_TARGET,
+  ArtifactArgumentError,
+  validateTarget,
+  artifactRoot,
+  parseArtifactTarget,
+  assertReleaseWriteIntent,
+} = require('./artifact-paths');
 const templates = ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json'];
 const assetExtensions = new Set(['.md', '.json', '.jsonl', '.yaml', '.yml', '.py', '.swift']);
 const backupModules = 'skills/back-up-directories/node_modules';
@@ -180,42 +189,198 @@ function reconcile(candidate, destination) {
   }
   prune('');
   const differences = compare(wanted, validateArtifact(destination));
-  if (differences.length) throw new Error(`Publication verification failed:\n${differences.join('\n')}`);
+  if (differences.length) throw new Error(`Artifact verification failed:\n${differences.join('\n')}`);
 }
 
-function build(root, check = false) {
+function validateBuildOptions(options)
+{
+  if (options === null || typeof options !== 'object' || Array.isArray(options))
+  {
+    throw new TypeError('build options must be an object');
+  }
+  const unexpected = Object.keys(options).filter(key => !['target', 'check'].includes(key));
+  if (unexpected.length)
+  {
+    throw new TypeError(`unknown build option: ${unexpected[0]}`);
+  }
+  const target = validateTarget(options.target ?? DEFAULT_TARGET);
+  const check = options.check ?? false;
+  if (typeof check !== 'boolean')
+  {
+    throw new TypeError('build check option must be a boolean');
+  }
+  return { target, check };
+}
+
+function prepareBuildPaths(root, target)
+{
+  root = path.resolve(root);
+  directory(root);
   directory(path.join(root, 'src'));
-  directory(path.join(root, 'dist'));
-  directory(path.join(root, '.build'));
-  fs.mkdirSync(path.join(root, '.build'), { recursive: true });
-  const lock = path.join(root, '.build/publication.lock');
+  const buildDirectory = path.join(root, '.build');
+  directory(buildDirectory);
+  fs.mkdirSync(buildDirectory, { recursive: true });
+
+  const destination = artifactRoot(root, target);
+  const source = path.join(root, 'src/harness');
+  const otherTarget = target === 'development' ? 'distribution' : 'development';
+  const otherDestination = artifactRoot(root, otherTarget);
+  if (destination === source || destination === otherDestination)
+  {
+    throw new Error(`Invalid ${target} artifact destination: ${destination}`);
+  }
+
+  let ancestor = root;
+  for (const component of TARGETS[target].split('/'))
+  {
+    ancestor = path.join(ancestor, component);
+    directory(ancestor);
+  }
+  return { root, buildDirectory, destination };
+}
+
+function build(root, options = {})
+{
+  const { target, check } = validateBuildOptions(options);
+  const paths = prepareBuildPaths(root, target);
+  const lock = path.join(paths.buildDirectory, `${target}.lock`);
   let locked = false;
   let stage;
-  try {
-    if (!check) {
-      try { fs.mkdirSync(lock); locked = true; }
-      catch (error) { if (error.code === 'EEXIST') throw new Error(`Build publication already locked: ${lock}. Confirm the other build stopped before removing the lock.`); throw error; }
+  try
+  {
+    if (!check)
+    {
+      try
+      {
+        fs.mkdirSync(lock);
+        locked = true;
+      }
+      catch (error)
+      {
+        if (error.code === 'EEXIST')
+        {
+          throw new Error(`Artifact build already locked: ${lock}. Confirm the other build stopped before removing the lock.`);
+        }
+        throw error;
+      }
     }
-    stage = fs.mkdtempSync(path.join(root, '.build/stage-'));
-    const candidate = assemble(root, stage);
-    const destination = path.join(root, 'dist/harness');
-    if (check) {
-      const differences = compare(inventory(candidate), inventory(destination, { overlays: true, missing: true }));
-      if (differences.length) throw new Error(`Distribution is stale:\n${differences.join('\n')}\nRemedy: npm run build`);
-      validateArtifact(destination);
-    } else reconcile(candidate, destination);
-  } finally {
-    if (stage) fs.rmSync(stage, { recursive: true, force: true });
-    if (locked) fs.rmdirSync(lock);
+    stage = fs.mkdtempSync(path.join(paths.buildDirectory, `stage-${target}-`));
+    const candidate = assemble(paths.root, stage);
+    if (check)
+    {
+      const differences = compare(inventory(candidate), inventory(paths.destination, { overlays: true, missing: true }));
+      if (differences.length)
+      {
+        const label = target === 'development' ? 'Development artifact' : 'Published distribution';
+        const remedy = target === 'development'
+          ? 'npm run build'
+          : 'use the main-branch release workflow; do not rebuild tracked output locally';
+        throw new Error(`${label} is stale:\n${differences.join('\n')}\nRemedy: ${remedy}`);
+      }
+      validateArtifact(paths.destination);
+    }
+    else
+    {
+      reconcile(candidate, paths.destination);
+    }
+  }
+  finally
+  {
+    if (stage)
+    {
+      fs.rmSync(stage, { recursive: true, force: true });
+    }
+    if (locked)
+    {
+      fs.rmdirSync(lock);
+    }
   }
 }
 
-if (require.main === module) {
-  const args = process.argv.slice(2);
-  if (args.length > 1 || args.some(arg => arg !== '--check')) { process.stderr.write('Usage: node scripts/build.js [--check]\n'); process.exitCode = 2; }
-  else {
-    try { build(path.resolve(__dirname, '..'), args.includes('--check')); process.stdout.write(`Distribution ${args.includes('--check') ? 'check' : 'build'} passed.\n`); }
-    catch (error) { process.stderr.write(`ERROR [build_failed]: ${error.message}\n`); process.exitCode = 1; }
+const USAGE = `Usage: node scripts/build.js [--target development|distribution] [--check]
+
+Build the development artifact by default. A distribution-writing build is reserved
+for the main-branch release workflow. Check mode compares without repairing output.`;
+
+function parseArguments(argv)
+{
+  const parsed = parseArtifactTarget(argv);
+  let check = false;
+  let help = false;
+  for (const argument of parsed.remaining)
+  {
+    if (argument === '--check')
+    {
+      if (check)
+      {
+        throw new ArtifactArgumentError('DUPLICATE_CHECK', '--check was supplied more than once', 'supply --check once');
+      }
+      check = true;
+    }
+    else if (argument === '--help' || argument === '-h')
+    {
+      if (help)
+      {
+        throw new ArtifactArgumentError('DUPLICATE_HELP', 'help was supplied more than once', 'supply --help once');
+      }
+      help = true;
+    }
+    else
+    {
+      throw new ArtifactArgumentError('UNKNOWN_ARGUMENT', `unrecognized argument: ${argument}`, 'node scripts/build.js --help');
+    }
+  }
+  if (help && (check || parsed.explicitTarget))
+  {
+    throw new ArtifactArgumentError('INVALID_ARGUMENTS', '--help cannot be combined with build options', 'node scripts/build.js --help');
+  }
+  return { target: parsed.target, check, help };
+}
+
+function main(argv, env = process.env)
+{
+  try
+  {
+    const options = parseArguments(argv);
+    if (options.help)
+    {
+      process.stdout.write(`${USAGE}\n`);
+      return 0;
+    }
+    if (options.target === 'distribution' && !options.check)
+    {
+      assertReleaseWriteIntent(env);
+    }
+    build(path.resolve(__dirname, '..'), { target: options.target, check: options.check });
+    process.stdout.write(`${options.target === 'development' ? 'Development artifact' : 'Distribution'} ${options.check ? 'check' : 'build'} passed.\n`);
+    return 0;
+  }
+  catch (error)
+  {
+    if (error instanceof ArtifactArgumentError)
+    {
+      process.stderr.write(`ERROR [${error.code}]: ${error.message}\nRemedy: ${error.remedy}\n`);
+      return error.exitCode;
+    }
+    process.stderr.write(`ERROR [build_failed]: ${error.message}\n`);
+    return 1;
   }
 }
-module.exports = { build, assemble, inventory, validateArtifact, compare, reconcile, outputPath, classify };
+
+if (require.main === module)
+{
+  process.exitCode = main(process.argv.slice(2));
+}
+module.exports = {
+  build,
+  assemble,
+  inventory,
+  validateArtifact,
+  compare,
+  reconcile,
+  outputPath,
+  classify,
+  prepareBuildPaths,
+  parseArguments,
+  main,
+};

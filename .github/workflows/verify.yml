@@ -1,4 +1,4 @@
-name: Verify distribution
+name: Verify source candidate
 
 on: pull_request
 
@@ -11,6 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -18,6 +20,17 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Validate submitted source before generation
+        env:
+          SOURCE_BASE: ${{ github.event.pull_request.base.sha }}
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
+          INTEGRATION: ${{ github.sha }}
+        run: node scripts/check-source-policy.js --base "$SOURCE_BASE" --head "$SOURCE_HEAD" --integration "$INTEGRATION"
+      - run: npm ci --include=dev
+      - run: npm run build
       - run: node scripts/setup-tests.js
-      - run: node scripts/validate-dist.js --tracked
       - run: node scripts/run-tests.js --skip-gif
+      - name: Verify tracked checkout remained unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code

@@ -6,8 +6,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { temporaryDirectory } = require('./test-helpers');
-const { ProcessManager } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/process-manager');
-const { scoreCandidate } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/shared');
+const { ProcessManager } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/process-manager'));
+const { scoreCandidate } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/shared'));
 
 function ffmpeg(args) {
   const result = spawnSync('ffmpeg', ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', ...args], { encoding: 'utf8' });
@@ -37,7 +37,7 @@ test('small VMAF inputs produce stable scores under concurrent scoring', async (
 });
 
 function scorerFixture(t, keepWork = false) {
-  const shared = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/shared');
+  const shared = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/shared'));
   const workDir = temporaryDirectory('score-reuse.');
   t.after(() => fs.rmSync(workDir, { recursive:true, force:true }));
   const calls = [];

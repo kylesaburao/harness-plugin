@@ -1,78 +1,120 @@
 #!/usr/bin/env node
 'use strict';
 
-// Select the release range by first-parent ancestry, then derive the level from
-// all subjects and changed paths in that range, including merged branches.
-// Minimum Node: 18. Uses only the standard library.
-const { execFileSync } = require('node:child_process');
+// Select the release range by validated first-parent ancestry, then derive the
+// level from every subject and changed path in that range. Standard library only.
 
-const MAJOR_TAG = '[bump:major]';
-const MINOR_TAG = '[bump:minor]';
-const BUMP_COMMIT_PATTERN = /^chore: bump version to \d+\.\d+\.\d+$/;
+const {
+  deriveBumpLevel,
+  deriveFromRange,
+  isRelevantPath,
+  releaseRange,
+} = require('./release-policy');
 
-// Repo-relative path prefixes whose contents a plugin user can observe, and so the only changes
-// worth a version bump. Prefixes rather than exact filenames, so a file added to one of these
-// directories later is covered without editing this list.
-//
-//   dist/             installing a plugin copies the whole directory into the harness's plugin
-//                     cache, so everything under here ships to every install (see AGENTS.md).
-//   .claude-plugin/   root marketplace manifest, read when someone adds the marketplace.
-//   .agents/plugins/  the Codex-side equivalent of the same.
-//
-// Everything else - tests/, scripts/, .github/, .githooks/, AGENTS.md, README.md, LICENSE - only
-// exists to develop this repository and never reaches an install.
-const RELEVANT_PATH_PREFIXES = Object.freeze([
-  'dist/',
-  '.claude-plugin/',
-  '.agents/plugins/',
-]);
+const USAGE = `Usage: node scripts/derive-bump-level.js [--json] [--require-anchor]
 
-function isRelevantPath(path) {
-  return RELEVANT_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+Derive none, patch, minor, or major from every commit after the nearest valid
+first-parent release record. Anchorless history is supported for standalone
+fixtures unless --require-anchor is supplied.
+
+Options:
+  --json            Print range metadata as JSON instead of only the level
+  --require-anchor  Fail when no structurally valid release record exists
+  -h, --help        Print this message`;
+
+function parseArguments(argv)
+{
+  const allowed = new Set(['--json', '--require-anchor', '--help', '-h']);
+  const unknown = argv.find((argument) => !allowed.has(argument));
+  if (unknown)
+  {
+    const error = new Error(`unrecognized argument: ${unknown}`);
+    error.code = 'UNKNOWN_ARGUMENT';
+    throw error;
+  }
+  if (new Set(argv).size !== argv.length
+      || (argv.includes('--help') && argv.length !== 1)
+      || (argv.includes('-h') && argv.length !== 1))
+  {
+    const error = new Error('duplicate arguments and combined --help are not supported');
+    error.code = 'INVALID_ARGUMENTS';
+    throw error;
+  }
+  return {
+    help: argv.includes('--help') || argv.includes('-h'),
+    json: argv.includes('--json'),
+    requireAnchor: argv.includes('--require-anchor'),
+  };
 }
 
-function deriveBumpLevel(subjects) {
-  let sawMinor = false;
-  for (const subject of subjects) {
-    if (subject.includes(MAJOR_TAG)) {
-      return 'major';
+function readReleaseRange(repositoryRoot, options = {})
+{
+  return releaseRange(repositoryRoot, options);
+}
+
+function main(argv = process.argv.slice(2), {
+  repositoryRoot = process.cwd(),
+  stdout = process.stdout,
+  stderr = process.stderr,
+} = {})
+{
+  let options;
+  try
+  {
+    options = parseArguments(argv);
+  }
+  catch (error)
+  {
+    stderr.write(`ERROR [${error.code}]: ${error.message}\nRemedy: node scripts/derive-bump-level.js --help\n`);
+    return 2;
+  }
+  if (options.help)
+  {
+    stdout.write(`${USAGE}\n`);
+    return 0;
+  }
+  try
+  {
+    const selected = readReleaseRange(repositoryRoot, { requireAnchor: options.requireAnchor });
+    if (options.json)
+    {
+      stdout.write(`${JSON.stringify({
+        level: selected.level,
+        head: selected.head,
+        anchor: selected.anchor,
+        commits: selected.commits,
+      })}\n`);
     }
-    if (subject.includes(MINOR_TAG)) {
-      sawMinor = true;
+    else
+    {
+      stdout.write(`${selected.level}\n`);
     }
+    return 0;
   }
-  return sawMinor ? 'minor' : 'patch';
-}
-
-// Subjects and paths are separate streams so filenames cannot impersonate headers.
-function deriveFromRange({ subjects, paths }) {
-  if (!paths.some(isRelevantPath)) return 'none';
-  return deriveBumpLevel(subjects);
-}
-
-function readReleaseRange(cwd) {
-  const git = args => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  const firstParent = git(['log', '--first-parent', '--format=%H%x09%s', 'HEAD']);
-  const anchor = firstParent.split('\n').find(line => BUMP_COMMIT_PATTERN.test(line.slice(line.indexOf('\t') + 1)));
-  const revision = anchor ? `${anchor.slice(0, anchor.indexOf('\t'))}..HEAD` : 'HEAD';
-  const subjects = git(['log', '--format=%s', '-z', revision]).split('\0').filter(Boolean);
-  const paths = git(['log', '--format=', '--name-only', '-z', '--no-renames', '--diff-merges=first-parent', revision]).split('\0').filter(Boolean);
-  return { subjects, paths };
-}
-
-function main() {
-  if (process.argv.length !== 2) {
-    process.stderr.write('Usage: node scripts/derive-bump-level.js\n');
-    process.exitCode = 2;
-    return;
-  }
-  try {
-    process.stdout.write(`${deriveFromRange(readReleaseRange(process.cwd()))}\n`);
-  } catch (error) {
-    process.stderr.write(error.stderr || `${error.message}\n`);
-    process.exitCode = 1;
+  catch (error)
+  {
+    if (error && error.code && error.condition && error.remedy)
+    {
+      stderr.write(`ERROR [${error.code}]: ${error.condition}\nRemedy: ${error.remedy}\n`);
+    }
+    else
+    {
+      stderr.write(`${error.stderr || error.message}\n`);
+    }
+    return error.exitCode === 2 ? 2 : 1;
   }
 }
 
-if (require.main === module) main();
-module.exports = { deriveBumpLevel, deriveFromRange, isRelevantPath, readReleaseRange };
+if (require.main === module)
+{
+  process.exitCode = main();
+}
+
+module.exports = {
+  deriveBumpLevel,
+  deriveFromRange,
+  isRelevantPath,
+  main,
+  parseArguments,
+  readReleaseRange,
+};

@@ -12,7 +12,8 @@ import time
 baseline_root, evidence = map(Path, sys.argv[1:])
 repo = Path(__file__).resolve().parents[2]
 evidence.mkdir(parents=True, exist_ok=True)
-relative = Path('dist/harness/skills/write-asd-ste100/scripts')
+from plugin_paths import SCRIPTS
+relative = SCRIPTS.relative_to(repo)
 sys.path.insert(0, str(repo / relative))
 import ste_data
 

@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { skillDir, temporaryDirectory, runEntrypoint, assertPublishedResult } = require('./test-helpers');
-const { sha256File } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/shared');
+const { sha256File } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/shared'));
 
 test('gifsicle full search publishes complete JSON and retains KEEP_WORK artifacts', { timeout: 120000 }, t => {
   const directory = temporaryDirectory('gifsicle-full-search.');

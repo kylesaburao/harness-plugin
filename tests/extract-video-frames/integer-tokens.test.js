@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { frameRecords } = require('../../dist/harness/skills/extract-video-frames/scripts/frame-records');
-const { integerTimestamp, analyzeFrameSpool } = require('../../dist/harness/skills/extract-video-frames/scripts/media-model');
+const { frameRecords } = require(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/frame-records'));
+const { integerTimestamp, analyzeFrameSpool } = require(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/media-model'));
 const color = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv' };
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frame-integer-'));

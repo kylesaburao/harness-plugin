@@ -16,7 +16,15 @@ Use a normal non-root account with local Docker, a POSIX shell, Git, and the che
 ./scripts/dev exec node scripts/run-tests.js
 ```
 
-Build creates the toolchain image. Setup installs the root build toolchain, verifies the tracked distribution, and explicitly reinstalls the backup skill's npm dependencies with `npm ci`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references through `node scripts/setup-tests.js`. Initial build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
+Build creates the toolchain image. After initializing its retained volumes, setup explicitly runs these commands inside the development container:
+
+```sh
+npm ci --include=dev
+npm run build
+node scripts/setup-tests.js
+```
+
+This cold-start sequence installs the root toolchain, constructs `.build/harness/`, installs the candidate backup skill's npm dependencies, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references. `setup-tests.js` itself does not install the root toolchain or build an artifact. Initial image build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
 
 Run a focused test or open a shell with the same source and dependency mounts:
 
@@ -27,18 +35,13 @@ Run a focused test or open a shell with the same source and dependency mounts:
 
 `exec` preserves argument boundaries, stdin, stdout, stderr, and command exit status without allocating a TTY. Use `sh -c '...'` explicitly when a command needs shell expansion. `shell` allocates an interactive TTY. Both use attached `docker run --rm --init --sig-proxy=true`, with Docker's [signal forwarding](https://docs.docker.com/reference/cli/docker/container/run/). Containers are removed when commands exit.
 
-Ordinary commands never build or install implicitly. After source edits, run `./scripts/dev exec npm run build`. Builds preserve the mounted backup dependency directory. Run `setup` before each gate. Run setup and reset only when no development commands are active. The launcher checks for containers using the volumes, but does not lock out concurrent launches.
+Ordinary `exec` commands never build or install implicitly. After source edits, run `./scripts/dev exec npm run build`, then `./scripts/dev exec node scripts/setup-tests.js` before the next gate. Builds preserve the mounted backup dependency directory. Run setup and reset only when no development commands are active. The launcher checks for containers using the volumes, but does not lock out concurrent launches.
 
 ## Persistence and reset
 
-The [pre-push hook](build.md#before-pushing) invokes this checkout's launcher for each
-outgoing snapshot under `/workspace/harness-plugin/.build/pre-push-*`. Snapshot
-`node_modules` stays inside that snapshot, outside the shared root dependency mount.
-Host Git exports its index alongside the snapshot for container-side tracked
-validation. No container Git access to the caller's metadata is required. The image
-and volumes must already exist, and isolated npm installation can need network access.
+The checkout is bind-mounted at `/workspace/harness-plugin`. Four named volumes mask root `node_modules`, `.venv`, `.build/harness/skills/back-up-directories/node_modules`, and `/home/node`. All use `volume-nocopy`, so host dependencies and image home contents are not imported. The `.venv` volume hands the Python environment from setup to one gate, then the gate empties it. The other volumes retain backup dependencies, generated references, and caches. The backup volume is the existing checkout-scoped volume at its new candidate location; a normal setup refreshes it without deleting unrelated volumes.
 
-The checkout is bind-mounted at `/workspace/harness-plugin`. Four named volumes mask root `node_modules`, `.venv`, `dist/harness/skills/back-up-directories/node_modules`, and `/home/node`. All use `volume-nocopy`, so host dependencies and image home contents are not imported. The `.venv` volume hands the Python environment from setup to one gate, then the gate empties it. The other volumes retain backup dependencies, generated references, and caches. Host dependency directories remain untouched. Docker may create empty mount-point directories if they do not exist.
+Before Docker receives the nested backup mount target, the launcher creates and validates `.build/harness/skills/back-up-directories/node_modules` as the invoking user. It rejects conflicting files or unexpected symlink traversal, so Docker cannot create a root-owned development artifact in the host checkout. The launcher may create ignored development directories but does not modify tracked `dist/`.
 
 The home volume stores generated references under `/home/node/.harness-plugin/` and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the four volumes. The source checkout is never mounted into that root container.
 
@@ -60,14 +63,14 @@ The [dependency inventory](dependencies.md#linux-host-and-container) lists the i
 
 Only the Dockerfile enters the build context. Source changes reuse the toolchain cache. Rebuild for toolchain changes. This isolates dependencies but is not an offline or bit-for-bit reproducible build.
 
-Keep commits, pushes, authentication, and checkout Git configuration on the host. No SSH agent or credentials are forwarded. A linked worktree is usable for development commands, but its external Git metadata is not mounted for container Git operations. Development tooling stays outside the shipped plugin.
+Keep commits, pushes, authentication, and checkout Git configuration on the host. No SSH agent or credentials are forwarded. The local commit guards require only host Git and POSIX shell; Docker, Node, Python, an active image, and network access are not required merely to create a source-only commit. A linked worktree is usable for development commands, but its external Git metadata is not mounted for container Git operations. Development tooling stays outside the shipped plugin.
 
 Targets are local Linux Docker, macOS Docker Desktop, and Windows through WSL2. Remote-daemon source transfer and native PowerShell are unsupported. macOS-only HEIC execution requires separate macOS validation.
 
 ## Failure handling
 
 - Missing image: run `./scripts/dev build`.
-- Missing volumes, dependencies, or invalid reference state: run `./scripts/dev setup` and inspect its failing command's diagnosis. Setup returns the first failing child's status and does not report partial initialization as success.
+- Missing candidate, volumes, dependencies, or invalid reference state: run `./scripts/dev setup` and inspect its failing command's diagnosis. Setup returns the first failing child's status and does not report partial initialization as success.
 - Incompatible dependencies after a runtime change: stop commands, run `./scripts/dev reset`, then build and setup.
 - Docker unavailable: start local Docker and check `docker context show`.
 - A failed build or setup download requires restored network access and a retry of the same command.

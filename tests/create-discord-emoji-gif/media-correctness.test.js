@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { temporaryDirectory, skillDir, runEntrypoint, narrowSearch } = require('./test-helpers');
-const shared = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/shared');
-const { ProcessManager } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/process-manager');
+const shared = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/shared'));
+const { ProcessManager } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/process-manager'));
 function ffmpeg(args) {
   const result = spawnSync('ffmpeg', ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', ...args], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);

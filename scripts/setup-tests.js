@@ -6,36 +6,78 @@ const path = require('node:path');
 const { createRequire } = require('node:module');
 const { spawnSync } = require('node:child_process');
 const { buildSetupPlan, runCommandPlan } = require('./run-tests');
+const { artifactRoot, parseArtifactTarget } = require('./artifact-paths');
 
-function checkPrerequisites(root) {
-  if (!fs.existsSync(path.join(root, 'node_modules/.bin/tsc'))) throw new Error('Local TypeScript compiler is missing');
+function checkPrerequisites(root, target = 'development')
+{
+  const selected = artifactRoot(root, target);
+  if (!fs.existsSync(selected))
+  {
+    throw new Error(`Selected artifact is missing: ${selected}`);
+  }
+  if (!fs.existsSync(path.join(root, 'node_modules/.bin/tsc')))
+  {
+    throw new Error('Local TypeScript compiler is missing; run npm ci --include=dev');
+  }
   const python = path.join(root, '.venv/bin/python');
-  if (!fs.existsSync(python)) throw new Error(`Python environment is missing: ${python}`);
-  const backupRoot = path.join(root, 'dist/harness/skills/back-up-directories');
+  if (!fs.existsSync(python))
+  {
+    throw new Error(`Python environment is missing: ${python}`);
+  }
+  const backupRoot = path.join(selected, 'skills/back-up-directories');
   const backupRequire = createRequire(path.join(backupRoot, 'package.json'));
   const dependency = backupRequire.resolve('archiver');
-  if (!dependency.startsWith(path.join(backupRoot, 'node_modules') + path.sep)) throw new Error('archiver must be installed in the distribution backup skill');
+  if (!dependency.startsWith(path.join(backupRoot, 'node_modules') + path.sep))
+  {
+    throw new Error(`archiver must be installed in the selected backup skill: ${backupRoot}`);
+  }
   backupRequire('archiver');
   const probe = spawnSync(python, ['-c', 'import pypdfium2'], { encoding: 'utf8' });
-  if (probe.status !== 0) throw new Error('pypdfium2 is missing from the Python environment');
+  if (probe.status !== 0)
+  {
+    throw new Error('pypdfium2 is missing from the Python environment');
+  }
 }
 
-function main(argv) {
-  if (argv.length > 1 || argv.some(value => !['--help', '--check'].includes(value))) {
-    process.stderr.write('ERROR [usage_error]: expected --check, --help, or no arguments\nRemedy: node scripts/setup-tests.js --help\n');
+function main(argv)
+{
+  let parsed;
+  try
+  {
+    parsed = parseArtifactTarget(argv);
+    if (parsed.remaining.length > 1 || parsed.remaining.some(value => !['--help', '--check'].includes(value)))
+    {
+      throw new Error('expected --target development|distribution, --check, or --help');
+    }
+  }
+  catch (error)
+  {
+    process.stderr.write(`ERROR [usage_error]: ${error.message}\nRemedy: node scripts/setup-tests.js --help\n`);
     return 2;
   }
-  if (argv.includes('--help')) {
-    process.stdout.write('Usage: node scripts/setup-tests.js [--check]\nInstall development dependencies and initialize references. --check only validates installed dependencies.\n');
+  if (parsed.remaining.includes('--help'))
+  {
+    process.stdout.write('Usage: node scripts/setup-tests.js [--target development|distribution] [--check]\nPrepare runtime dependencies for an explicitly built artifact. --check only validates installed dependencies.\n');
     return 0;
   }
   const root = path.resolve(__dirname, '..');
-  if (!argv.includes('--check')) return runCommandPlan(buildSetupPlan(root), undefined, { summaryLabel: 'Test setup' });
-  try { checkPrerequisites(root); return 0; }
-  catch (error) {
-    process.stderr.write(`ERROR [test_prerequisite_missing]: ${error.message}\nRemedy: node scripts/setup-tests.js\n`);
+  if (!parsed.remaining.includes('--check'))
+  {
+    return runCommandPlan(buildSetupPlan(root, parsed.target), undefined, { summaryLabel: 'Test setup' });
+  }
+  try
+  {
+    checkPrerequisites(root, parsed.target);
+    return 0;
+  }
+  catch (error)
+  {
+    process.stderr.write(`ERROR [test_prerequisite_missing]: ${error.message}\nRemedy: build the selected artifact, then node scripts/setup-tests.js --target ${parsed.target}\n`);
     return 2;
   }
 }
-if (require.main === module) process.exitCode = main(process.argv.slice(2));
+if (require.main === module)
+{
+  process.exitCode = main(process.argv.slice(2));
+}
 module.exports = { checkPrerequisites, main };

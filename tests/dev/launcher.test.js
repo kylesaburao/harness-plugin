@@ -8,10 +8,16 @@ const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 
 const launcher = path.resolve(__dirname, '../../scripts/dev');
-function probe(t, args, extra = {}) {
+function probe(t, args, extra = {}, prepare = () => {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-dev-test-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const log = path.join(directory, 'calls.jsonl');
+  const root = path.join(directory, 'checkout with spaces');
+  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
+  const localLauncher = path.join(root, 'scripts/dev');
+  fs.copyFileSync(launcher, localLauncher);
+  fs.chmodSync(localLauncher, 0o755);
+  prepare(root);
   fs.writeFileSync(path.join(directory, 'docker'), `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -20,12 +26,12 @@ if (args[0] === 'ps' && process.env.DEV_TEST_BUSY) console.log('active-container
 if (args[0] === 'image' && process.env.DEV_TEST_NO_IMAGE) process.exit(1);
 if (args[0] === 'run' && !args.includes('0:0')) process.exit(Number(process.env.DEV_TEST_EXIT || 0));
 `, { mode: 0o755 });
-  const result = spawnSync(launcher, args, {
+  const result = spawnSync(localLauncher, args, {
     encoding: 'utf8',
     env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, DEV_TEST_LOG: log, ...extra },
   });
   const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
-  return { ...result, calls };
+  return { ...result, calls, root };
 }
 
 test('exec preserves argv and failure status with isolated dependencies', t => {
@@ -37,6 +43,9 @@ test('exec preserves argv and failure status with isolated dependencies', t => {
   for (const flag of ['--rm', '--init', '--sig-proxy=true', '-i']) assert.ok(run.includes(flag));
   assert.ok(!run.includes('-it'));
   assert.equal(run.filter(arg => arg.includes('volume-nocopy')).length, 4);
+  assert.ok(run.some(arg => arg.includes('target=/workspace/harness-plugin/.build/harness/skills/back-up-directories/node_modules,')));
+  assert.ok(!run.some(arg => arg.includes('/dist/')));
+  assert.equal(fs.statSync(path.join(result.root, '.build/harness')).uid, process.getuid());
   assert.equal(run[run.indexOf('--user') + 1], `${process.getuid()}:${process.getgid()}`);
   assert.ok(!result.calls.some(call => ['build', 'create'].includes(call[0])));
 });
@@ -48,7 +57,27 @@ test('setup initializes only volume ownership and propagates installer failure',
   assert.equal(runs.length, 2);
   assert.ok(runs[0].includes('0:0'));
   assert.ok(!runs[0].some(arg => arg.includes('type=bind')));
-  assert.deepEqual(runs[1].slice(-2), ['node', 'scripts/setup-tests.js']);
+  assert.deepEqual(runs[1].slice(-3), ['sh', '-c', 'npm ci --include=dev && npm run build && node scripts/setup-tests.js']);
+});
+
+test('candidate mount rejects symlinks and conflicting files before launching a source container', t =>
+{
+  for (const kind of ['symlink', 'file'])
+  {
+    const result = probe(t, ['exec', 'true'], {}, root =>
+    {
+      if (kind === 'symlink')
+      {
+        fs.symlinkSync(root, path.join(root, '.build'));
+      }
+      else
+      {
+        fs.writeFileSync(path.join(root, '.build'), 'conflict');
+      }
+    });
+    assert.equal(result.status, 2);
+    assert.ok(!result.calls.some(call => call[0] === 'run'));
+  }
 });
 
 test('setup and reset refuse busy volumes before any mutation', t => {

@@ -54,7 +54,7 @@ The plugin ships skills and output styles only: no commands, no hooks, no plugin
 
 ## From implementation to installed distribution
 
-Edit `src/harness/`, then explicitly rebuild `dist/harness/` before testing or installing your changes. Rebuild after changes to implementation, bundled resources, source manifests or version, compiler configuration, or build tooling. On macOS, run from the repository root:
+Edit `src/harness/`, then build the ignored installation-shaped candidate at `.build/harness/`. Rebuild after changes to implementation, bundled resources, source manifests, compiler configuration, or build tooling. On macOS, run from the repository root:
 
 ```sh
 npm ci --include=dev
@@ -63,11 +63,11 @@ node scripts/setup-tests.js
 node scripts/run-tests.js
 ```
 
-The first command installs the locked development toolchain. The build compiles TypeScript to JavaScript, copies bundled resources, and injects the canonical source version into both host manifests. On Linux/WSL2, run these development commands through `./scripts/dev exec`, as described in the [container guide](docs/development/container.md).
+The first command installs the locked development toolchain. The build compiles TypeScript to JavaScript, copies bundled resources, and injects the current canonical version into both candidate host manifests. On Linux/WSL2, run these development commands through `./scripts/dev exec`, as described in the [container guide](docs/development/container.md).
 
-Setup, runtime tests, and CI expect `dist/harness/` to exist and match source. Setup and the full gate check it without rebuilding it. `npm run build:check` also checks without repairing drift. Both marketplace installers consume the committed distribution directly and never run the compiler. Plugin users need no TypeScript build, though individual skills retain their documented runtime setup requirements.
+Setup and runtime tests use `.build/harness/` by default and check it without silently rebuilding it. `npm run build:check` compares it with a fresh candidate without repairing drift. Both marketplace installers continue to consume the committed `dist/harness/` release directly and never run the compiler. Repository development can be ahead of that installable release; installed content changes only after successful CI publication. Plugin users need no TypeScript build, though individual skills retain their documented runtime setup requirements.
 
-Commit source and regenerated distribution together before pushing. The release workflow explicitly bumps the source version, rebuilds, and tests the versioned distribution before committing it. See the [build workflow](docs/development/build.md) for validation and recovery, and [versioning](docs/development/versioning.md) for release details.
+Commit source, tooling, tests, and documentation without regenerated output or a local version bump. The release workflow owns `src/harness/package.json` and `dist/harness/`, tests the exact versioned distribution, and publishes them together. See the [build workflow](docs/development/build.md) for target commands and recovery, and [versioning](docs/development/versioning.md) for release details.
 
 ## Documentation
 

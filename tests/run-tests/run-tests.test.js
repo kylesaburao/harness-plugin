@@ -34,10 +34,50 @@ function makeTestTree(groups) {
   return root;
 }
 
+test('target selection reaches every setup and prerequisite command without ambient fallback', t =>
+{
+  const { buildCommandPlan, buildSetupPlan, parseArguments } = loadRunner();
+  const root = makeTestTree({ example: ['example.test.js'] });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const previous = process.env.HARNESS_TEST_TARGET;
+  process.env.HARNESS_TEST_TARGET = 'invalid-ambient-target';
+  try
+  {
+    for (const target of ['development', 'distribution'])
+    {
+      assert.equal(parseArguments(['--target', target, '--skip-gif']).target, target);
+      for (const plan of [buildCommandPlan(root, false, target), buildSetupPlan(root, target)])
+      {
+        for (const command of plan)
+        {
+          assert.equal(command.env.HARNESS_TEST_TARGET, target);
+        }
+      }
+      const plan = buildSetupPlan(root, target);
+      assert.equal(plan.some(spec => spec.label === 'install build dependencies'), false);
+      const expectedRoot = path.join(root, target === 'development' ? '.build/harness' : 'dist/harness');
+      assert.ok(plan.find(spec => spec.label === 'install backup dependencies').args.includes(path.join(expectedRoot, 'skills/back-up-directories')));
+    }
+    assert.equal(process.env.HARNESS_TEST_TARGET, 'invalid-ambient-target');
+    assert.throws(() => parseArguments(['--target', 'elsewhere']));
+  }
+  finally
+  {
+    if (previous === undefined)
+    {
+      delete process.env.HARNESS_TEST_TARGET;
+    }
+    else
+    {
+      process.env.HARNESS_TEST_TARGET = previous;
+    }
+  }
+});
+
 test('CLI accepts only the complete gate, --skip-gif, and --help', () => {
   let result = spawnSync(process.execPath, [scriptPath, '--help'], { encoding: 'utf8' });
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /run-tests\.js \[--skip-gif\]/);
+  assert.match(result.stdout, /run-tests\.js .*\[--skip-gif\]/);
   assert.match(result.stdout, /complete local test gate/i);
   assert.match(result.stdout, /omit[\s\S]*create-discord-emoji-gif/i);
 
@@ -131,13 +171,13 @@ test('setup is separate from the validation and test command plan', () => {
     backup: ['backup.test.js'],
   });
   const { buildCommandPlan, buildSetupPlan } = loadRunner();
-  assert.deepEqual(buildSetupPlan(root).find(stage => stage.label === 'initialize ASD-STE100 references').args, ['dist/harness/skills/write-asd-ste100/scripts/initialize_references.py']);
+  assert.deepEqual(buildSetupPlan(root).find(stage => stage.label === 'initialize ASD-STE100 references').args, [path.join(root, '.build/harness/skills/write-asd-ste100/scripts/initialize_references.py')]);
   const labels = buildCommandPlan(root, false).map(({ label }) => label);
 
   assert.deepEqual(labels, [
     'validate test prerequisites',
-    'verify generated distribution',
-    'validate distribution artifact',
+    'verify selected artifact',
+    'validate selected artifact',
     'validate ASD-STE100 references',
     'preflight GIF converter (gifski)',
     'preflight GIF converter (gifsicle)',
@@ -163,8 +203,7 @@ test('setup freshness failure stops before runtime dependency installation or in
   }, { ...capture, summaryLabel: 'Test setup' });
   assert.equal(status, 17);
   assert.deepEqual(calls, [
-    ['npm', 'ci', '--include=dev'],
-    ['node', 'scripts/build.js', '--check'],
+    ['node', 'scripts/build.js', '--target', 'development', '--check'],
   ]);
   assert.match(capture.output.stdout, /Test setup: Failed/);
 });
@@ -241,11 +280,18 @@ test('workflow limits credentials and tests each exact revision before bumping i
   assert.equal((workflow.match(/node-version: '26'/g) || []).length, 2);
   assert.equal((workflow.match(/python-version: '3\.12'/g) || []).length, 2);
   const reset = workflow.indexOf('git reset --hard origin/main');
-  const derive = workflow.indexOf('level="$(node scripts/derive-bump-level.js)"', reset);
-  const setup = workflow.indexOf('node scripts/setup-tests.js', derive);
-  const testGate = workflow.indexOf('node scripts/run-tests.js --skip-gif', derive);
-  const bump = workflow.indexOf('node scripts/bump-version.js', testGate);
-  assert.ok(reset !== -1 && reset < derive && derive < setup && setup < testGate && testGate < bump);
+  const bump = workflow.indexOf('HARNESS_RELEASE_WRITE=1 node scripts/bump-version.js', reset);
+  const build = workflow.indexOf('HARNESS_RELEASE_WRITE=1 npm run build:dist', bump);
+  const setup = workflow.indexOf('node scripts/setup-tests.js --target distribution', build);
+  const gate = workflow.indexOf('node scripts/run-tests.js --target distribution --skip-gif', setup);
+  const freshness = workflow.indexOf('npm run build:dist:check', gate);
+  const stage = workflow.indexOf('git add -A -- src/harness/package.json dist/', freshness);
+  const indexed = workflow.indexOf('node scripts/check-release.js', stage);
+  const commit = workflow.indexOf('git commit -F', indexed);
+  assert.ok(reset >= 0 && reset < bump && bump < build && build < setup && setup < gate && gate < freshness && freshness < stage && stage < indexed && indexed < commit);
+  assert.match(workflow, /queue: max/);
+  assert.ok(!workflow.includes('startsWith(github.event.head_commit.message'));
+  assert.ok(!workflow.includes('jq '));
 });
 
 
@@ -253,10 +299,32 @@ test('missing test prerequisites give a setup remedy without installing', () => 
   const root = makeTestTree({ empty: [] });
   try {
     const { checkPrerequisites } = require('../../scripts/setup-tests');
-    assert.throws(() => checkPrerequisites(root), /Local TypeScript compiler is missing/);
+    assert.throws(() => checkPrerequisites(root), /Selected artifact is missing/);
     const { buildCommandPlan } = loadRunner();
     assert.equal(buildCommandPlan(root, false).some(item => item.command === 'npm' || item.args.includes('pip') || item.args.some(arg => arg.includes('initialize_references'))), false);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('missing candidate backup dependencies cannot fall back to root or published dependencies', t =>
+{
+  const root = makeTestTree({empty:[]});
+  t.after(() => fs.rmSync(root,{recursive:true,force:true}));
+  const write = (name, text) =>
+  {
+    const file = path.join(root,name);
+    fs.mkdirSync(path.dirname(file),{recursive:true});
+    fs.writeFileSync(file,text);
+  };
+  write('node_modules/.bin/tsc','compiler placeholder');
+  write('.venv/bin/python','python placeholder');
+  write('.build/harness/skills/back-up-directories/package.json','{}');
+  for (const directory of ['node_modules/archiver','dist/harness/skills/back-up-directories/node_modules/archiver'])
+  {
+    write(`${directory}/package.json`,'{"name":"archiver","main":"index.js"}');
+    write(`${directory}/index.js`,'module.exports = {};');
+  }
+  const {checkPrerequisites} = require('../../scripts/setup-tests');
+  assert.throws(() => checkPrerequisites(root), /archiver must be installed in the selected backup skill/);
 });
 
 test('cleanup empties a busy venv mount and reports child cleanup failure', async t => {

@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { once } = require('node:events');
-const cli = path.resolve(__dirname, '../../dist/harness/skills/wake-desktop/scripts/manage-targets.js');
+const cli = require('../helpers/plugin-paths').artifactPath('skills/wake-desktop/scripts/manage-targets.js');
 const preload = path.join(__dirname, 'target-lock-preload.cjs');
 const mac = '00:11:22:33:44:55';
 const register = name => ['register', '--name', name, '--ip', 'desktop.local', '--mac', mac];

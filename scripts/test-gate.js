@@ -14,7 +14,7 @@ const countText = value => keys.map(key => `${value[key]} ${key}`).join(', ');
 const signalStatus = signal => 128 + (os.constants.signals[signal] || 0);
 const childStatus = result => result.signal ? signalStatus(result.signal) : (result.status ?? 1);
 
-async function runGate({ root, prerequisites, groups, fullSearch, python, excluded = [], concurrency = os.availableParallelism() }, {
+async function runGate({ root, prerequisites, groups, fullSearch, python, excluded = [], concurrency = os.availableParallelism(), env = process.env }, {
   stdout = process.stdout, stderr = process.stderr, signals = process,
 } = {}) {
   root = fs.realpathSync(root);
@@ -101,7 +101,7 @@ async function runGate({ root, prerequisites, groups, fullSearch, python, exclud
       let child;
       try {
         // A fresh process group lets interruption reach test children as well.
-        child = spawn(spec.command, spec.args, { cwd: root, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
+        child = spawn(spec.command, spec.args, { cwd: root, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...env, NODE_TEST_CONTEXT: undefined } });
       } catch (cause) { resolve({ status: null, error: cause }); return; }
       const record = { child, pgid: process.platform === 'win32' || !Number.isInteger(child.pid) ? null : child.pid };
       children.add(record);

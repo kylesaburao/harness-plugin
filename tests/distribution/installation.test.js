@@ -6,14 +6,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { inventory } = require('../../scripts/build');
-const { distributionRoot } = require('../helpers/plugin-paths');
+const { artifactRoot } = require('../helpers/plugin-paths');
 
 test('isolated artifact runs beneath an ESM parent and installs backup dependencies locally', t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'harness installé ')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}\n');
   const plugin = path.join(root, 'plugin with spaces');
-  for (const [name, entry] of inventory(distributionRoot, { overlays: true })) {
+  for (const [name, entry] of inventory(artifactRoot, { overlays: true })) {
     const destination = path.join(plugin, name);
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     fs.copyFileSync(entry.absolute, destination); fs.chmodSync(destination, entry.mode);

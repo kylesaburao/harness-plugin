@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) / Development
 
-Work from the repository root for all commands in these guides. Read [AGENTS.md](../../AGENTS.md) before changing the repository. Editable skills live under `src/harness/skills/`, and generated installable files live under `dist/harness/`, while tests and development tooling remain outside the installed plugin.
+Work from the repository root for all commands in these guides. Read [AGENTS.md](../../AGENTS.md) before changing the repository. Editable skills live under `src/harness/skills/`, the ignored development artifact lives under `.build/harness/`, and the last published installable files live under `dist/harness/`. Tests and development tooling remain outside both plugin artifacts.
 
 ## Prepare and verify a change
 
@@ -11,7 +11,7 @@ Work from the repository root for all commands in these guides. Read [AGENTS.md]
 3. Follow the [build workflow](build.md), then run focused checks during development and the [full gate](testing.md#full-gate) before delivery.
 4. Follow [versioning and commit conventions](versioning.md) when committing or releasing.
 
-Keep Git operations on the host. Enable the repository's timestamp hook once per clone:
+Keep Git operations on the host. Enable the repository's commit guards and timestamp hook once per clone:
 
 ```sh
 git config core.hooksPath .githooks

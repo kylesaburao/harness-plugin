@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const root = path.resolve(__dirname, '../../dist/harness/skills');
+const root = require('../helpers/plugin-paths').artifactPath('skills');
 const policy = fs.readFileSync(path.join(root, 'harness-advisor/SKILL.md'), 'utf8');
 const activation = fs.readFileSync(path.join(root, 'install-harness-plugin-capabilities/references/activation-instructions.md'), 'utf8');
 const [codexBlock, claudeBlock] = [...activation.matchAll(/```markdown\n([\s\S]*?)```/g)].map(match => match[1]);

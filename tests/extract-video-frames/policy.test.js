@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { analyzeFixture } = require('./frame-spool-fixture');
 
-const subject = require('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
+const subject = require(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js'));
 const descriptors = subject.descriptorMap(require('./pixel-formats.json'));
 const classify = stream => subject.classifyStream(stream, subject.pixelProperties(stream, descriptors));
 

@@ -14,8 +14,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[2] / "dist" / "harness" / "skills" / "write-asd-ste100"
-SCRIPTS = ROOT / "scripts"
+from plugin_paths import SCRIPTS
+ROOT = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
 import extract_dictionary

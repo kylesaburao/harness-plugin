@@ -8,13 +8,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { performance } = require('node:perf_hooks');
+const { artifactRoot, parseArtifactTarget, validateTarget } = require('./artifact-paths');
 
 const EXIT = Object.freeze({ OK: 0, FAILED: 1, CANNOT_START: 2 });
 const GIF_GROUP = 'create-discord-emoji-gif';
-const GIF_SKILL = 'dist/harness/skills/create-discord-emoji-gif/scripts/node';
-const STE_SCRIPTS = 'dist/harness/skills/write-asd-ste100/scripts';
 
-const USAGE = `Usage: run-tests.js [--skip-gif]
+const USAGE = `Usage: run-tests.js [--target development|distribution] [--skip-gif]
 
 Run the repository test gate using existing dependencies.
 Prepare a checkout first with: node scripts/setup-tests.js
@@ -29,11 +28,19 @@ Options:
 
 Exit status: 0 success, 2 bad usage, prerequisite child status, 1 test failure, or 128 + interruption signal.`;
 
-function parseArguments(argv) {
-  const unknown = argv.find(argument => argument !== '--skip-gif' && argument !== '--help');
-  if (unknown) throw Object.assign(new Error(`unrecognized argument: ${unknown}`), { code: 'UNKNOWN_ARGUMENT' });
-  if (argv.length > 1 || new Set(argv).size !== argv.length) throw Object.assign(new Error('use at most one of --skip-gif or --help'), { code: 'INVALID_ARGUMENTS' });
-  return { help: argv[0] === '--help', skipGif: argv[0] === '--skip-gif' };
+function parseArguments(argv)
+{
+  const { target, remaining } = parseArtifactTarget(argv);
+  const unknown = remaining.find(argument => argument !== '--skip-gif' && argument !== '--help');
+  if (unknown)
+  {
+    throw Object.assign(new Error(`unrecognized argument: ${unknown}`), { code: 'UNKNOWN_ARGUMENT' });
+  }
+  if (remaining.length > 1)
+  {
+    throw Object.assign(new Error('use at most one of --skip-gif or --help'), { code: 'INVALID_ARGUMENTS' });
+  }
+  return { target, help: remaining[0] === '--help', skipGif: remaining[0] === '--skip-gif' };
 }
 
 function nodeTestFiles(repoRoot, group) {
@@ -58,42 +65,47 @@ function command(label, executable, args, repoRoot) {
   return { label, command: executable, args, cwd: repoRoot };
 }
 
-function buildSetupPlan(repoRoot) {
+function buildSetupPlan(repoRoot, target = 'development')
+{
+  const selected = artifactRoot(repoRoot, target);
   const python = path.join('.venv', 'bin', 'python');
   return [
-    command('install build dependencies', 'npm', ['ci', '--include=dev'], repoRoot),
-    command('verify generated distribution', 'node', ['scripts/build.js', '--check'], repoRoot),
+    command('verify selected artifact', 'node', ['scripts/build.js', '--target', target, '--check'], repoRoot),
     command('install backup dependencies', 'npm', [
-      'ci', '--omit=dev', '--prefix', 'dist/harness/skills/back-up-directories',
+      'ci', '--omit=dev', '--prefix', path.join(selected, 'skills/back-up-directories'),
     ], repoRoot),
     command('create or reuse Python virtual environment', 'python3', [
       '-m', 'venv', '.venv',
     ], repoRoot),
     command('install pypdfium2', python, ['-m', 'pip', 'install', 'pypdfium2'], repoRoot),
     command('initialize ASD-STE100 references', python, [
-      path.join(STE_SCRIPTS, 'initialize_references.py'),
+      path.join(selected, 'skills/write-asd-ste100/scripts/initialize_references.py'),
     ], repoRoot),
-  ];
+  ].map(spec => ({ ...spec, env: { ...process.env, HARNESS_TEST_TARGET: target } }));
 }
 
-function buildCommandPlan(repoRoot, skipGif) {
+function buildCommandPlan(repoRoot, skipGif, target = 'development')
+{
+  const selected = artifactRoot(repoRoot, target);
+  const steScripts = path.join(selected, 'skills/write-asd-ste100/scripts');
+  const gifSkill = path.join(selected, 'skills/create-discord-emoji-gif/scripts/node');
   const python = path.join('.venv', 'bin', 'python');
   const plan = [
-    command('validate test prerequisites', 'node', ['scripts/setup-tests.js', '--check'], repoRoot),
-    command('verify generated distribution', 'node', ['scripts/build.js', '--check'], repoRoot),
-    command('validate distribution artifact', 'node', ['scripts/validate-dist.js'], repoRoot),
+    command('validate test prerequisites', 'node', ['scripts/setup-tests.js', '--target', target, '--check'], repoRoot),
+    command('verify selected artifact', 'node', ['scripts/build.js', '--target', target, '--check'], repoRoot),
+    command('validate selected artifact', 'node', ['scripts/validate-dist.js', '--target', target], repoRoot),
     command('validate ASD-STE100 references', python, [
-      path.join(STE_SCRIPTS, 'validate_references.py'), '--json',
+      path.join(steScripts, 'validate_references.py'), '--json',
     ], repoRoot),
   ];
 
   if (!skipGif) {
     plan.push(
       command('preflight GIF converter (gifski)', 'node', [
-        path.join(GIF_SKILL, 'mov-to-gif-gifski.js'), '--preflight', '--json',
+        path.join(gifSkill, 'mov-to-gif-gifski.js'), '--preflight', '--json',
       ], repoRoot),
       command('preflight GIF converter (gifsicle)', 'node', [
-        path.join(GIF_SKILL, 'mov-to-gif.js'), '--preflight', '--json',
+        path.join(gifSkill, 'mov-to-gif.js'), '--preflight', '--json',
       ], repoRoot),
     );
   }
@@ -107,12 +119,13 @@ function buildCommandPlan(repoRoot, skipGif) {
   plan.push(command('ASD-STE100 Python tests', python, [
     '-m', 'unittest', 'discover', '-s', 'tests/write-asd-ste100', '-v',
   ], repoRoot));
-  return plan;
+  return plan.map(spec => ({ ...spec, env: { ...process.env, HARNESS_TEST_TARGET: target } }));
 }
 
 function spawnCommand(specification) {
   return spawnSync(specification.command, specification.args, {
     cwd: specification.cwd,
+    env: specification.env,
     stdio: 'inherit',
   });
 }
@@ -190,10 +203,11 @@ async function main(argv, {
     return EXIT.OK;
   }
   const { runGate } = require('./test-gate');
-  const plan = buildCommandPlan(repoRoot, options.skipGif);
+  const plan = buildCommandPlan(repoRoot, options.skipGif, options.target);
   const groups = Object.fromEntries(discoverNodeTestGroups(repoRoot, options.skipGif).map(group => [group, nodeTestFiles(repoRoot, group)]));
   return runWithVenvCleanup(repoRoot, () => runGate({
     root: repoRoot,
+    env: { ...process.env, HARNESS_TEST_TARGET: validateTarget(options.target) },
     prerequisites: plan.filter(stage => !stage.label.startsWith('Node tests:') && stage.label !== 'ASD-STE100 Python tests'),
     groups,
     fullSearch: options.skipGif ? undefined : 'tests/create-discord-emoji-gif/full-search.test.js',

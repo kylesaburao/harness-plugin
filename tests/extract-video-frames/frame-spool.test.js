@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const subject = require('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames');
-const { frameRecords } = require('../../dist/harness/skills/extract-video-frames/scripts/frame-records');
+const subject = require(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames'));
+const { frameRecords } = require(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/frame-records'));
 const { analyzeFixture } = require('./frame-spool-fixture');
 const color = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv' };
 const options = { start: null, end: null, timeBase: '1/30' };
@@ -130,7 +130,7 @@ test('deterministic storage open/read failures include path, remedy, and exit 2'
 
 test('spool parent descriptors close on successful launch and synchronous spawn failure', t => {
   const { root } = fixture(t);
-  const script = `const fs = require('node:fs'); const cp = require('node:child_process'); const open = fs.openSync; const close = fs.closeSync; let opened = 0, closed = 0; const owned = new Set(); fs.openSync = (...args) => { const fd = open(...args); if (args[1] === 'wx') { opened++; owned.add(fd); } return fd; }; fs.closeSync = fd => { if (owned.delete(fd)) closed++; return close(fd); }; const spawn = cp.spawn; cp.spawn = (...args) => { if (args[0] === 'throw') throw Error('spawn injection'); return spawn(...args); }; const { ProcessManager } = require(${JSON.stringify(require.resolve('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames'))}); (async () => { const manager = new ProcessManager(); await manager.run(process.execPath, ['-e', ''], {stdoutFile: ${JSON.stringify(path.join(root, 'ok.json'))}}); try { await manager.run('throw', [], {stdoutFile: ${JSON.stringify(path.join(root, 'throw.json'))}}); } catch {} console.log(JSON.stringify({opened, closed, active: manager.active.size})); })();`;
+  const script = `const fs = require('node:fs'); const cp = require('node:child_process'); const open = fs.openSync; const close = fs.closeSync; let opened = 0, closed = 0; const owned = new Set(); fs.openSync = (...args) => { const fd = open(...args); if (args[1] === 'wx') { opened++; owned.add(fd); } return fd; }; fs.closeSync = fd => { if (owned.delete(fd)) closed++; return close(fd); }; const spawn = cp.spawn; cp.spawn = (...args) => { if (args[0] === 'throw') throw Error('spawn injection'); return spawn(...args); }; const { ProcessManager } = require(${JSON.stringify(require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames')))}); (async () => { const manager = new ProcessManager(); await manager.run(process.execPath, ['-e', ''], {stdoutFile: ${JSON.stringify(path.join(root, 'ok.json'))}}); try { await manager.run('throw', [], {stdoutFile: ${JSON.stringify(path.join(root, 'throw.json'))}}); } catch {} console.log(JSON.stringify({opened, closed, active: manager.active.size})); })();`;
   const result = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { opened: 2, closed: 2, active: 0 });

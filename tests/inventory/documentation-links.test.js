@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { links, anchors } = require('./markdown');
+const { artifactRoot, mapPublishedPath } = require('../helpers/plugin-paths');
 const ROOT = path.resolve(__dirname, '../..');
 
 function markdownFiles(directory) {
@@ -22,7 +23,7 @@ test('repository entry points and human guides have valid local links and headin
     for (const { target } of links(fs.readFileSync(file, 'utf8'))) {
       if (/^(?:https?:|mailto:)/i.test(target)) continue;
       const [relative, fragment] = decodeURIComponent(target).split('#');
-      const destination = relative ? path.resolve(path.dirname(file), relative) : file;
+      const destination = mapPublishedPath(relative ? path.resolve(path.dirname(file), relative) : file);
       const context = `${path.relative(ROOT, file)} -> ${target}`;
       if (!fs.existsSync(destination)) failures.push(`Missing file: ${context}`);
       else if (fragment && destination.endsWith('.md') && !anchors(fs.readFileSync(destination, 'utf8')).has(fragment)) {
@@ -35,7 +36,7 @@ test('repository entry points and human guides have valid local links and headin
 
 test('source skill links resolve against the emitted installed resource paths', () => {
   const sourceRoot = path.join(ROOT, 'src/harness');
-  const installedRoot = path.join(ROOT, 'dist/harness');
+  const installedRoot = artifactRoot;
   const failures = [];
   for (const file of markdownFiles(sourceRoot)) {
     for (const { target } of links(fs.readFileSync(file, 'utf8'))) {

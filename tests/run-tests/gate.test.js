@@ -24,6 +24,35 @@ function pythonSpec(f) {
   return { command: python, args: [pythonAdapter, 'python'] };
 }
 
+test('selected environment reaches prerequisites, special GIF process, workers, and Python children', async t =>
+{
+  const f = fixture(t);
+  const nodeProbe = `require('node:test')('target', () =>
+  {
+    require('node:assert/strict').equal(process.env.HARNESS_TEST_TARGET, 'distribution');
+    const child = require('node:child_process').spawnSync(process.execPath, ['-e', 'process.exit(process.env.HARNESS_TEST_TARGET === "distribution" ? 0 : 9)']);
+    require('node:assert/strict').equal(child.status, 0);
+  });`;
+  const full = f.write('tests/gif/full.test.js', nodeProbe);
+  const worker = f.write('tests/worker/target.test.js', nodeProbe);
+  f.write('python/test_target.py', `import os, subprocess, sys, unittest
+class Target(unittest.TestCase):
+ def test_target(self):
+  self.assertEqual(os.environ.get('HARNESS_TEST_TARGET'), 'distribution')
+  self.assertEqual(subprocess.run([sys.executable, '-c', 'import os; assert os.environ["HARNESS_TEST_TARGET"] == "distribution"']).returncode, 0)
+`);
+  const result = await runGate({
+    root: f.root,
+    prerequisites: [{ label: 'target probe', command: process.execPath, args: ['-e', 'process.exit(process.env.HARNESS_TEST_TARGET === "distribution" ? 0 : 9)'] }],
+    groups: { gif: [full], worker: [worker] },
+    fullSearch: full,
+    python: { command: python, args: [pythonAdapter, 'python'] },
+    concurrency: 2,
+    env: { ...process.env, HARNESS_TEST_TARGET: 'distribution' },
+  }, f.options);
+  assert.equal(result, 0, f.output());
+});
+
 test('prerequisites remain sequential, preserve statuses, and report all unrun and excluded groups', async t => {
   for (const command of [{ command: process.execPath, args: ['-e', 'process.exit(17)'] }, { command: '/missing-gate-command', args: [] }]) {
     const f = fixture(t);

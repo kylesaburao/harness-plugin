@@ -4,7 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { inventory } = require('../../scripts/build');
+const { artifactRoot, artifactPath } = require('../helpers/plugin-paths');
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const SKILLS_PREFIX = 'src/harness/skills/';
@@ -17,16 +18,13 @@ function normalizeWhitespace(value) {
   return value.trim().replace(/\s+/g, ' ');
 }
 
-function trackedResourceBearingSkills() {
-  // Docker bind mounts can report host ownership. Trust only this checkout for this read.
-  const tracked = execFileSync('git', ['-c', `safe.directory=${REPO_ROOT}`, 'ls-files', '--cached', '--others', '--exclude-standard', '--', 'src/harness/skills'], {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-  }).trim().split('\n').filter(Boolean);
+function trackedResourceBearingSkills()
+{
+  const tracked = [...inventory(artifactRoot, { overlays: true }).keys()].filter(file => file.startsWith('skills/'));
   const skills = new Set();
 
   for (const file of tracked) {
-    const relative = file.slice(SKILLS_PREFIX.length);
+    const relative = file.slice('skills/'.length);
     const [skillName, firstComponent, ...rest] = relative.split('/');
     const bundledDirectory = ['scripts', 'references', 'assets'].includes(firstComponent);
     const siblingMarkdown = rest.length === 0
@@ -95,7 +93,7 @@ test('every tracked resource-bearing skill has the shared bundled-path authority
     const skillPath = path.join(REPO_ROOT, SKILLS_PREFIX, skill, 'SKILL.md');
     const source = fs.readFileSync(skillPath, 'utf8');
     assertAuthority(source, skillPath);
-    const installedPath = path.join(REPO_ROOT, 'dist/harness/skills', skill, 'SKILL.md');
+    const installedPath = artifactPath('skills', skill, 'SKILL.md');
     const installed = fs.readFileSync(installedPath, 'utf8');
     assert.equal(installed, source, installedPath);
     assertAuthority(installed, installedPath);

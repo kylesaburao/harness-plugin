@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const script = path.resolve(__dirname, '../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
+const script = require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js');
 
 function run(args, env = process.env) {
   return spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', env });
@@ -38,7 +38,7 @@ test('missing input is diagnosed before toolchain discovery', () => {
 
 test('skill documentation defines the entrypoint and forbids redundant reinspection', () => {
   const fs = require('node:fs');
-  const skill = fs.readFileSync(path.resolve(__dirname, '../../dist/harness/skills/extract-video-frames/SKILL.md'), 'utf8');
+  const skill = fs.readFileSync(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/SKILL.md'), 'utf8');
   assert.doesNotMatch(skill, /untested working draft/i);
   assert.match(skill, /Do not recreate or modify its FFmpeg commands/);
   assert.match(skill, /Do\s+not run ffprobe, ffmpeg/);

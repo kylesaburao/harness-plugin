@@ -5,7 +5,8 @@ import random
 import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'dist/harness/skills/write-asd-ste100/scripts'))
+from plugin_paths import SCRIPTS
+sys.path.insert(0, str(SCRIPTS))
 import ste_check
 import prose_mask_baseline as baseline
 

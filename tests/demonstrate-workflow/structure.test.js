@@ -7,7 +7,7 @@ const path = require('node:path');
 const { test } = require('node:test');
 
 const repo = path.resolve(__dirname, '../..');
-const plugin = path.join(repo, 'dist/harness');
+const plugin = require('../helpers/plugin-paths').artifactPath('');
 const skill = path.join(plugin, 'skills/demonstrate-workflow');
 const expected = [
   'SKILL.md',

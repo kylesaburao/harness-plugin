@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
-const subject = require('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
+const subject = require(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js'));
 const realFfmpeg = ['/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg', '/usr/local/opt/ffmpeg-full/bin/ffmpeg'].find(fs.existsSync);
 
 function temporaryRoot(t) {
@@ -182,7 +182,7 @@ if (file.includes('.partial-') && file.endsWith('frame-000002.heic')) {
   process.kill(process.ppid, 'SIGTERM');
 }
 `);
-    const script = path.resolve(__dirname, '../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
+    const script = require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js');
     const child = spawn(process.execPath, [script, '--json', input], { env: { ...process.env, TMPDIR: root, PATH: `${bin}${path.delimiter}${process.env.PATH}` }, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', chunk => { stderr += chunk; });
@@ -283,7 +283,7 @@ test('interruption escalates and waits for an uncooperative child to close', asy
 
 for (const json of [false, true]) test(`child signal survives extraction error reporting (${json ? 'JSON' : 'plain'})`, () => {
   const script = `
-const subject = require(${JSON.stringify(require.resolve('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js'))});
+const subject = require(${JSON.stringify(require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js')))});
 const manager = new subject.ProcessManager();
 const state = { commands: { ffmpeg: 'unused' }, paths: { supplied: '/tmp/input' }, media: {
   stream: { index: 0 }, firstTick: 0n, transform: { filters: [] },
@@ -330,7 +330,7 @@ childProcess.spawn = function(command, args, options) {
   if (args.includes('-start_number')) return spawn(process.execPath, ['-e', "process.stderr.write('extraction crash'); process.kill(process.pid, 'SIGTERM')"], options);
   return spawn(command, args, options);
 };`);
-  const script = require.resolve('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
+  const script = require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js'));
   const result = spawnSync(process.execPath, ['--require', preload, script, ...(json ? ['--json'] : []), input], { encoding: 'utf8' });
   assert.equal(result.status, 1, result.stderr);
   if (json) {
@@ -370,7 +370,7 @@ for (const format of ['rgb48be', 'rgba64be', 'gray16be', 'yuv420p']) {
     const stream = JSON.parse(probe.stdout).streams[0];
     assert.equal(stream.pix_fmt, format);
     if (high) assert.ok(!(Number(stream.bits_per_raw_sample) > 0 || Number(stream.bits_per_coded_sample) > 0));
-    const result = spawnSync(process.execPath, [require.resolve('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js'), '--json', input], { encoding: 'utf8' });
+    const result = spawnSync(process.execPath, [require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js')), '--json', input], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout).result;
     assert.equal(report.output.depth, high ? '16' : '8');
@@ -416,7 +416,7 @@ for (const [transfer, dynamicRange] of [['smpte2084', 'hdr-pq'], ['arib-std-b67'
     const input = path.join(root, 'hdr.mov');
     const generated = spawnSync(realFfmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=64x64:r=2:d=1', '-c:v', 'libx265', '-pix_fmt', 'yuv420p10le', '-x265-params', `log-level=error:colorprim=bt2020:transfer=${transfer}:colormatrix=bt2020nc`, '-color_primaries', 'bt2020', '-color_trc', transfer, '-colorspace', 'bt2020nc', '-color_range', 'tv', input], { encoding: 'utf8' });
     assert.equal(generated.status, 0, generated.stderr);
-    const result = spawnSync(process.execPath, [require.resolve('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js'), '--json', input], { encoding: 'utf8' });
+    const result = spawnSync(process.execPath, [require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js')), '--json', input], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout).result;
     assert.equal(report.dynamicRange, dynamicRange);
@@ -441,7 +441,7 @@ test('native HEIC10 encoder drops TIFF alpha and HDR alpha CLI rejects during pr
   const alpha = spawnSync('sips', ['-g', 'hasAlpha', tiff], { encoding: 'utf8' });
   assert.equal(alpha.status, 0, alpha.stderr);
   assert.match(alpha.stdout, /hasAlpha: yes/);
-  const compiled = spawnSync('swiftc', [path.resolve(__dirname, '../../dist/harness/skills/extract-video-frames/scripts/tiff-to-heic.swift'), '-o', encoder], { encoding: 'utf8' });
+  const compiled = spawnSync('swiftc', [require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/tiff-to-heic.swift'), '-o', encoder], { encoding: 'utf8' });
   assert.equal(compiled.status, 0, compiled.stderr);
   for (const transfer of ['hlg', 'pq']) {
     const encoded = spawnSync(encoder, ['--json', tiff, heic, transfer], { encoding: 'utf8' });
@@ -455,7 +455,7 @@ test('native HEIC10 encoder drops TIFF alpha and HDR alpha CLI rejects during pr
   const input = path.join(root, 'alpha.mov');
   const video = spawnSync(realFfmpeg, ['-v', 'error', '-loop', '1', '-i', tiff, '-vf', 'setparams=range=limited:color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc', '-frames:v', '2', '-c:v', 'prores_ks', '-profile:v', '4', '-pix_fmt', 'yuva444p10le', '-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc', '-color_range', 'pc', input], { encoding: 'utf8' });
   assert.equal(video.status, 0, video.stderr);
-  const result = spawnSync(process.execPath, [require.resolve('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js'), '--json', input], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js')), '--json', input], { encoding: 'utf8' });
   assert.equal(result.status, 2, result.stderr);
   assert.equal(JSON.parse(result.stderr).error.code, 'hdr_alpha_unsupported');
   assert.equal(fs.existsSync(path.join(root, 'alpha-frames')), false);

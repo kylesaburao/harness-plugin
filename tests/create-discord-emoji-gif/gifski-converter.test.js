@@ -122,10 +122,7 @@ test('help reports the sibling interface and quality controls', () => {
 });
 
 test('skill instructions define the Discord target and fallback rules', () => {
-  const skill = fs.readFileSync(path.join(
-    REPO_ROOT,
-    'dist/harness/skills/create-discord-emoji-gif/SKILL.md',
-  ), 'utf8');
+  const skill = fs.readFileSync(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/SKILL.md'), 'utf8');
   assert.match(skill, /^name: create-discord-emoji-gif$/m);
   assert.match(skill, /Discord emoji/);
   assert.match(skill, /128x128/);
@@ -142,10 +139,7 @@ test('skill instructions define the Discord target and fallback rules', () => {
   assert.match(skill, /not run any further command against the input or the output/);
   assert.match(skill, /confirmed the digest after the atomic rename/);
 
-  const agentMetadata = fs.readFileSync(path.join(
-    REPO_ROOT,
-    'dist/harness/skills/create-discord-emoji-gif/agents/openai.yaml',
-  ), 'utf8');
+  const agentMetadata = fs.readFileSync(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/agents/openai.yaml'), 'utf8');
   assert.match(agentMetadata, /display_name: "Discord Emoji GIF"/);
   assert.match(agentMetadata, /\$create-discord-emoji-gif/);
 });

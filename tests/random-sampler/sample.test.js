@@ -3,8 +3,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync, spawn } = require('node:child_process');
 const path = require('node:path');
-const { distributionPath } = require('../helpers/plugin-paths');
-const script = distributionPath('skills/random-sampler/scripts/sample.mjs');
+const { artifactPath } = require('../helpers/plugin-paths');
+const script = artifactPath('skills/random-sampler/scripts/sample.mjs');
 function run(input, args = ['--json'], mode) {
   const result = spawnSync(process.execPath, [...(mode ? ['--require', path.join(__dirname, 'preload.cjs')] : []), script, ...args], {
     env: { ...process.env, SAMPLER_TEST_MODE: mode }, stdio: ['pipe', 'pipe', 'pipe', 'pipe'],

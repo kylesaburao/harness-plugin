@@ -10,7 +10,10 @@
     "compile": "tsc -p tsconfig.json",
     "build": "node scripts/build.js",
     "build:check": "node scripts/build.js --check",
-    "validate:dist": "node scripts/validate-dist.js",
+    "build:dist": "node scripts/build.js --target distribution",
+    "build:dist:check": "node scripts/build.js --target distribution --check",
+    "validate:build": "node scripts/validate-dist.js --target development",
+    "validate:dist": "node scripts/validate-dist.js --target distribution",
     "test:setup": "node scripts/setup-tests.js",
     "test": "node scripts/run-tests.js"
   },

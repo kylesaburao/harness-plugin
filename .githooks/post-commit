@@ -9,4 +9,4 @@ if [ "$current" = "$TARGET $TARGET" ]; then
   exit 0
 fi
 
-GIT_COMMITTER_DATE="$DATE" git commit -q --amend --no-edit --no-verify --date="$DATE"
+GIT_COMMITTER_DATE="$DATE" git commit -q --amend --only --no-edit --no-verify --date="$DATE"

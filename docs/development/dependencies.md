@@ -19,17 +19,13 @@ On macOS, run development commands and tests directly on the host. On Linux, inc
 | FFmpeg and matching `ffprobe` | GIF tests require working `libvmaf` with its built-in models, including `vmaf_v0.6.1`, plus the media capabilities described under plugin use below. Test fixtures additionally require `libx264` encoding. |
 | Both `gifski` and `gifsicle` | The full gate runs both converter preflights and backend tests. Installing only the default backend is insufficient for development. |
 | macOS **26.0 or newer**, Command Line Tools, and `ffmpeg-full` | Required for native frame-extraction execution and its platform-specific tests. Command Line Tools supply `swiftc` and the macOS SDK. The FFmpeg build needs `zscale`, PNG, TIFF, `libx265`, and `prores_ks` for frame-test fixtures. System `sw_vers`, `sips`, and `/usr/bin/osascript` must be available. |
-| Network access and writable storage | Initial npm/pip installation and reference download need network access. Allow space for dependencies, generated references, temporary media, and test outputs. |
+| Network access and writable storage | Initial npm/pip installation and reference download need network access. Allow space for dependencies, the ignored `.build/harness/` candidate, generated references, temporary media, and test outputs. Ordinary Git commit guards do not use the network. |
 
 Expose the intended `ffmpeg` and its matching `ffprobe` on `PATH` for GIF commands and tests. Frame extraction also searches the standard Homebrew `ffmpeg-full` installation paths. Homebrew is the documented provisioning route for `ffmpeg-full`, not an additional requirement when equivalent usable binaries are already installed.
 
-After provisioning these tools, follow [test setup and the full gate](testing.md).
+After provisioning these tools, follow [test setup and the full gate](testing.md). Root `npm ci --include=dev` and `npm run build` are explicit preparation steps; `setup-tests.js` does not perform either one.
 
-The enabled [pre-push hook](build.md#before-pushing) installs each outgoing snapshot's
-locked root build dependencies separately with `npm ci --include=dev`. Allow network
-access and temporary storage under `.build/`. It uses Node/npm directly on macOS and
-the existing development container on Linux/WSL2, without requiring host Node there.
-It does not install skill runtime dependencies or initialize reference data.
+The enabled [commit hooks](build.md#local-commit-policy) use only Git and POSIX shell to inspect the active index. They do not run a build, install dependencies, start Docker, or access the network. Linux/WSL2 therefore needs no host Node, npm, Python, or active container merely to commit an ordinary source change.
 
 ### Linux host and container
 
@@ -45,7 +41,7 @@ The [Dockerfile](../../Dockerfile) supplies the following development toolchain.
 | Media runtime | FFmpeg **8.0.3**, VMAF **3.2.0**, and gifski **1.34.0**. FFmpeg is built with `--enable-libvmaf --enable-gpl --enable-libx264`. The image includes libvmaf and Debian `libx264-164` runtime libraries. |
 | C/C++ builder only | `build-essential`, curl, CA certificates, Meson, Ninja, NASM, pkg-config, `libx264-dev`, and `xxd`. `xxd` embeds the VMAF models. Source unpacking uses tar and xz from the base image. |
 | Rust builder only | Rust and Cargo from `rust:1-trixie`, used to build gifski with its locked dependency graph. |
-| Setup volumes | The same backup npm dependencies, disposable Python virtual environment with `pypdfium2`, and ASD reference bundle as native development. |
+| Setup volumes | The root toolchain, candidate-local backup npm dependencies mounted at `.build/harness/skills/back-up-directories/node_modules`, disposable Python virtual environment with `pypdfium2`, and ASD reference bundle. |
 
 See [container persistence and reset](container.md#persistence-and-reset) for dependency volumes and lifecycle.
 

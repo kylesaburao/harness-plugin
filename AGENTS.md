@@ -4,18 +4,20 @@ This repository distributes the same Agent Skills package to Codex and Claude Co
 
 ## Source of truth
 
-`src/harness/` is the editable source of truth for plugin implementation and bundled resources. Production Node implementation is TypeScript.
+`src/harness/` is the editable source of truth for plugin implementation and bundled resources. Production Node implementation is TypeScript. `.build/harness/` is the ignored, installation-shaped development artifact. `dist/harness/` is the tracked artifact from the last successful publication and is installed directly by both marketplaces.
 
-`dist/harness/` is the complete generated installation artifact, tracked in Git and installed directly by both marketplaces. Never manually edit generated implementation. Follow this procedure to deliver implementation changes:
+Developers author and commit source, repository tooling, tests, and documentation. They do not edit or regenerate tracked `dist/`, and they do not edit the release-owned `src/harness/package.json`. Follow this procedure for ordinary development:
 
-1. Edit `src/harness/`. Install the locked root toolchain with `npm ci --include=dev` on first setup or after dependency changes.
-2. Run `npm run build` after changes to source implementation, resources, manifest templates, canonical version, compiler configuration, or build tooling. This explicitly compiles TypeScript, copies assets, and injects the source version into both generated host manifests.
-3. Run `node scripts/setup-tests.js`, then `node scripts/run-tests.js`. Build before setup, focused runtime tests, or local marketplace testing. Setup and the gate expect an existing current distribution and reject drift without rebuilding it. Setup is required before each full gate because the gate removes `.venv`.
-4. Stage intended source and generated distribution together. Run `npm run build:check` and `node scripts/validate-dist.js --tracked` against the staged delivery, inspect the staged diff, then commit both together before pushing. Build check compares the working artifact with a fresh candidate without repairing it. Tracked validation checks the index inventory and modes, so also confirm no intended changes remain unstaged.
+1. Install the locked root toolchain with `npm ci --include=dev` on first setup and after root dependency inputs change.
+2. Edit `src/harness/` or repository tooling. Run `npm run build` after source or build-input changes. This compiles and copies a fresh development candidate into `.build/harness/`; it never writes tracked publication output.
+3. Run `node scripts/setup-tests.js`, then `node scripts/run-tests.js`. Setup requires an already-built fresh candidate and is required before each full gate because the gate removes `.venv`.
+4. Stage only the intended source, tooling, tests, and documentation. The local commit hooks reject staged changes to `dist/` or the canonical package without rebuilding, unstaging, or otherwise changing the user's work.
 
 On macOS run development commands directly. On Linux/WSL2 use `./scripts/dev exec` for development commands and keep Git operations on the host. Read the [build workflow](docs/development/build.md) for assembly and recovery details.
 
-Both marketplace catalogs select `./dist/harness`. Claude Code and Codex consume that committed tree without root npm installation or a build. Runtime tests and skill setup commands execute its installed paths. CI verifies the checked-in artifact instead of repairing ordinary source changes. The release workflow is the explicit exception: after changing the canonical source version, it builds and tests the versioned artifact before committing it, repeating from fresh source on each push retry. A fresh checkout must therefore already contain usable distribution output. Building does not install skill runtime dependencies, initialize user reference data, or compile the Swift helper.
+Both marketplace catalogs select `./dist/harness`. Claude Code and Codex consume that committed tree without root npm installation or a build. Repository source and README descriptions can therefore be ahead of the currently installable release. Development setup and tests use `.build/harness/` by default; an explicit distribution target is reserved for release validation and deliberate read-only inspection.
+
+The release workflow is the only supported writer of `src/harness/package.json` and `dist/harness/`. It selects a version, builds and tests that exact versioned distribution, validates the staged bytes and modes, and publishes both protected areas in one commit. A failed build or gate leaves the remote published artifact unchanged. Building does not install skill runtime dependencies, initialize user reference data, or compile the Swift helper.
 
 Do not create separate Claude and Codex copies of a skill (e.g. `claude/skills/foo/` and `codex/skills/foo/`). One `SKILL.md` per skill, consumed directly by both harnesses.
 
@@ -113,7 +115,7 @@ When building, running, or changing the development container, read [container g
 
 Tests live at the repository root, in `tests/<skill-name>/`, never inside the skill. The one exception is a whole-tree invariant test that isn't scoped to a single skill, such as `tests/inventory/`, which checks `README.md` against the plugin tree itself.
 
-Tests, fixtures, benchmarks, and development-only helpers remain at repository root and never ship. Installing a plugin copies the whole plugin directory into the harness's plugin cache, and neither Claude Code nor Codex supports excluding files from that copy. Anything assembled under `dist/harness/` is therefore shipped to every install. Tests reach their subject by relative path, and they run from a clone, where both trees exist.
+Tests, fixtures, benchmarks, and development-only helpers remain at repository root and never ship. Installing a plugin copies the whole plugin directory into the harness's plugin cache, and neither Claude Code nor Codex supports excluding files from that copy. Anything published under `dist/harness/` is therefore shipped to every install. Tests select the installation-shaped development artifact by default and can explicitly select the published artifact when release validation requires it.
 
 Retain documentation tests that protect public contracts, and revise tests that merely freeze wording or layout when documentation is refactored. Test stable public behavior at the lowest useful layer, plus a small consumer integration test. Remove runtime parity tests when the obsolete runtime is removed. Remove implementation-detail tests when retained observable tests cover the contract. Treat performance comparisons as execution evidence, not permanent timing tests, unless timing is already a public contract.
 
@@ -141,4 +143,4 @@ The diagnostic shape matches `src/harness/skills/write-asd-ste100/scripts/ste_da
 
 ## Versioning and commits
 
-Before committing, releasing, or changing versioning tooling, read [versioning and commits](docs/development/versioning.md). The sole editable plugin version is `src/harness/package.json`. Use `scripts/bump-version.js` to change it, then build to inject equal versions into both distribution manifests. Source host manifests are versionless templates. Set both author and committer dates to `1999-12-31T23:59:00-08:00`. The linked guide owns release mechanics and timestamp-hook setup.
+Before committing, releasing, or changing versioning tooling, read [versioning and commits](docs/development/versioning.md). `src/harness/package.json` is the sole canonical plugin version, but it is release-owned rather than developer-editable. The publication workflow changes only its `version`, then injects that version into the distribution package and both generated host manifests. Source host manifests remain versionless templates. Set both author and committer dates to `1999-12-31T23:59:00-08:00`. The linked guide owns release mechanics and hook setup.
