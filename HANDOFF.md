@@ -2,7 +2,7 @@
 
 ## Current status
 
-Implementation, final local qualification, committed-checkout verification, and scoped cleanup are complete. The authorized push and observation of hosted release automation remain. No test or Advisor jobs are running. Keep this file current after delivery checkpoints.
+Implementation, final local qualification, committed-checkout verification, and scoped cleanup are complete. The authorized push and hosted release automation succeeded. The repository is ready for subsequent work, with the exact macOS26 qualification limit recorded below. No test or Advisor jobs are running. Keep this file current after delivery checkpoints.
 
 Repository: `/Users/kyle/Documents/harness-plugin`, branch `main`.
 Starting revision: `233fd2792ef598464152a52b7e96e110eacde70f`.
@@ -19,7 +19,7 @@ Implementation finishing revision: `53a687f921afa6a33b8ecfd6951a8a5422e5cdb7` (S
 
 `src/harness/` is the complete editable plugin. First-party Node implementation is TypeScript. `dist/harness/` is generated and Git-tracked, with87 files. Both marketplaces install `./dist/harness` directly. Old `plugins/harness` and transitional JavaScript allowances are gone. Root development scripts/tests remain JavaScript. Python/Swift resources retain their languages and original bytes.
 
-The locked root toolchain is TypeScript7.0.2 and @types/node20.19.43, with Node26 development. Strict NodeNext/ES2022 preserves CommonJS `.js` and sampler native ESM `.mjs`. The canonical plugin version remains3.1.5 in `src/harness/package.json`, injected into versionless source host-manifest templates. Backup retains its separate1.0.0 package.
+The locked root toolchain is TypeScript7.0.2 and @types/node20.19.43, with Node26 development. Strict NodeNext/ES2022 preserves CommonJS `.js` and sampler native ESM `.mjs`. The canonical plugin version is now3.1.6 in `src/harness/package.json`, injected into versionless source host-manifest templates. Backup retains its separate1.0.0 package.
 
 Explicit `npm run build` assembles a unique stage and reconciles generated files in place, preserving exact runtime/cache overlays and mounted ancestors. It is not a whole-directory atomic transaction. Check mode never repairs output. Setup, runtime tests, and hosts require an existing distribution. Commit source and regenerated output together. Release automation explicitly bumps, builds, and tests fresh source on every push retry.
 
@@ -29,7 +29,7 @@ Explicit `npm run build` assembles a unique stage and reconciles generated files
 - Typecheck, build check, tracked distribution validation87 files, and whitespace check passed after final implementation/documentation edits.
 - Stage runtime floors: actual Node20.6 frame/shared145 passed and native synthetic preparation, Node22 GIF123 passed plus sampler/Advisor direct qualification, Node22.12 isolated backup with real ZIP replication, Node26 wake/full gate. The modern sampler fault injector remains Node26-only, distinct from direct Node22 qualification.
 - Actual Codex0.154.0 and Claude2.1.270 installation/discovery from a fresh committed clone without npm/build passed for all13 skills. Claude reports all3 styles. Native frame preparation ran from Codex's exact installed path. No inference requests or real user configuration changes.
-- Separate release-clone rehearsal passed pre/post-bump partial gates535/0/0 with GIF explicitly excluded, matching3.1.6 host manifests, unchanged backup1.0.0, and final build check. Main remains3.1.5. This is not hosted CI evidence.
+- Separate release-clone rehearsal passed pre/post-bump partial gates535/0/0 with GIF explicitly excluded, matching3.1.6 host manifests, unchanged backup1.0.0, and final build check. That rehearsal left main at3.1.5. The later actual hosted release below published3.1.6.
 - Exact macOS26 execution remains an unavailable release qualification. The available native host tested is macOS27. Preserve this limit in delivery.
 - Final Advisor: no concrete defect in supplied evidence, no independent source inspection. All3 automatic consultations are spent, user_requested_calls0, same_family_automatic_calls3. All agents terminal. No more automatic calls.
 
@@ -39,6 +39,8 @@ Stage7 commit `53a687f921afa6a33b8ecfd6951a8a5422e5cdb7` passed staged whitespac
 
 Removed the task-created isolated host/release/final-clone fixture root,13 one-off transformation scripts, and empty `.build`. Preserved the user specification, raw evidence, host qualification procedures, runtime binaries, existing dependencies, and unrelated branches/worktrees. Evidence: `tmp/ts-stage7-cleanup.json`. The original fixture paths in earlier logs are historical and no longer exist.
 
-Next: commit this handoff update, push main, then observe the existing version-bump workflow. Record actual push/hosted outcomes. If the bot commits a version bump, fetch and fast-forward it, verify artifact, and finish with a clean local tree synchronized to origin. No ordinary source changes remain. Do not rerun expensive local gates merely for this status-only documentation update.
+Pushed `aefd66a91349e9d0cf0fff3130ab697e0814f0f0` successfully to origin/main. GitHub Bump version run34812593482 completed successfully: https://github.com/kylesaburao/harness-plugin/actions/runs/34812593482. Both test and bump jobs passed. The bot published `b302b3c49373cc7b2221250739813a17abcd3514`, version3.1.6, with the required fixed author/committer dates. Local main was fast-forwarded to it. `npm run build:check` and `node scripts/validate-dist.js --tracked` passed again with87 files. Raw hosted result is preserved in `tmp/ts-stage7-hosted-run.json`.
+
+This final documentation-only commit records successful delivery and is pushed after the release commit. No implementation work remains. The sole unavailable release qualification is execution on exact macOS26, with native macOS27 already passed. Preserve that distinction when citing this migration. Use `git rev-parse HEAD` for the current documentation delivery revision and `git status --short` / `git rev-list --left-right --count HEAD...origin/main` to verify clean synchronization. Subsequent documentation-only CI runs are separate from the successful migration release run above.
 
 Git mutations require sandbox escalation because `.git` is protected. Native HEIC requires host access. No approval rejection remains outstanding.
