@@ -68,25 +68,34 @@ test('a cancel() failure while cancelling siblings does not mask the original er
   assert.equal(survivorSettled, true);
 });
 
-test('a younger worker failure is prompt and leaves the next queued worker unstarted', async () => {
+// The timeout is only a hang guard. Promptness is shown by the older child being
+// terminated: it records SIGTERM and would otherwise run for a minute.
+test('a younger worker failure is prompt and leaves the next queued worker unstarted', { timeout: 10000 }, async () => {
   const directory = temporaryDirectory('younger-worker-failure.');
   const fixture = path.join(directory, 'delayed.js');
+  const ready = path.join(directory, 'ready');
+  const terminated = path.join(directory, 'terminated');
   makeExecutable(fixture, `#!/usr/bin/env node
-process.on('SIGTERM', () => process.exit(0));
-setTimeout(() => process.exit(0), 2000);
+const fs = require('node:fs');
+process.on('SIGTERM', () => { fs.writeFileSync(${JSON.stringify(terminated)}, 'SIGTERM'); process.exit(0); });
+fs.writeFileSync(${JSON.stringify(ready)}, '');
+setTimeout(() => process.exit(0), 60000);
 `);
   const manager = new ProcessManager();
   const launched = [];
   const original = Object.assign(new Error('younger worker failure'), { code: 'younger_failure' });
-  const started = Date.now();
   try {
     await assert.rejects(manager.runOldestBounded([1, 2, 3], 2, async item => {
       launched.push(item);
       if (item === 1) await manager.runOwned('delayed-first', fixture, []);
-      if (item === 2) throw original;
+      if (item === 2) {
+        // Fail only once the older child can record the signal that stops it.
+        while (!fs.existsSync(ready)) await new Promise(resolve => setTimeout(resolve, 10));
+        throw original;
+      }
     }), error => error === original);
     assert.deepEqual(launched, [1, 2]);
-    assert.ok(Date.now() - started < 1000);
+    assert.equal(fs.readFileSync(terminated, 'utf8'), 'SIGTERM');
     assert.equal(manager.active.size, 0);
   } finally {
     if (manager.active.size) await manager.cancel('SIGKILL');

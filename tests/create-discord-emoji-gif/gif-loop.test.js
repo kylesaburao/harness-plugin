@@ -4,10 +4,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { inspectGifLoop } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/gif-loop'));
+const { inspectGifLoop, gifDurationCentiseconds } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/gif-loop'));
 const shared = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/shared'));
 const { ProcessManager } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/process-manager'));
-const { temporaryDirectory } = require('./test-helpers');
+const { spawnSync } = require('node:child_process');
+const { temporaryDirectory, tinyGif } = require('./test-helpers');
 
 const bytes = (...values) => Buffer.from(values);
 const header = Buffer.concat([Buffer.from('GIF89a'), bytes(1, 0, 1, 0, 0, 0, 0)]);
@@ -89,4 +90,38 @@ test('supplied decodable nonlooping GIF fails verification and preserves the des
   )), error => error.code === 'verification_failed' && /missing supported loop declaration/.test(error.condition));
   assert.equal(fs.readFileSync(output, 'utf8'), 'existing destination');
   assert.deepEqual(fs.readdirSync(dir), ['output.gif']);
+});
+
+test('GIF duration sums control delays the way FFmpeg reports format=duration', t => {
+  const dir = temporaryDirectory('gif-duration.');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const control = (size, delay) => Buffer.concat([bytes(0x21, 0xf9, size), Buffer.from([0, delay & 255, delay >> 8, 0, 0, 0].slice(0, size)), bytes(0)]);
+  const cases = [
+    ['zero delay reads as the 10 cs default', tinyGif([0]), 10],
+    ['one centisecond is kept', tinyGif([1]), 1],
+    ['ordinary delays are summed', tinyGif([2, 3, 10]), 15],
+    ['maximum delay', tinyGif([65535]), 65535],
+    ['a frame without a control block adds nothing', tinyGif([null, 5]), 5],
+    ['a control block shorter than 4 bytes is ignored', gif(control(4, 5), image(), control(3, 9), image(), control(4, 7), image()), 12],
+    ['every control block counts', gif(control(4, 5), control(4, 7), image(), control(4, 9), image()), 21],
+    ['a control block longer than 4 bytes is ignored', gif(control(5, 8), image(), control(6, 9), image(), control(4, 3), image()), 3],
+  ];
+  for (const [name, data, expected] of cases) {
+    assert.equal(gifDurationCentiseconds(data), expected, name);
+    const file = path.join(dir, `${expected}-${cases.findIndex(entry => entry[0] === name)}.gif`);
+    fs.writeFileSync(file, data);
+    const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file], { encoding: 'utf8' });
+    assert.equal(probe.status, 0, probe.stderr);
+    assert.equal(probe.stdout.trim(), (expected / 100).toFixed(6), `ffprobe agreement: ${name}`);
+  }
+  assert.equal(gifDurationCentiseconds(tinyGif([null, null])), 0);
+  // Timing ignores loop policy; looping verification still rejects the same file.
+  const finite = gif(app('NETSCAPE2.0', 1), control(4, 6), image());
+  assert.equal(gifDurationCentiseconds(finite), 6);
+  assert.throws(() => inspectGifLoop(finite), /finite repetition count 1/);
+  assert.throws(() => gifDurationCentiseconds(tinyGif([5]).subarray(0, 40)), /invalid GIF timing: truncated block/);
+});
+
+test('loop inspection reads past control blocks', () => {
+  assert.deepEqual(inspectGifLoop(tinyGif([4, 0, 65535])), { mode: 'infinite', repeatCount: 0, extension: 'NETSCAPE2.0' });
 });

@@ -59,4 +59,19 @@ ProcessManager.prototype.runOldestBounded = function(items, jobs, worker) {
   return preload;
 }
 
-Object.assign(module.exports, { assertPublishedResult, runEntrypointAsync, narrowSearch });
+// A minimal looping 1x1 GIF whose frames carry the given Graphic Control delays in centiseconds.
+// A delay of null omits the control block; a comment extension varies the digest without changing timing.
+function tinyGif(delays, comment = '') {
+  const b = (...values) => Buffer.from(values);
+  const parts = [Buffer.from('GIF89a'), b(1, 0, 1, 0, 0x80, 0, 0, 0, 0, 0, 255, 255, 255)];
+  parts.push(b(0x21, 0xff, 11), Buffer.from('NETSCAPE2.0'), b(3, 1, 0, 0, 0));
+  if (comment) parts.push(b(0x21, 0xfe, Buffer.byteLength(comment)), Buffer.from(comment), b(0));
+  for (const delay of delays) {
+    if (delay !== null) parts.push(b(0x21, 0xf9, 4, 0, delay & 255, delay >> 8, 0, 0));
+    parts.push(b(0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0));
+  }
+  parts.push(b(0x3b));
+  return Buffer.concat(parts);
+}
+
+Object.assign(module.exports, { assertPublishedResult, runEntrypointAsync, narrowSearch, tinyGif });

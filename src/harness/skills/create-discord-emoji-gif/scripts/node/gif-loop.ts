@@ -1,11 +1,17 @@
 'use strict';
 
 export interface GifLoop { mode: 'infinite'; repeatCount: number; extension: string }
+interface LoopDeclaration { repeatCount: number; extension: string }
+interface GifBlockVisitor {
+  loop?: (declaration: LoopDeclaration) => void;
+  graphicControl?: (payload: Buffer) => void;
+}
 
 // Walk framing only. FFprobe remains responsible for image decodability.
-function inspectGifLoop(buffer: Buffer): GifLoop {
+// Each caller supplies its own policy for the blocks it reads.
+function walkGifBlocks(buffer: Buffer, subject: string, visitor: GifBlockVisitor) {
   let offset = 0;
-  const fail: (condition: string) => never = condition => { throw new Error(`invalid GIF looping: ${condition}`); };
+  const fail: (condition: string) => never = condition => { throw new Error(`invalid GIF ${subject}: ${condition}`); };
   const take = (length: number) => {
     if (offset + length > buffer.length) fail('truncated block');
     const start = offset;
@@ -20,14 +26,11 @@ function inspectGifLoop(buffer: Buffer): GifLoop {
   const header = take(6).toString('latin1');
   if (header !== 'GIF87a' && header !== 'GIF89a') fail('unsupported header');
   colorTable(take(7)[4]!);
-  let loop: { repeatCount: number; extension: string } | undefined;
   while (offset < buffer.length) {
     const sentinel = byte();
     if (sentinel === 0x3b) {
       if (offset !== buffer.length) fail('data after trailer');
-      if (!loop) fail('missing supported loop declaration');
-      if (loop.repeatCount !== 0) fail(`finite repetition count ${loop.repeatCount}`);
-      return { mode: 'infinite', ...loop };
+      return;
     }
     if (sentinel === 0x2c) {
       colorTable(take(9)[8]!);
@@ -35,6 +38,14 @@ function inspectGifLoop(buffer: Buffer): GifLoop {
       subBlocks();
     } else if (sentinel === 0x21) {
       const label = byte();
+      if (label === 0xf9) {
+        const size = byte();
+        if (size === 0) continue;
+        const payload = take(size); // Read before the optional call, which would skip its argument.
+        visitor.graphicControl?.(payload);
+        subBlocks();
+        continue;
+      }
       if (label !== 0xff) { subBlocks(); continue; }
       if (byte() !== 11) fail('application identifier block must contain 11 bytes');
       const extension = take(11).toString('latin1');
@@ -44,9 +55,7 @@ function inspectGifLoop(buffer: Buffer): GifLoop {
       if (control[0] !== 1) fail('unsupported loop control subcode');
       const repeatCount = control.readUInt16LE(1);
       if (byte() !== 0) fail('ambiguous loop control payload or missing terminator');
-      if (loop && loop.repeatCount !== repeatCount) fail('conflicting loop declarations');
-      // Compatible duplicates retain the first recognized declaration deterministically.
-      loop ||= { repeatCount, extension };
+      visitor.loop?.({ repeatCount, extension });
     } else {
       fail(`unexpected block sentinel ${sentinel}`);
     }
@@ -54,4 +63,34 @@ function inspectGifLoop(buffer: Buffer): GifLoop {
   fail('missing trailer');
 }
 
-export { inspectGifLoop };
+function inspectGifLoop(buffer: Buffer): GifLoop {
+  let loop: LoopDeclaration | undefined;
+  walkGifBlocks(buffer, 'looping', {
+    loop: declaration => {
+      if (loop && loop.repeatCount !== declaration.repeatCount) throw new Error('invalid GIF looping: conflicting loop declarations');
+      // Compatible duplicates retain the first recognized declaration deterministically.
+      loop ||= declaration;
+    },
+  });
+  if (!loop) throw new Error('invalid GIF looping: missing supported loop declaration');
+  if (loop.repeatCount !== 0) throw new Error(`invalid GIF looping: finite repetition count ${loop.repeatCount}`);
+  return { mode: 'infinite', ...loop };
+}
+
+// Total display time as FFmpeg's GIF demuxer reports it in format=duration:
+// it sums every Graphic Control Extension delay, reads a zero delay as its
+// 10-centisecond default, and ignores a control block whose size is not 4 bytes.
+// Verified against ffprobe 9.0.2.
+function gifDurationCentiseconds(buffer: Buffer) {
+  let total = 0;
+  walkGifBlocks(buffer, 'timing', {
+    graphicControl: payload => {
+      if (payload.length !== 4) return;
+      const delay = payload.readUInt16LE(1);
+      total += delay === 0 ? 10 : delay;
+    },
+  });
+  return total;
+}
+
+export { inspectGifLoop, gifDurationCentiseconds };

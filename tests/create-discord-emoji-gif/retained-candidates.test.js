@@ -77,13 +77,22 @@ if (scenario === 'finite-loop') {
     return hash(file);
   };
 }
+// Order completion with a latch, not a sleep: workers for the held key start only after
+// the first other search worker settles, whether it scored, fit nothing, or failed.
+const heldKey = scenario === 'reverse' ? (backend === 'gifski' ? 90 : 4) : (backend === 'gifski' ? 80 : 5);
+let releaseHeld;
+const firstOtherSettled = new Promise(resolve => { releaseHeld = resolve; });
 const bounded = ProcessManager.prototype.runOldestBounded;
 ProcessManager.prototype.runOldestBounded = function(items, jobs, worker) {
   const search = items.every(item => item.candidate || item.colors);
   return bounded.call(this, items, jobs, async item => {
+    if (!search) return worker(item);
     const key = item.candidate ? item.candidate.quality : item.colors;
-    if (search && key === (scenario === 'reverse' ? (backend === 'gifski' ? 90 : 4) : (backend === 'gifski' ? 80 : 5))) await new Promise(resolve => setTimeout(resolve, 300));
-    return worker(item);
+    if (key === heldKey) {
+      await firstOtherSettled;
+      return worker(item);
+    }
+    try { return await worker(item); } finally { releaseHeld(); }
   });
 };
 // Deterministic scores isolate ordering from codec/toolchain variation.

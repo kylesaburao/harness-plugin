@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { temporaryDirectory } = require('./test-helpers');
+const { temporaryDirectory, tinyGif } = require('./test-helpers');
 const { ProcessManager } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/process-manager'));
 const { scoreCandidate } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/shared'));
 
@@ -53,10 +53,12 @@ function scorerFixture(t, keepWork = false) {
       fs.writeFileSync(path.join(workDir,name), JSON.stringify({ frames: Array(12).fill({}), pooled_metrics:{ vmaf:{ mean:91.25 } } }));
       return { code:0, signal:null, stderr:'' };
     }
-    return { code:0, signal:null, stderr:'', stdout:'0.5' };
+    // Candidate duration comes from the GIF itself, so scoring starts no other child.
+    assert.fail(`unexpected child process ${task}`);
   } };
   const state = { manager, commands:{ ffmpeg:'ffmpeg',ffprobe:'ffprobe' }, workDir, referenceFrames:12, config:{ keepWork } };
-  const file = (name, content='same') => { const p=path.join(workDir,name); fs.writeFileSync(p,content); return p; };
+  // Twelve reference frames at 24 FPS last 0.5 s: four 12.5 cs frames, rounded to GIF centiseconds.
+  const file = (name, content='same') => { const p=path.join(workDir,name); fs.writeFileSync(p,tinyGif([12,13,12,13],content)); return p; };
   return { state, calls, file, scorer:() => shared.createCandidateScorer(state), digest:shared.sha256File,
     delay: promise => { release=promise; }, fail: error => { failure=error; } };
 }
@@ -70,14 +72,14 @@ test('identical concurrent candidates share scoring and hits survive original-fi
   assert.equal(f.calls.length,1);
   release();
   assert.deepEqual(await Promise.all([first,second]),['91.250000','91.250000']);
-  assert.equal(f.calls.length,2);
+  assert.equal(f.calls.length,1);
   fs.rmSync(a);
   assert.equal(await score(b,'later',6,f.digest(b)),'91.250000');
-  assert.equal(f.calls.length,2);
+  assert.equal(f.calls.length,1);
   await score(b,'fps',8,f.digest(b));
   await score(f.file('different.gif','different'),'bytes',6,f.digest(path.join(f.state.workDir,'different.gif')));
   await f.scorer()(b,'context',6,f.digest(b));
-  assert.equal(f.calls.length,8);
+  assert.equal(f.calls.length,4);
 });
 
 test('shared failures retain original evidence and rejected entries are removed', async t => {
@@ -90,7 +92,7 @@ test('shared failures retain original evidence and rejected entries are removed'
   for (const result of settled) assert.equal(result.reason,error);
   f.fail(null);
   assert.equal(await score(a,'retry-by-caller',6,f.digest(a)),'91.250000');
-  assert.equal(f.calls.length,3);
+  assert.equal(f.calls.length,2);
 });
 
 test('cancellation rejects waiting duplicates and subsequent cache hits', async t => {
@@ -100,13 +102,13 @@ test('cancellation rejects waiting duplicates and subsequent cache hits', async 
   f.state.manager.cancelling=true; release();
   for (const result of await Promise.allSettled(pending)) assert.equal(result.reason.code,'cancelled');
   await assert.rejects(score(a,'hit',6,f.digest(a)),{ code:'cancelled' });
-  assert.equal(f.calls.length,2);
+  assert.equal(f.calls.length,1);
 });
 
 test('KEEP_WORK scores every candidate and keeps independent reports', async t => {
   const f=scorerFixture(t,true); const score=f.scorer(); const a=f.file('a.gif');
   await Promise.all([score(a,'one',6,f.digest(a)),score(a,'two',6,f.digest(a))]);
-  assert.equal(f.calls.length,4);
+  assert.equal(f.calls.length,2);
   assert.equal(fs.readdirSync(f.state.workDir).filter(name=>name.startsWith('vmaf-')).length,2);
   assert.ok(fs.existsSync(a));
 });

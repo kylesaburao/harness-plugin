@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { temporaryDirectory, skillDir, runEntrypoint, narrowSearch } = require('./test-helpers');
+const { temporaryDirectory, skillDir, runEntrypoint, narrowSearch, tinyGif } = require('./test-helpers');
 const shared = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/shared'));
 const { ProcessManager } = require(require('../helpers/plugin-paths').artifactPath('skills/create-discord-emoji-gif/scripts/node/process-manager'));
 function ffmpeg(args) {
@@ -52,20 +52,45 @@ for (const report of [undefined, '{', '{"frames":[]}', '{"frames":[{}],"pooled_m
 });
 test('concurrent tasks use separate score files and KEEP_WORK retains them', async () => {
   const dir = temporaryDirectory('vmaf-logs.');
+  const candidates = temporaryDirectory('vmaf-log-candidates.');
   try {
+    const candidate = path.join(candidates, 'one-frame.gif');
+    fs.writeFileSync(candidate, tinyGif([4])); // One frame at 24 FPS, rounded to GIF centiseconds.
     const names = [];
-    const manager = { runOwned: async (_task, _command, args, options) => {
-      if (!args.includes('-lavfi')) return { code: 0, signal: null, stdout: String(1 / 24), stderr: '' };
+    const manager = { runOwned: async (task, _command, args, options) => {
+      if (!args.includes('-lavfi')) assert.fail(`unexpected child process ${task}`);
       const name = args[args.indexOf('-lavfi') + 1].match(/log_path=([^;]+)/)[1];
       names.push(name);
       fs.writeFileSync(path.join(options.cwd, name), JSON.stringify({ frames: [{}], pooled_metrics: { vmaf: { mean: names.length } } }));
       await new Promise(resolve => setTimeout(resolve, 10));
       return { code: 0, signal: null, stderr: '' };
     } };
-    const scores = await Promise.all(Array.from({ length: 8 }, () => shared.scoreCandidate(manager, { ffmpeg: 'unused' }, dir, 'unused.gif', 'same-task', 1, 24, true)));
+    const scores = await Promise.all(Array.from({ length: 8 }, () => shared.scoreCandidate(manager, { ffmpeg: 'unused' }, dir, candidate, 'same-task', 1, 24, true)));
     assert.equal(new Set(names).size, 8);
     assert.equal(new Set(scores).size, 8);
     assert.equal(fs.readdirSync(dir).length, 8);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(candidates, { recursive: true, force: true });
+  }
+});
+test('candidate duration is read from the GIF and unreadable timing fails scoring', async () => {
+  const dir = temporaryDirectory('vmaf-duration.');
+  try {
+    const manager = { runOwned: async (task, _command, args, options) => {
+      if (!args.includes('-lavfi')) assert.fail(`unexpected child process ${task}`);
+      const name = args[args.indexOf('-lavfi') + 1].match(/log_path=([^;]+)/)[1];
+      fs.writeFileSync(path.join(options.cwd, name), JSON.stringify({ frames: Array(12).fill({}), pooled_metrics: { vmaf: { mean: 80 } } }));
+      return { code: 0, signal: null, stderr: '' };
+    } };
+    const score = file => shared.scoreCandidate(manager, { ffmpeg: 'unused' }, dir, file, 'timing', 12, 8);
+    const write = (name, data) => { const file = path.join(dir, name); fs.writeFileSync(file, data); return file; };
+    assert.equal(await score(write('covering.gif', tinyGif([13, 12, 13, 12]))), '80.000000');
+    // Zero delays read as FFmpeg's 10 cs default, so two frames last 0.2 s, short of 0.5 s at 8 FPS.
+    await assert.rejects(score(write('zero-delays.gif', tinyGif([0, 0]))), error => error.code === 'vmaf_failed' && /candidate duration 0\.200000s differs/.test(error.condition));
+    await assert.rejects(score(write('untimed.gif', tinyGif([null, null]))), error => error.code === 'vmaf_failed' && /candidate duration 0\.000000s/.test(error.condition));
+    await assert.rejects(score(write('truncated.gif', tinyGif([13, 12, 13, 12]).subarray(0, 40))), error => error.code === 'vmaf_failed' && /could not read the duration of timing: invalid GIF timing: truncated block/.test(error.condition));
+    assert.deepEqual(fs.readdirSync(dir).filter(name => name.endsWith('.json')), []);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 for (const backend of ['gifski', 'gifsicle']) for (const fps of [15, 24]) test(`${backend} accepts ${fps} FPS GIF timestamp rounding`, () => {

@@ -5,7 +5,9 @@ const { StartupError, RunError, subprocessError, errorDetails, emitError, fields
 import preflight = require('./preflight.js');
 const { platformPolicy, checkGifskiPreflight, checkGifsiclePreflight, requireReadyCommands } = preflight;
 import verification = require('./verification.js');
-const { durationTolerance, sha256File, probeValue, verifyFinalGif, publishVerified } = verification;
+const { durationTolerance, sha256File, verifyFinalGif, publishVerified } = verification;
+import gifLoop = require('./gif-loop.js');
+const { gifDurationCentiseconds } = gifLoop;
 import type { GifBackend, ReadyCommands, ToolchainPreflight } from './preflight.js';
 import type { CleanupFailure } from './errors.js';
 import type { VerifiedGif } from './verification.js';
@@ -169,7 +171,11 @@ async function scoreCandidate(manager: ProcessManager, commands: Pick<ReadyComma
     if (!Number.isSafeInteger(referenceFrames) || referenceFrames <= 0 || !Number.isFinite(candidateFps) || candidateFps <= 0 || Math.abs(report.frames - referenceFrames) > Math.ceil(24 * durationTolerance(candidateFps))) {
       throw new RunError('vmaf_failed', `VMAF coverage differs from the reference: scored ${report.frames} frames, reference ${referenceFrames}`, 'use a candidate that covers the complete reference clip', childDetails(task, result));
     }
-    const duration = await probeValue(manager, commands.ffprobe, `${task} duration`, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', candidate], 'vmaf_failed');
+    // Read the GIF timing in process; it matches ffprobe's format=duration without another child.
+    let duration;
+    try { duration = (gifDurationCentiseconds(fs.readFileSync(candidate)) / 100).toFixed(6); } catch (error) {
+      throw new RunError('vmaf_failed', `could not read the duration of ${task}: ${fieldsOf(error).message}`, 'repair or reinstall the selected GIF encoder, then run the conversion again', childDetails(task, result));
+    }
     if (!Number.isFinite(Number(duration)) || Number(duration) <= 0 || Math.abs(Number(duration) - referenceFrames / 24) > durationTolerance(candidateFps)) {
       throw new RunError('vmaf_failed', `candidate duration ${duration}s differs from reference ${referenceFrames / 24}s`, 'use a candidate that covers the complete reference clip', childDetails(task, result));
     }
