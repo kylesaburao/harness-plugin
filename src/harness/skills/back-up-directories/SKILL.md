@@ -60,7 +60,8 @@ at every target.
    This runs exactly the validation a real run does, including the environment check, so it
    reports the resolved source, output, targets, and the archive filename before any data
    moves. It has one side effect: a missing output directory is created, as it would be on a
-   real run. Exit status 2 with `dependency_missing` or `node_version_unsupported` means the
+   real run. The ready report's `outputDirectoryCreated` is that directory's path when this
+   preflight created it, or `null` when it already existed. Exit status 2 with `dependency_missing` or `node_version_unsupported` means the
    environment is not ready; on `dependency_missing`, relay the `remedy` command and ask
    before running it, since it writes to the skill directory. Exit status 3 with
    `config_invalid` means the configuration needs a fix, not the environment.
@@ -80,7 +81,7 @@ at every target.
 | `3` | Did not start: `config_invalid`. Nothing was archived or copied |
 | `4` | Archive creation failed |
 | `5` | A copy failed. Copies installed before it remain in place |
-| `130` / `143` | Interrupted. Temporary artifacts were cleaned up |
+| `129` / `130` / `143` | Interrupted by `SIGHUP`, `SIGINT`, or `SIGTERM`. Temporary artifacts were cleaned up |
 
 Exit `0` covers a cancelled run as well as a completed one, so read stdout to tell them
 apart: a cancellation prints `CANCELLED`. Copies are serial and stop at the first failure,
@@ -101,4 +102,4 @@ about guarantees. Points that change what you should tell the user:
 - The tool is a same-user interactive utility. Its configuration and directory paths are
   trusted input, so it is not suitable for privileged services or cross-user operation.
 
-With `--json`, completion reports the source, retained archive (or `null`), staging removal, copy paths, and archive bytes. Relay these fields. The preview, confirmation prompt, and progress use stderr. The confirmation requirement still applies.
+With `--json`, completion reports the source, retained archive (or `null`), staging removal, copy paths, and archive bytes. Relay these fields. A cancellation reports `{"result":{"cancelled":true,"outputDirectoryCreated":<path or null>}}`, where the path names an output directory that preflight created and the cancelled run left behind. The preview, confirmation prompt, and progress use stderr. The confirmation requirement still applies.

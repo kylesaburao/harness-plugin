@@ -68,7 +68,7 @@ function qualifyBackup() {
   fs.writeFileSync(config, JSON.stringify({ sourceDirectory: './source', outputDirectory: './output', targetDirectories: ['./target'] }));
   const preflight = execute(['--preflight', '--json', config]);
   assert.equal(preflight.status, 0, preflight.stderr);
-  assert.equal(JSON.parse(preflight.stdout).outputDirectoryCreated, true);
+  assert.equal(JSON.parse(preflight.stdout).outputDirectoryCreated, fs.realpathSync(path.join(home, 'output')));
   const completed = execute(['--json', config], 'y\n');
   assert.equal(completed.status, 0, completed.stderr);
   const result = JSON.parse(completed.stdout).result;

@@ -63,7 +63,7 @@ interface ExecutionDependencies {
   onStage?: (status: BackupStage) => void;
 }
 export interface ArchiveResult { source: string; archive: string | null; stagingRemoved: boolean; copies: string[]; bytes: number }
-type ReadyPlan = { source: string; output: string; targets: string[]; filename: string; runLock: string; outputDirectoryCreated: boolean }
+type ReadyPlan = { source: string; output: string; targets: string[]; filename: string; runLock: string; outputDirectoryCreated: string | null }
   | { source?: never; output?: never; targets?: never; filename?: never };
 function hasZipArchive(value: unknown): value is { ZipArchive: new (options: ArchiveOptions) => ArchiveHandle } {
   // The locked archiver package supplies the stream contract. Preserve the
@@ -81,6 +81,9 @@ const EXIT = Object.freeze({
   COPY: 5,
   INTERRUPTED: 130,
 });
+// Interruption exit status per signal, 128 plus the signal number, matching the
+// other scripts in this plugin. SIGINT keeps EXIT.INTERRUPTED.
+const SIGNAL_EXIT: Readonly<Record<string, number>> = Object.freeze({ SIGHUP: 129, SIGINT: EXIT.INTERRUPTED, SIGTERM: 143 });
 const MINIMUM_NODE = [24, 0, 0];
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
@@ -99,7 +102,7 @@ class InterruptedError extends Error {
     super(`Interrupted by ${signal}; temporary-file cleanup was requested.`);
     this.name = 'InterruptedError';
     this.signal = signal;
-    this.exitCode = signal === 'SIGTERM' ? 143 : EXIT.INTERRUPTED;
+    this.exitCode = SIGNAL_EXIT[signal] ?? EXIT.INTERRUPTED;
   }
 }
 
@@ -239,18 +242,31 @@ function failStartup(caught: unknown) {
   fail(condition, exitCode, code, remedy);
 }
 
-function usage() {
-  console.error(`Usage: node scripts/backup.js [OPTIONS] <backup-config.local.json>
+function usage(): string {
+  return `Usage: node scripts/backup.js [OPTIONS] <backup-config.local.json>
 
 Options:
   --preflight   Check the environment and configuration, back nothing up, exit
   --json        Report readiness, completion, and errors as JSON (preview and prompt use stderr)
   -h, --help    Print this message
 
-Exit status: 0 success, 2 or 3 nothing started, 4 or 5 the run failed, 130 interrupted.
+Exit status:
+  0         Success, a passed preflight, or a cancelled run
+  2 or 3    Nothing started
+  4 or 5    The run failed
+  129       Interrupted by SIGHUP
+  130       Interrupted by SIGINT
+  143       Interrupted by SIGTERM
 
 --preflight with a configuration file runs the same validation as a real run,
-which creates the output directory if it is missing.`);
+which creates the output directory if it is missing.
+`;
+}
+
+// The output directory preflight created for this run, or null when it
+// already existed. Both the readiness report and the cancellation report use it.
+function createdOutputDirectory(plan: BackupPlan): string | null {
+  return plan.output.createdDuringPreflight ? plan.output.canonicalPath : null;
 }
 
 // checkEnvironment has already passed by the time this runs, so the environment
@@ -788,12 +804,12 @@ async function main() {
   jsonOutput = options.json;
 
   if (options.help) {
-    usage();
+    process.stdout.write(usage());
     return;
   }
 
   if (!options.configPath && !options.preflightOnly) {
-    if (!jsonOutput) usage();
+    if (!jsonOutput) process.stderr.write(usage());
     fail(
       'Provide exactly one configuration file path.',
       EXIT.USAGE,
@@ -844,7 +860,7 @@ async function main() {
       targets: plan.targets.map((target) => target.canonicalPath),
       filename: plan.filename,
       runLock: lockPath,
-      outputDirectoryCreated: plan.output.createdDuringPreflight,
+      outputDirectoryCreated: createdOutputDirectory(plan),
     });
     return;
   }
@@ -853,16 +869,18 @@ async function main() {
   let runLock: RunLock | undefined;
   const onSigint = () => { void context.interrupt('SIGINT'); };
   const onSigterm = () => { void context.interrupt('SIGTERM'); };
+  const onSighup = () => { void context.interrupt('SIGHUP'); };
   const onExit = () => {
     context.cleanupSync();
     runLock?.releaseSync();
   };
   process.on('SIGINT', onSigint);
   process.on('SIGTERM', onSigterm);
+  process.on('SIGHUP', onSighup);
   process.once('exit', onExit);
   try {
     if (!await confirmExecution(context)) {
-      if (jsonOutput) console.log(JSON.stringify({ result: { cancelled: true, outputDirectoryCreated: plan.output.createdDuringPreflight ? plan.output.canonicalPath : null } }));
+      if (jsonOutput) console.log(JSON.stringify({ result: { cancelled: true, outputDirectoryCreated: createdOutputDirectory(plan) } }));
       humanLog('\nCANCELLED — No archive or replicated copy was created.');
       if (plan.output.createdDuringPreflight) {
         humanLog(`Preflight created the output directory: ${plan.output.canonicalPath}`);
@@ -931,6 +949,7 @@ async function main() {
   } finally {
     process.removeListener('SIGINT', onSigint);
     process.removeListener('SIGTERM', onSigterm);
+    process.removeListener('SIGHUP', onSighup);
     reportCleanupFailures(context.cleanupSync());
     if (runLock) reportCleanupFailures(runLock.releaseSync());
     process.removeListener('exit', onExit);

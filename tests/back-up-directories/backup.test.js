@@ -856,6 +856,55 @@ test('CLI returns usage and validation exit codes with actionable errors', async
   assert.match(validation.stderr, /"sourceDirectory" is required/);
 });
 
+test('CLI --help prints usage on stdout with every interruption exit status', async (t) => {
+  const help = await runCli(t, ['--help']);
+  assert.equal(help.exitCode, 0);
+  assert.equal(help.stderr, '');
+  assert.match(help.stdout, /^Usage:/);
+  assert.match(help.stdout, /129\s+Interrupted by SIGHUP/);
+  assert.match(help.stdout, /130\s+Interrupted by SIGINT/);
+  assert.match(help.stdout, /143\s+Interrupted by SIGTERM/);
+});
+
+test('interruption exit status follows the signal', async () => {
+  for (const [signal, exitCode] of [['SIGHUP', 129], ['SIGINT', EXIT.INTERRUPTED], ['SIGTERM', 143]]) {
+    const context = new OperationContext();
+    await context.interrupt(signal);
+    assert.equal(context.interruption.exitCode, exitCode, signal);
+  }
+});
+
+test('JSON preflight reports a created output directory as its path, otherwise null', async (t) => {
+  const root = await temporaryRoot(t);
+  const { source, target } = await makeDirectories(root, ['source', 'target']);
+  const output = path.join(root, 'new', 'output');
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({ sourceDirectory: source, outputDirectory: output, targetDirectories: [target] }));
+  const environment = { BACKUP_LOCK_PATH: path.join(root, 'lock') };
+
+  const first = await runCli(t, ['--preflight', '--json', config], { environment });
+  assert.equal(first.exitCode, 0, first.stderr);
+  const firstReport = JSON.parse(first.stdout);
+  assert.equal(firstReport.status, 'ready');
+  assert.equal(firstReport.outputDirectoryCreated, await fsp.realpath(output));
+
+  const second = await runCli(t, ['--preflight', '--json', config], { environment });
+  assert.equal(second.exitCode, 0, second.stderr);
+  assert.equal(JSON.parse(second.stdout).outputDirectoryCreated, null);
+});
+
+test('JSON cancellation reports a created output directory as its path', async (t) => {
+  const root = await temporaryRoot(t);
+  const { source, target } = await makeDirectories(root, ['source', 'target']);
+  const output = path.join(root, 'new', 'output');
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({ sourceDirectory: source, outputDirectory: output, targetDirectories: [target] }));
+
+  const cancelled = await runCli(t, ['--json', config], { input: 'no\n', environment: { BACKUP_LOCK_PATH: path.join(root, 'lock') } });
+  assert.equal(cancelled.exitCode, 0, cancelled.stderr);
+  assert.deepEqual(JSON.parse(cancelled.stdout).result, { cancelled: true, outputDirectoryCreated: await fsp.realpath(output) });
+});
+
 test('CLI rejects a relative BACKUP_LOCK_PATH before creating a lock', async (t) => {
   const root = await temporaryRoot(t, 'backup-cli-lock-validation-');
   const { source, output } = await makeDirectories(root, ['source', 'output']);
@@ -992,6 +1041,7 @@ test('JSON backup completion remains parseable with interactive confirmation', a
   await fsp.writeFile(config, JSON.stringify({ sourceDirectory: source, outputDirectory: output, targetDirectories: [target] }));
   const denied = await runCli(t, ['--json', config], { input: 'no\n' });
   assert.equal(JSON.parse(denied.stdout).result.cancelled, true);
+  assert.equal(JSON.parse(denied.stdout).result.outputDirectoryCreated, null);
   assert.deepEqual(await fsp.readdir(target), []);
   const done = await runCli(t, ['--json', config], { input: 'yes\n', environment: { BACKUP_LOCK_PATH: path.join(root, 'lock') } });
   assert.equal(done.exitCode, 0, done.stderr);

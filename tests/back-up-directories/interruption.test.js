@@ -109,7 +109,7 @@ test('interruption during final staging cleanup remains authoritative', async (t
   assert.equal(context.temporaryPaths.size, 0);
 });
 
-for (const [signal, expectedExitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+for (const [signal, expectedExitCode] of [['SIGHUP', 129], ['SIGINT', 130], ['SIGTERM', 143]]) {
   test(`CLI ${signal} interruption uses exit code ${expectedExitCode} and cleans up`, async (t) => {
     const root = await temporaryRoot(t);
     const source = path.join(root, 'source');
