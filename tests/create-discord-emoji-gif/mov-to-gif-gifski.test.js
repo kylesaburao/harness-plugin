@@ -10,7 +10,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const SCRIPT = path.join(
   REPO_ROOT,
-  'plugins/harness/skills/create-discord-emoji-gif/scripts/mov-to-gif-gifski.sh',
+  'plugins/harness/skills/create-discord-emoji-gif/scripts/bash/mov-to-gif-gifski.sh',
 );
 const BASH = '/bin/bash';
 const FFMPEG = 'ffmpeg';
@@ -118,7 +118,7 @@ test('help reports the sibling interface and quality controls', () => {
   const result = runScript(['--help']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage: mov-to-gif-gifski\.sh/);
-  assert.match(result.stdout, /MIN_QUALITY, MAX_QUALITY/);
+  assert.match(result.stdout, /MIN_QUALITY[\s\S]*MAX_QUALITY/);
   const source = fs.readFileSync(SCRIPT, 'utf8');
   const requiredCommands = source.match(/required_commands=\(([^)]*)\)/)?.[1];
   const removedCommand = ['mk', 'fifo'].join('');
@@ -138,12 +138,13 @@ test('skill instructions define the Discord target and fallback rules', () => {
   assert.match(skill, /fewer than 256000 bytes/);
   assert.match(skill, /3 seconds or less/);
   assert.match(skill, /Use gifski by default/);
-  assert.match(skill, /If the gifski preflight exits 2/);
-  assert.match(skill, /If gifski returns `no_candidate`, try `mov-to-gif\.sh`/);
-  assert.match(skill, /explicitly requests FFmpeg and gifsicle/);
-  assert.match(skill, /requests a comparison, run both modes/);
-  assert.match(skill, /`min\(FPS count, max\(1, JOBS \/ 2\)\)`/);
-  assert.match(skill, /`RAYON_NUM_THREADS = clamp\(JOBS \/ encoder workers, 2, 8\)`/);
+  assert.match(skill, /Node\.js 22\.0\.0 or newer/);
+  assert.match(skill, /fall through to Node\.js gifsicle only for/);
+  assert.match(skill, /fall through only from Node\.js gifski\n   `no_candidate`/);
+  assert.match(skill, /An explicit gifsicle request selects Node\.js gifsicle/);
+  assert.match(skill, /A normal backend comparison runs both Node\.js implementations/);
+  assert.match(skill, /`min\(FPS count, max\(1, floor\(JOBS \/ 2\)\)\)`/);
+  assert.match(skill, /`RAYON_NUM_THREADS = clamp\(floor\(JOBS \/ encoder workers\), 2, 8\)`/);
 
   const agentMetadata = fs.readFileSync(path.join(
     REPO_ROOT,
@@ -747,4 +748,8 @@ test('SIGINT reaps the active child and preserves the destination', async () => 
 
 test('SIGTERM reaps the active child and preserves the destination', async () => {
   await verifyInterruption('SIGTERM', 143);
+});
+
+test('SIGHUP reaps the active child and preserves the destination', async () => {
+  await verifyInterruption('SIGHUP', 129);
 });

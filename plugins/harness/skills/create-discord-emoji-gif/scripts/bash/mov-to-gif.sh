@@ -6,7 +6,7 @@ readonly DEFAULT_MAX_BYTES=256000
 readonly DEFAULT_SIZE=128
 readonly DEFAULT_MIN_FPS=15
 readonly DEFAULT_MAX_FPS=24
-readonly MAX_SIGNED_INTEGER=9223372036854775807
+readonly MAX_EXACT_INTEGER=9007199254740991
 
 # Exit status contract, shared with the other scripts in this plugin:
 #   0  success, or --preflight found a usable environment
@@ -20,13 +20,28 @@ usage() {
   printf '\n'
   printf 'Options:\n'
   printf '  --preflight [INPUT_VIDEO]\n'
-  printf '                Check the environment and optional input, convert nothing, then exit\n'
-  printf '  --json        Report readiness and errors as JSON\n'
-  printf '  -h, --help    Print this message\n'
+  printf '                  Check the environment and optional input, convert nothing, then exit\n'
+  printf '  --json          Report readiness and errors as JSON\n'
+  printf '  --help, -h      Print this message\n'
+  printf '  --              Stop option parsing\n'
   printf '\n'
-  printf 'Environment: MAX_BYTES, GIF_SIZE, MIN_FPS, MAX_FPS, JOBS, KEEP_WORK=1\n'
+  printf 'Environment:\n'
+  printf '  MAX_BYTES       Strict byte ceiling (default: 256000, maximum: %s)\n' "$MAX_EXACT_INTEGER"
+  printf '  GIF_SIZE        Square width and height (default: 128, maximum: %s)\n' "$MAX_EXACT_INTEGER"
+  printf '  MIN_FPS         Minimum frame rate (default: 15, maximum: %s)\n' "$MAX_EXACT_INTEGER"
+  printf '  MAX_FPS         Maximum frame rate (default: 24, maximum: %s)\n' "$MAX_EXACT_INTEGER"
+  printf '  JOBS            Parallel work limit (default: logical CPUs minus 2, minimum 1, maximum: %s)\n' "$MAX_EXACT_INTEGER"
+  printf '  KEEP_WORK       Keep the work directory when set to 1 (default: unset)\n'
   printf '\n'
-  printf 'Exit status: 0 success, 2 cannot start, 1 conversion failed.\n'
+  printf 'All positive integers have an exact-value ceiling of %s.\n' "$MAX_EXACT_INTEGER"
+  printf '\n'
+  printf 'Exit status:\n'
+  printf '  0    Success or passed preflight\n'
+  printf '  1    Conversion work started and failed\n'
+  printf '  2    Work did not start\n'
+  printf '  129  SIGHUP\n'
+  printf '  130  SIGINT\n'
+  printf '  143  SIGTERM\n'
 }
 
 json_escape() {
@@ -60,9 +75,8 @@ fail() {
   exit 2
 }
 
-# The conversion started and could not finish, so there is nothing to remedy.
 die() {
-  report_error "$1" "$2" ''
+  report_error "$1" "$2" "${3:-run the conversion again and inspect the reported failure}"
   exit 1
 }
 
@@ -72,14 +86,14 @@ is_positive_integer() {
 
   [[ "$value" =~ ^[1-9][0-9]*$ ]] || return 1
   length=${#value}
-  (( length < 19 )) && return 0
-  (( length > 19 )) && return 1
-  [[ "$value" < "$MAX_SIGNED_INTEGER" || "$value" == "$MAX_SIGNED_INTEGER" ]]
+  (( length < ${#MAX_EXACT_INTEGER} )) && return 0
+  (( length > ${#MAX_EXACT_INTEGER} )) && return 1
+  [[ "$value" < "$MAX_EXACT_INTEGER" || "$value" == "$MAX_EXACT_INTEGER" ]]
 }
 
 validate_positive_integer() {
   is_positive_integer "$2" || fail config_invalid \
-    "$1 must be a positive integer no greater than $MAX_SIGNED_INTEGER, got '$2'" \
+    "$1 must be a positive integer no greater than $MAX_EXACT_INTEGER, got '$2'" \
     "unset $1 to take the default, or set it to a positive integer"
 }
 
@@ -297,6 +311,91 @@ check_ffmpeg_capabilities() {
   done
 }
 
+help_has_option() {
+  local help_output=$1
+  local wanted=$2
+  local line
+  local word
+
+  while IFS= read -r line; do
+    for word in $line; do
+      word=${word%,}
+      [[ "$word" == "$wanted" || "$word" == "$wanted="* \
+        || "$word" == "$wanted["* ]] && return 0
+    done
+  done <<< "$help_output"
+  return 1
+}
+
+ffprobe_reinstall_remedy() {
+  is_macos && printf 'brew reinstall ffmpeg' \
+    || printf 'reinstall ffmpeg from your package manager or a static build'
+}
+
+ffprobe_upgrade_remedy() {
+  is_macos && printf 'brew upgrade ffmpeg' \
+    || printf 'install an ffprobe build that includes it'
+}
+
+check_ffprobe_capabilities() {
+  local version_output=''
+  local help_output=''
+  local option
+
+  if ! version_output=$(ffprobe -v error -show_program_version -of json 2>&1) \
+    || [[ -z "$version_output" ]]; then
+    record_failure ffprobe_probe_failed \
+      'ffprobe is present but could not report its program version' \
+      "$(ffprobe_reinstall_remedy)"
+  fi
+  if ! help_output=$(ffprobe -hide_banner -h full 2>&1); then
+    record_failure ffprobe_probe_failed \
+      'ffprobe is present but could not report its options' \
+      "$(ffprobe_reinstall_remedy)"
+  else
+    for option in -of -select_streams -show_entries -count_frames; do
+      help_has_option "$help_output" "$option" || record_failure \
+        ffprobe_capability_missing \
+        "ffprobe is missing required option: $option" \
+        "$(ffprobe_upgrade_remedy)"
+    done
+  fi
+}
+
+gifsicle_reinstall_remedy() {
+  is_macos && printf 'brew reinstall gifsicle' \
+    || printf 'reinstall gifsicle from your package manager'
+}
+
+gifsicle_upgrade_remedy() {
+  is_macos && printf 'brew upgrade gifsicle' \
+    || printf 'upgrade gifsicle from your package manager'
+}
+
+check_gifsicle_capabilities() {
+  local version_output=''
+  local help_output=''
+  local option
+
+  if ! version_output=$(gifsicle --version 2>&1) || [[ -z "$version_output" ]]; then
+    record_failure gifsicle_probe_failed \
+      'gifsicle is present but could not report its version' \
+      "$(gifsicle_reinstall_remedy)"
+  fi
+  if ! help_output=$(gifsicle --help 2>&1); then
+    record_failure gifsicle_probe_failed \
+      'gifsicle is present but could not report its options' \
+      "$(gifsicle_reinstall_remedy)"
+  else
+    for option in --optimize --output; do
+      help_has_option "$help_output" "$option" || record_failure \
+        gifsicle_capability_missing \
+        "gifsicle is missing required option: $option" \
+        "$(gifsicle_upgrade_remedy)"
+    done
+  fi
+}
+
 preflight() {
   local -a required_commands=(ffmpeg ffprobe gifsicle awk mktemp wc dirname cp mv rm)
   local command_name
@@ -315,6 +414,12 @@ preflight() {
     check_ffmpeg_capabilities decoder rawvideo ffv1 gif png
     check_ffmpeg_capabilities muxer nut matroska gif image2 null
     check_ffmpeg_capabilities demuxer nut matroska gif image2
+  fi
+  if command -v ffprobe >/dev/null 2>&1; then
+    check_ffprobe_capabilities
+  fi
+  if command -v gifsicle >/dev/null 2>&1; then
+    check_gifsicle_capabilities
   fi
 
   (( ${#failure_codes[@]} == 0 )) || report_preflight_failures
@@ -476,7 +581,11 @@ readonly output_dir
 inspect_input_video "$input"
 emit_warnings
 
-work_dir=$(mktemp -d "${TMPDIR:-/tmp}/mov-to-gif.XXXXXX")
+if ! work_dir=$(mktemp -d "${TMPDIR:-/tmp}/mov-to-gif.XXXXXX" 2>/dev/null); then
+  fail work_directory_unusable \
+    "could not create a work directory under ${TMPDIR:-/tmp}" \
+    'set TMPDIR to a writable local directory and try again'
+fi
 output_tmp=''
 cleanup_started=0
 pending_count=0
@@ -492,7 +601,7 @@ cleanup() {
 
   (( cleanup_started == 0 )) || return "$original_status"
   cleanup_started=1
-  trap - EXIT INT TERM
+  trap - EXIT HUP INT TERM
   set +e
 
   if [[ -n "${work_dir:-}" && -d "$work_dir" ]]; then
@@ -533,12 +642,13 @@ cleanup() {
 }
 
 trap cleanup EXIT
+trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
 worker_cleanup() {
   local status=$?
-  trap - EXIT INT TERM
+  trap - EXIT HUP INT TERM
   set +e
   if [[ -n "${active_child_pid:-}" ]]; then
     kill -TERM "$active_child_pid" >/dev/null 2>&1
@@ -552,6 +662,7 @@ worker_setup() {
   active_child_pid=''
   active_child_file="$work_dir/active-child-$1.pid"
   trap worker_cleanup EXIT
+  trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
 }
@@ -805,7 +916,7 @@ generate_palette_parent() {
   parent_run winner-palette ffmpeg -v error -nostdin -threads 1 -filter_threads 1 \
     -i "$work_dir/source-f${fps}.nut" \
     -vf "palettegen=max_colors=${colors}:stats_mode=diff" \
-    -frames:v 1 -c:v png -f image2 -update 1 -y "$palette"
+    -frames:v 1 -c:v png -f image2 -update 1 -y "$palette" || return
 }
 
 generate_candidate_parent() {
@@ -818,8 +929,8 @@ generate_candidate_parent() {
   parent_run winner-gif ffmpeg -v error -nostdin -threads 1 -filter_complex_threads 1 \
     -i "$work_dir/source-f${fps}.nut" -i "$palette" \
     -filter_complex "[0:v][1:v]paletteuse=dither=bayer:bayer_scale=${scale}:diff_mode=rectangle" \
-    -an -loop 0 -c:v gif -f gif -y "$raw"
-  parent_run winner-optimize gifsicle -O3 "$raw" -o "$candidate"
+    -an -loop 0 -c:v gif -f gif -y "$raw" || return
+  parent_run winner-optimize gifsicle -O3 "$raw" -o "$candidate" || return
   rm -f -- "$raw"
 }
 
@@ -916,14 +1027,16 @@ fi
 [[ -n "$selection" ]] || die no_candidate "no candidate fit below $max_bytes bytes, raise MAX_BYTES or lower GIF_SIZE"
 IFS='|' read -r best_score best_bytes best_fps best_colors best_scale <<< "$selection"
 
-best_palette="$work_dir/palette-f${best_fps}-c${best_colors}.png"
-best_file="$work_dir/f${best_fps}-c${best_colors}-d${best_scale}.gif"
+best_palette="$work_dir/winner-palette-f${best_fps}-c${best_colors}.png"
+best_file="$work_dir/winner-regenerated-f${best_fps}-c${best_colors}-d${best_scale}.gif"
 best_raw="$work_dir/raw-f${best_fps}-c${best_colors}-d${best_scale}.gif"
-[[ -f "$best_palette" ]] || generate_palette_parent "$best_fps" "$best_colors" "$best_palette"
-if [[ ! -f "$best_file" ]]; then
-  generate_candidate_parent "$best_fps" "$best_colors" "$best_scale" \
-    "$best_palette" "$best_raw" "$best_file"
-fi
+generate_palette_parent "$best_fps" "$best_colors" "$best_palette" \
+  || die regeneration_failed 'winner palette regeneration failed' \
+    'fix the reported ffmpeg error, then run the same conversion again'
+generate_candidate_parent "$best_fps" "$best_colors" "$best_scale" \
+  "$best_palette" "$best_raw" "$best_file" \
+  || die regeneration_failed 'winner GIF regeneration failed' \
+    'fix the reported ffmpeg or gifsicle error, then run the same conversion again'
 
 regenerated_bytes=$(file_bytes "$best_file")
 (( regenerated_bytes == best_bytes )) \
@@ -935,34 +1048,51 @@ regenerated_score=$(<"$regen_score_file")
 [[ "$regenerated_score" == "$best_score" ]] \
   || die regeneration_mismatch "winner regeneration VMAF mismatch: recorded $best_score, regenerated $regenerated_score"
 
-output_tmp=$(mktemp "$output_dir/.mov-to-gif-output.XXXXXX")
-parent_run publish-copy cp "$best_file" "$output_tmp"
+if ! output_tmp=$(mktemp "$output_dir/.mov-to-gif-output.XXXXXX" 2>/dev/null); then
+  die publication_failed 'could not create the destination temporary file' \
+    'make the output directory writable and ensure it has free space'
+fi
+parent_run publish-copy cp "$best_file" "$output_tmp" \
+  || die publication_failed 'could not prepare the destination temporary file' \
+    'make the output directory writable and ensure it has free space'
 
-probe_file="$work_dir/final-probe.txt"
+codec_file="$work_dir/final-codec.txt"
 dimensions_file="$work_dir/final-dimensions.txt"
 frames_file="$work_dir/final-frames.txt"
 duration_file="$work_dir/final-duration.txt"
 final_vmaf_log="$work_dir/vmaf-final.log"
 final_score_file="$work_dir/score-final.txt"
 
-parent_run_stdout final-probe "$probe_file" ffprobe -v error \
-  -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$output_tmp"
-[[ "$(<"$probe_file")" == video ]] || die verification_failed 'verification failed, output has no readable video stream'
+parent_run_stdout final-codec "$codec_file" ffprobe -v error \
+  -select_streams v:0 -show_entries stream=codec_name,codec_type \
+  -of "csv=s=|:p=0" "$output_tmp" \
+  || die verification_failed 'verification failed, ffprobe could not read output codec' \
+    'reinstall ffmpeg, then run the conversion again'
+codec=$(<"$codec_file")
+[[ "$codec" == 'gif|video' ]] || die verification_failed \
+  "verification failed, expected a GIF video stream, got ${codec:-missing}" \
+  'repair or reinstall gifsicle, then run the conversion again'
 
 parent_run_stdout final-dimensions "$dimensions_file" ffprobe -v error \
-  -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$output_tmp"
+  -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$output_tmp" \
+  || die verification_failed 'verification failed, could not read output dimensions' \
+    'reinstall ffmpeg, then run the conversion again'
 dimensions=$(<"$dimensions_file")
 [[ "$dimensions" == "${gif_size}x${gif_size}" ]] \
   || die verification_failed "verification failed, expected ${gif_size}x${gif_size}, got $dimensions"
 
 parent_run_stdout final-frames "$frames_file" ffprobe -v error -count_frames \
-  -select_streams v:0 -show_entries stream=nb_read_frames -of default=nw=1:nk=1 "$output_tmp"
+  -select_streams v:0 -show_entries stream=nb_read_frames -of default=nw=1:nk=1 "$output_tmp" \
+  || die verification_failed 'verification failed, could not count output frames' \
+    'reinstall ffmpeg, then run the conversion again'
 frame_count=$(<"$frames_file")
 [[ "$frame_count" =~ ^[0-9]+$ ]] && (( frame_count > 1 )) \
   || die verification_failed "verification failed, invalid frame count: ${frame_count:-missing}"
 
 parent_run_stdout final-duration "$duration_file" ffprobe -v error \
-  -show_entries format=duration -of default=nw=1:nk=1 "$output_tmp"
+  -show_entries format=duration -of default=nw=1:nk=1 "$output_tmp" \
+  || die verification_failed 'verification failed, could not read output duration' \
+    'reinstall ffmpeg, then run the conversion again'
 duration=$(<"$duration_file")
 if ! awk -v value="$duration" 'BEGIN {
   exit !(value ~ /^[0-9]+([.][0-9]+)?$/ && value > 0)
@@ -976,12 +1106,16 @@ final_bytes=$(file_bytes "$output_tmp")
 (( final_bytes == best_bytes )) \
   || die verification_failed "verification failed, expected $best_bytes bytes, got $final_bytes"
 
-score_candidate_parent final "$output_tmp" "$final_vmaf_log" "$final_score_file"
+score_candidate_parent final "$output_tmp" "$final_vmaf_log" "$final_score_file" \
+  || die verification_failed 'verification failed, final VMAF scoring failed' \
+    'fix the reported ffmpeg libvmaf error, then run the conversion again'
 final_score=$(<"$final_score_file")
 [[ "$final_score" == "$best_score" ]] \
   || die verification_failed "verification failed, expected VMAF $best_score, got $final_score"
 
-mv -f -- "$output_tmp" "$output"
+parent_run final-publish mv -f -- "$output_tmp" "$output" \
+  || die publication_failed 'could not atomically publish the verified GIF' \
+    'make the output directory writable and ensure it has free space'
 output_tmp=''
 
 printf 'Selected: %s FPS, %s colors, dither %s, VMAF %s\n' \

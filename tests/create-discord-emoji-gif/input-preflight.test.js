@@ -12,8 +12,12 @@ const SKILL_DIR = path.join(
   REPO_ROOT,
   'plugins/harness/skills/create-discord-emoji-gif',
 );
-const SCRIPTS = ['mov-to-gif.sh', 'mov-to-gif-gifski.sh'];
-const BASH = '/bin/bash';
+const RUNNERS = [
+  { name: 'Bash gifsicle', command: '/bin/bash', file: 'scripts/bash/mov-to-gif.sh' },
+  { name: 'Bash gifski', command: '/bin/bash', file: 'scripts/bash/mov-to-gif-gifski.sh' },
+  { name: 'Node gifsicle', command: process.execPath, file: 'scripts/node/mov-to-gif.js' },
+  { name: 'Node gifski', command: process.execPath, file: 'scripts/node/mov-to-gif-gifski.js' },
+];
 const suiteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'discord-emoji-preflight.'));
 const clips = {
   short: path.join(suiteDir, 'short.mp4'),
@@ -21,8 +25,8 @@ const clips = {
   long: path.join(suiteDir, 'long.mp4'),
 };
 
-function runScript(scriptName, args, env = {}) {
-  return spawnSync(BASH, [path.join(SKILL_DIR, 'scripts', scriptName), ...args], {
+function runScript(runner, args, env = {}) {
+  return spawnSync(runner.command, [path.join(SKILL_DIR, runner.file), ...args], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
     env: { ...process.env, ...env },
@@ -47,25 +51,25 @@ test.after(() => {
   fs.rmSync(suiteDir, { recursive: true, force: true });
 });
 
-for (const scriptName of SCRIPTS) {
-  test(`${scriptName} environment-only preflight reports no warnings`, () => {
-    const result = runScript(scriptName, ['--preflight', '--json']);
+for (const runner of RUNNERS) {
+  test(`${runner.name} environment-only preflight reports no warnings`, () => {
+    const result = runScript(runner, ['--preflight', '--json']);
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
     assert.equal(report.status, 'ready');
     assert.deepEqual(report.warnings, []);
   });
 
-  test(`${scriptName} input preflight accepts clips at or below 3 seconds`, () => {
+  test(`${runner.name} input preflight accepts clips at or below 3 seconds`, () => {
     for (const input of [clips.short, clips.exact]) {
-      const result = runScript(scriptName, ['--preflight', '--json', input]);
+      const result = runScript(runner, ['--preflight', '--json', input]);
       assert.equal(result.status, 0, result.stderr);
       assert.deepEqual(JSON.parse(result.stdout).warnings, []);
     }
   });
 
-  test(`${scriptName} reports a missing input before missing dependencies`, () => {
-    const result = runScript(scriptName, [
+  test(`${runner.name} reports a missing input before missing dependencies`, () => {
+    const result = runScript(runner, [
       '--preflight', '--json', path.join(suiteDir, 'missing.mp4'),
     ], {
       PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
@@ -74,10 +78,10 @@ for (const scriptName of SCRIPTS) {
     assert.equal(JSON.parse(result.stderr).error.code, 'input_unusable');
   });
 
-  test(`${scriptName} long input preflight warns in plain and JSON modes without artifacts`, () => {
-    const temporaryRoot = fs.mkdtempSync(path.join(suiteDir, `${scriptName}.preflight.`));
+  test(`${runner.name} long input preflight warns in plain and JSON modes without artifacts`, () => {
+    const temporaryRoot = fs.mkdtempSync(path.join(suiteDir, `${runner.name.replaceAll(' ', '-')}.preflight.`));
     try {
-      let result = runScript(scriptName, ['--preflight', clips.long], {
+      let result = runScript(runner, ['--preflight', clips.long], {
         TMPDIR: temporaryRoot,
       });
       assert.equal(result.status, 0, result.stderr);
@@ -86,7 +90,7 @@ for (const scriptName of SCRIPTS) {
       assert.match(result.stdout, /trim the clip to 3 seconds or less/);
       assert.deepEqual(fs.readdirSync(temporaryRoot), []);
 
-      result = runScript(scriptName, ['--preflight', '--json', clips.long], {
+      result = runScript(runner, ['--preflight', '--json', clips.long], {
         TMPDIR: temporaryRoot,
       });
       assert.equal(result.status, 0, result.stderr);
@@ -101,12 +105,13 @@ for (const scriptName of SCRIPTS) {
     }
   });
 
-  test(`${scriptName} normal runs warn before work-directory creation without changing status`, () => {
-    const missingTmp = path.join(suiteDir, `${scriptName}.missing-tmp`);
-    const shortOutput = path.join(suiteDir, `${scriptName}.short.gif`);
-    const longOutput = path.join(suiteDir, `${scriptName}.long.gif`);
-    const shortResult = runScript(scriptName, [clips.short, shortOutput], { TMPDIR: missingTmp });
-    const longResult = runScript(scriptName, [clips.long, longOutput], { TMPDIR: missingTmp });
+  test(`${runner.name} normal runs warn before work-directory creation without changing status`, () => {
+    const stem = runner.name.replaceAll(' ', '-');
+    const missingTmp = path.join(suiteDir, `${stem}.missing-tmp`);
+    const shortOutput = path.join(suiteDir, `${stem}.short.gif`);
+    const longOutput = path.join(suiteDir, `${stem}.long.gif`);
+    const shortResult = runScript(runner, [clips.short, shortOutput], { TMPDIR: missingTmp });
+    const longResult = runScript(runner, [clips.long, longOutput], { TMPDIR: missingTmp });
     assert.equal(longResult.status, shortResult.status);
     assert.doesNotMatch(shortResult.stderr, /input_duration_long/);
     assert.match(longResult.stderr, /WARNING \[input_duration_long\]/);

@@ -1,7 +1,7 @@
 ---
 name: create-discord-emoji-gif
 description: Create an animated 128x128 GIF for a Discord emoji, with a strict target of fewer than 256000 bytes and VMAF-based quality selection. Use when the user asks for a Discord emoji GIF or an equivalent animated 128x128 GIF under 256 KB. Prefer clips of 3 seconds or less for better quality. Do not use for general video-to-GIF requests without these size and dimension targets, or when the user wants a video file rather than a GIF.
-compatibility: Requires ffmpeg built with libvmaf, plus ffprobe and either gifski or gifsicle. macOS, Linux, or WSL2.
+compatibility: Requires Node.js 22.0.0 or newer for the default flow, ffmpeg built with libvmaf, ffprobe, and either gifski or gifsicle. Bash alternatives support macOS, Linux, and WSL2 without Node.js.
 ---
 
 # Create a Discord emoji GIF
@@ -11,94 +11,132 @@ seconds or less usually produce better quality within that limit. If the user as
 this skill is or why it exists, state both the Discord size target and this duration
 guidance.
 
-Both scripts search quality settings, score fitting candidates with VMAF, regenerate the
-winner, and verify it before publication. Use gifski by default. Use FFmpeg and gifsicle
-as the defined fallback.
+The Node.js converters are the default. The Bash converters remain supported direct
+alternatives. Both runtimes implement the same two backend searches, regenerate the
+winner, score it with VMAF, verify it, and publish it atomically. Use gifski by default.
+Use FFmpeg and gifsicle as the defined fallback.
 
-Both modes need `ffmpeg` built with `libvmaf` and `ffprobe`. The default mode also needs
-`gifski`. The fallback needs `gifsicle`. The preflight below detects and reports whichever
-of these is missing; it is not scoped to any one operating system.
+Both backends need `ffmpeg` built with `libvmaf` and `ffprobe`. The default backend also
+needs `gifski`. The fallback needs `gifsicle`. Each preflight reports all missing or
+unsuitable tools and gives platform-specific remedies.
+
+## Select an entrypoint
+
+Resolve paths relative to this skill directory, not the caller's current directory.
+
+| Request and runtime | Entrypoint |
+| --- | --- |
+| Default, Node.js 22.0.0 or newer | `node scripts/node/mov-to-gif-gifski.js` |
+| Explicit gifsicle, Node.js 22.0.0 or newer | `node scripts/node/mov-to-gif.js` |
+| Explicit Bash gifski | `bash scripts/bash/mov-to-gif-gifski.sh` |
+| Explicit Bash gifsicle | `bash scripts/bash/mov-to-gif.sh` |
+
+Use this procedure:
+
+1. An explicit Bash request selects Bash immediately. Do not probe Node.js.
+2. Otherwise, run `command -v node` and `node --version`.
+3. Node.js 22.0.0 or newer selects the matching Node.js converter.
+4. Missing or older Node.js selects the matching Bash converter.
+5. An explicit gifsicle request selects Node.js gifsicle unless Bash was also requested.
+6. The default Node.js gifski preflight can fall through to Node.js gifsicle only for
+   `command_missing` for gifski, `gifski_probe_failed`, or
+   `gifski_capability_missing`.
+7. Do not fall through on argument, input, output, FFmpeg, ffprobe, platform, or work
+   directory failures.
+8. After Node.js conversion work starts, fall through only from Node.js gifski
+   `no_candidate` to Node.js gifsicle. Never fall from a started Node.js run to Bash.
+9. A normal backend comparison runs both Node.js implementations.
+10. A runtime parity comparison runs Node.js and Bash for each matching backend and
+    labels all four outputs.
+
+Node.js 22.0.0 is the supported runtime floor. `os.availableParallelism()`, used to
+calculate the default `JOBS`, has an API floor of Node.js 18.14.0. The older API floor
+does not change the supported runtime floor.
 
 ## Workflow
 
-1. Resolve every path relative to this skill directory, not the current working
-   directory. For example:
+1. Preflight the selected converter. Include the input when one is available:
 
    ```sh
-   bash /path/to/create-discord-emoji-gif/scripts/mov-to-gif-gifski.sh --preflight --json INPUT_VIDEO
-   ```
-
-2. If the user explicitly requests FFmpeg and gifsicle, use `mov-to-gif.sh` directly. If
-   the user requests a comparison, run both modes. Otherwise, start with gifski:
-
-   ```sh
-   bash scripts/mov-to-gif-gifski.sh --preflight --json INPUT_VIDEO
+   node scripts/node/mov-to-gif-gifski.js --preflight --json INPUT_VIDEO
+   node scripts/node/mov-to-gif.js --preflight --json INPUT_VIDEO
+   bash scripts/bash/mov-to-gif-gifski.sh --preflight --json INPUT_VIDEO
+   bash scripts/bash/mov-to-gif.sh --preflight --json INPUT_VIDEO
    ```
 
    `--preflight` without an input checks only the environment. With an input, it also
-   validates the video and reports a nonfatal `input_duration_long` warning when the clip
-   is longer than 3 seconds.
+   validates the video and reports a nonfatal `input_duration_long` warning when the
+   clip is longer than 3 seconds.
 
-3. If the gifski preflight exits 2, run the FFmpeg and gifsicle preflight for the same
-   input. Use `mov-to-gif.sh` only if that preflight passes. If both preflights fail, relay
-   each `failures` list verbatim, including every `condition` and `remedy`.
+2. Relay every preflight diagnosis verbatim, including each stable `code`, `condition`,
+   and `remedy`. Do not independently replace its remedy. Ask the user before running
+   an installation command because it changes the machine.
 
-4. Ask the user before installing anything. Relay the preflight's `remedy` verbatim rather
-   than guessing an install command; it already accounts for the platform (for example
-   `brew install ffmpeg gifski` on macOS or `sudo apt install ffmpeg gifsicle` plus
-   `cargo install gifski` on Linux), and any of these modify the machine.
-
-5. Convert with the selected mode:
+3. Convert with the selected direct entrypoint:
 
    ```sh
-   bash scripts/mov-to-gif-gifski.sh INPUT_VIDEO [OUTPUT.gif]
-   # Explicit request or fallback:
-   bash scripts/mov-to-gif.sh INPUT_VIDEO [OUTPUT.gif]
+   node scripts/node/mov-to-gif-gifski.js INPUT_VIDEO [OUTPUT.gif]
+   node scripts/node/mov-to-gif.js INPUT_VIDEO [OUTPUT.gif]
+   bash scripts/bash/mov-to-gif-gifski.sh INPUT_VIDEO [OUTPUT.gif]
+   bash scripts/bash/mov-to-gif.sh INPUT_VIDEO [OUTPUT.gif]
    ```
 
-   Without an output path, either script writes `<input-basename>_<size>x<size>.gif` next
-   to the input. Progress and warnings go to stderr. The result summary goes to stdout.
-   A long-clip warning does not reject, trim, or modify the input.
+   Without an output path, every converter writes
+   `<input-basename>_<size>x<size>.gif` next to the input. Progress and warnings go to
+   stderr. The result summary goes to stdout. A long-input warning does not reject,
+   trim, or modify the input.
 
-6. If gifski returns `no_candidate`, try `mov-to-gif.sh`. Treat other gifski runtime
-   failures as failures. Do not run both modes unless fallback is required or the user
-   requests a comparison.
-
-7. Warn the user before a broad search because it can take several minutes and use most
-   of the machine's cores. Narrow the search with the environment variables below when
-   the user wants a faster result.
+4. Warn the user before a broad search because it can take several minutes and use
+   most CPU cores. Narrow the search with environment variables when the user wants a
+   faster result.
 
 ## Tuning
 
-Set these as environment variables, not flags:
+Set these environment variables, not command flags:
 
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `MAX_BYTES` | 256000 | Strict byte ceiling. The output must be smaller. |
 | `GIF_SIZE` | 128 | Square output width and height in pixels |
 | `MIN_FPS` / `MAX_FPS` | 15 / 24 | Frame-rate range. Gifski accepts at most 100 FPS. |
-| `JOBS` | logical CPUs minus 2 | Parallel work limit |
+| `JOBS` | logical CPUs minus 2, minimum 1 | Parallel work limit |
 | `KEEP_WORK` | unset | Set to `1` to keep the intermediate work directory |
 
-The gifski mode also accepts:
+All positive integer values must be no greater than `9007199254740991`, the largest
+integer that Node.js represents exactly. Backend-specific limits, such as gifski's
+100 FPS and quality maximums, still apply.
+
+The gifski backend also accepts:
 
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `MIN_QUALITY` / `MAX_QUALITY` | 1 / 100 | Gifski quality search bounds |
 
-The gifski mode uses `min(FPS count, max(1, JOBS / 2))` simultaneous encoder workers.
-Each encoder receives `RAYON_NUM_THREADS = clamp(JOBS / encoder workers, 2, 8)`.
+The gifski backend uses `min(FPS count, max(1, floor(JOBS / 2)))` simultaneous
+encoder workers. Each gifski child receives
+`RAYON_NUM_THREADS = clamp(floor(JOBS / encoder workers), 2, 8)`.
 
 To reduce runtime, pin the frame rate with `MIN_FPS=15 MAX_FPS=15`.
 
-## Reading the result
+## Read the result
 
 - Exit `0` means the preflight passed or the conversion succeeded.
-- Exit `2` means work did not start because of usage, environment, input, or output
-  validation. Relay the reported remedy.
-- Exit `1` means conversion work started and failed. Fall back from gifski only when the
-  error code is `no_candidate`.
+- Exit `2` means work did not start because of usage, runtime, environment, input, or
+  output validation. Relay the reported remedy.
+- Exit `1` means conversion work started and failed. Apply only the backend fallback
+  rules above.
+- `SIGHUP`, `SIGINT`, and `SIGTERM` exit with `129`, `130`, and `143` after tracked
+  child processes close and cleanup finishes.
 
 Report the selected VMAF score. Do not describe the GIF as visually identical to the
 source. Its frame rate can differ from the source. Each GIF frame uses a palette with at
 most 256 entries.
+
+## Platform verification
+
+- macOS: all four direct converters and same-backend Node.js/Bash output parity are
+  verified with a real generated fixture.
+- Ubuntu Linux: supported, but a disposable real-toolchain run is not yet verified.
+- WSL2: supported by design through the Linux branch. Signal, process-group, mounted
+  filesystem, and real-conversion verification are blocked until an actual WSL2 host is
+  available. Do not describe WSL2 as verified from Docker or mocked platform tests.

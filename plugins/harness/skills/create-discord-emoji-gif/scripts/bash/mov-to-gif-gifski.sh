@@ -8,7 +8,7 @@ readonly DEFAULT_MIN_FPS=15
 readonly DEFAULT_MAX_FPS=24
 readonly DEFAULT_MIN_QUALITY=1
 readonly DEFAULT_MAX_QUALITY=100
-readonly MAX_SIGNED_INTEGER=9223372036854775807
+readonly MAX_EXACT_INTEGER=9007199254740991
 
 # Exit status contract, shared with the other scripts in this plugin:
 #   0  success, or --preflight found a usable environment
@@ -22,14 +22,30 @@ usage() {
   printf '\n'
   printf 'Options:\n'
   printf '  --preflight [INPUT_VIDEO]\n'
-  printf '                Check the environment and optional input, convert nothing, then exit\n'
-  printf '  --json        Report readiness and errors as JSON\n'
-  printf '  -h, --help    Print this message\n'
+  printf '                  Check the environment and optional input, convert nothing, then exit\n'
+  printf '  --json          Report readiness and errors as JSON\n'
+  printf '  --help, -h      Print this message\n'
+  printf '  --              Stop option parsing\n'
   printf '\n'
-  printf 'Environment: MAX_BYTES, GIF_SIZE, MIN_FPS, MAX_FPS, JOBS, '\
-'MIN_QUALITY, MAX_QUALITY, KEEP_WORK=1\n'
+  printf 'Environment:\n'
+  printf '  MAX_BYTES       Strict byte ceiling (default: 256000, maximum: %s)\n' "$MAX_EXACT_INTEGER"
+  printf '  GIF_SIZE        Square width and height (default: 128, maximum: %s)\n' "$MAX_EXACT_INTEGER"
+  printf '  MIN_FPS         Minimum frame rate (default: 15, maximum: %s)\n' "$MAX_EXACT_INTEGER"
+  printf '  MAX_FPS         Maximum frame rate (default: 24, maximum: 100)\n'
+  printf '  JOBS            Parallel work limit (default: logical CPUs minus 2, minimum 1, maximum: %s)\n' "$MAX_EXACT_INTEGER"
+  printf '  MIN_QUALITY    Minimum gifski quality (default: 1, maximum: 100)\n'
+  printf '  MAX_QUALITY    Maximum gifski quality (default: 100, maximum: 100)\n'
+  printf '  KEEP_WORK       Keep the work directory when set to 1 (default: unset)\n'
   printf '\n'
-  printf 'Exit status: 0 success, 2 cannot start, 1 conversion failed.\n'
+  printf 'All positive integers have an exact-value ceiling of %s.\n' "$MAX_EXACT_INTEGER"
+  printf '\n'
+  printf 'Exit status:\n'
+  printf '  0    Success or passed preflight\n'
+  printf '  1    Conversion work started and failed\n'
+  printf '  2    Work did not start\n'
+  printf '  129  SIGHUP\n'
+  printf '  130  SIGINT\n'
+  printf '  143  SIGTERM\n'
 }
 
 json_escape() {
@@ -74,14 +90,14 @@ is_positive_integer() {
 
   [[ "$value" =~ ^[1-9][0-9]*$ ]] || return 1
   length=${#value}
-  (( length < 19 )) && return 0
-  (( length > 19 )) && return 1
-  [[ "$value" < "$MAX_SIGNED_INTEGER" || "$value" == "$MAX_SIGNED_INTEGER" ]]
+  (( length < ${#MAX_EXACT_INTEGER} )) && return 0
+  (( length > ${#MAX_EXACT_INTEGER} )) && return 1
+  [[ "$value" < "$MAX_EXACT_INTEGER" || "$value" == "$MAX_EXACT_INTEGER" ]]
 }
 
 validate_positive_integer() {
   is_positive_integer "$2" || fail config_invalid \
-    "$1 must be a positive integer no greater than $MAX_SIGNED_INTEGER, got '$2'" \
+    "$1 must be a positive integer no greater than $MAX_EXACT_INTEGER, got '$2'" \
     "unset $1 to take the default, or set it to a positive integer"
 }
 
@@ -327,6 +343,41 @@ check_ffmpeg_capabilities() {
   done
 }
 
+ffprobe_reinstall_remedy() {
+  is_macos && printf 'brew reinstall ffmpeg' \
+    || printf 'reinstall ffmpeg from your package manager or a static build'
+}
+
+ffprobe_upgrade_remedy() {
+  is_macos && printf 'brew upgrade ffmpeg' \
+    || printf 'install an ffprobe build that includes it'
+}
+
+check_ffprobe_capabilities() {
+  local version_output=''
+  local help_output=''
+  local option
+
+  if ! version_output=$(ffprobe -v error -show_program_version -of json 2>&1) \
+    || [[ -z "$version_output" ]]; then
+    record_failure ffprobe_probe_failed \
+      'ffprobe is present but could not report its program version' \
+      "$(ffprobe_reinstall_remedy)"
+  fi
+  if ! help_output=$(ffprobe -hide_banner -h full 2>&1); then
+    record_failure ffprobe_probe_failed \
+      'ffprobe is present but could not report its options' \
+      "$(ffprobe_reinstall_remedy)"
+  else
+    for option in -of -select_streams -show_entries -count_frames; do
+      gifski_help_has_option "$help_output" "$option" || record_failure \
+        ffprobe_capability_missing \
+        "ffprobe is missing required option: $option" \
+        "$(ffprobe_upgrade_remedy)"
+    done
+  fi
+}
+
 check_gifski_capabilities() {
   local version_output=''
   local help_output=''
@@ -336,23 +387,21 @@ check_gifski_capabilities() {
     record_failure gifski_probe_failed \
       'gifski is present but could not report its version' \
       "$(is_macos && printf 'brew reinstall gifski' || printf 'reinstall gifski, for example with cargo install gifski or the prebuilt binary from https://gif.ski')"
-    return
   fi
   if ! help_output=$(gifski --help 2>&1); then
     record_failure gifski_probe_failed \
       'gifski is present but could not report its options' \
       "$(is_macos && printf 'brew reinstall gifski' || printf 'reinstall gifski, for example with cargo install gifski or the prebuilt binary from https://gif.ski')"
-    return
+  else
+    for option in --fps --width --height --quality --motion-quality \
+      --lossy-quality --repeat --quiet --output; do
+      if ! gifski_help_has_option "$help_output" "$option"; then
+        record_failure gifski_capability_missing \
+          "gifski is missing required option: $option" \
+          "$(is_macos && printf 'brew upgrade gifski' || printf 'upgrade gifski, for example with cargo install gifski or the prebuilt binary from https://gif.ski')"
+      fi
+    done
   fi
-
-  for option in --fps --width --height --quality --motion-quality \
-    --lossy-quality --repeat --quiet --output; do
-    if ! gifski_help_has_option "$help_output" "$option"; then
-      record_failure gifski_capability_missing \
-        "gifski is missing required option: $option" \
-        "$(is_macos && printf 'brew upgrade gifski' || printf 'upgrade gifski, for example with cargo install gifski or the prebuilt binary from https://gif.ski')"
-    fi
-  done
 }
 
 gifski_help_has_option() {
@@ -364,7 +413,8 @@ gifski_help_has_option() {
   while IFS= read -r line; do
     for word in $line; do
       word=${word%,}
-      [[ "$word" == "$wanted" ]] && return 0
+      [[ "$word" == "$wanted" || "$word" == "$wanted="* \
+        || "$word" == "$wanted["* ]] && return 0
     done
   done <<< "$help_output"
   return 1
@@ -394,6 +444,9 @@ preflight() {
     check_ffmpeg_capabilities decoder rawvideo ffv1 gif
     check_ffmpeg_capabilities muxer yuv4mpegpipe matroska null
     check_ffmpeg_capabilities demuxer yuv4mpegpipe matroska gif
+  fi
+  if command -v ffprobe >/dev/null 2>&1; then
+    check_ffprobe_capabilities
   fi
   if command -v gifski >/dev/null 2>&1; then
     check_gifski_capabilities
@@ -619,7 +672,7 @@ cleanup() {
 
   (( cleanup_started == 0 )) || return "$original_status"
   cleanup_started=1
-  trap - EXIT INT TERM
+  trap - EXIT HUP INT TERM
   set +e
 
   if [[ -n "${work_dir:-}" && -d "$work_dir" ]]; then
@@ -656,6 +709,7 @@ cleanup() {
 }
 
 trap cleanup EXIT
+trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -665,7 +719,7 @@ worker_source_cache=''
 worker_cleanup() {
   local status=$?
 
-  trap - EXIT INT TERM
+  trap - EXIT HUP INT TERM
   set +e
   if [[ -n "$active_pid" ]]; then
     kill -TERM "$active_pid" >/dev/null 2>&1
@@ -685,6 +739,7 @@ worker_setup() {
   active_file=''
   worker_source_cache=''
   trap worker_cleanup EXIT
+  trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
 }
@@ -1059,6 +1114,7 @@ winner_source_log="$work_dir/winner-source-ffmpeg.log"
 if ! prepare_source_cache winner-source "$best_fps" "$winner_source" \
   "$winner_source_log"; then
   winner_source_stderr=$(tr '\n' ' ' < "$winner_source_log")
+  winner_source_stderr=${winner_source_stderr% }
   die regeneration_failed "winner source preparation failed: $winner_source_stderr" \
     'fix the reported ffmpeg decode or filter error, then run the same conversion again'
 fi
@@ -1069,6 +1125,7 @@ if ! encode_candidate winner-regenerated "$best_fps" "$best_quality" \
   "$best_motion" "$best_lossy" "$regenerated_file" "$winner_source" \
   "$regenerated_log"; then
   regeneration_stderr=$(tr '\n' ' ' < "$regenerated_log")
+  regeneration_stderr=${regeneration_stderr% }
   die regeneration_failed "winner regeneration failed: $regeneration_stderr" \
     'fix the reported gifski error, then run the same conversion again'
 fi
