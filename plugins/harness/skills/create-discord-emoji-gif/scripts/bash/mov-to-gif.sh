@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+#
+# Deprecated. Superseded by the Node.js converter at ../node/mov-to-gif.js,
+# which is the documented explicit-gifsicle entrypoint in SKILL.md. This
+# script is kept only for hosts that cannot run Node.js 22 or newer, and does
+# not emit that converter's metadata report.
 
 set -euo pipefail
 

@@ -124,7 +124,8 @@ async function convert(state) {
   if (!winner) throw new shared.RunError('no_candidate', `no candidate fit below ${state.config.maxBytes} bytes`, 'increase MAX_BYTES, reduce GIF_SIZE or the FPS range, or lower MIN_QUALITY');
   const regenerated = await regenerateWinner(state, winner);
   const verified = await shared.publishVerified(regenerated, state.output, 'mov-to-gif-gifski', temporary => shared.verifyFinalGif(state.manager, state.commands, temporary, { size: state.config.gifSize, maxBytes: state.config.maxBytes, digest: winner.digest }), temporary => { state.outputTemp = temporary; });
-  shared.emitResult(`${winner.fps} FPS, quality ${winner.quality}, motion quality ${winner.motionQuality}, lossy quality ${winner.lossyQuality}, VMAF ${winner.score}`, state.output, verified);
+  const payload = shared.resultPayload({ script: state.scriptName, backend: 'gifski', input: state.input, output: state.output, config: state.config, winner, verified });
+  shared.emitResult(payload, state.json);
 }
 
 async function main(argv = process.argv.slice(2), env = process.env) {
@@ -132,7 +133,8 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   let state;
   try {
     shared.validateNodeVersion();
-    parsed = shared.parseArguments(argv, path.basename(process.argv[1] || 'mov-to-gif-gifski.js'));
+    const scriptName = path.basename(process.argv[1] || 'mov-to-gif-gifski.js');
+    parsed = shared.parseArguments(argv, scriptName);
     if (parsed.help) { process.stdout.write(shared.usage('gifski', path.basename(process.argv[1]))); return 0; }
     const config = shared.readConfiguration(env, 'gifski');
     if (parsed.positional[0]) shared.validateInput(parsed.positional[0]);
@@ -147,7 +149,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     shared.emitWarnings(warnings, parsed.json);
     let workDir;
     try { workDir = fs.mkdtempSync(path.join(env.TMPDIR || os.tmpdir(), 'mov-to-gif-gifski.')); } catch { throw new shared.StartupError('work_directory_unusable', `could not create a work directory under ${env.TMPDIR || os.tmpdir()}`, 'set TMPDIR to a writable local directory and try again'); }
-    state = { ...outputState, input: parsed.positional[0], config, manager, commands: preflight.commands, workDir, outputTemp: '', json: parsed.json };
+    state = { ...outputState, input: parsed.positional[0], config, manager, commands: preflight.commands, workDir, outputTemp: '', json: parsed.json, scriptName };
     state.workers = calculateGifskiWorkers(config);
     state.rayonThreads = calculateRayonThreads(config, state.workers);
     const uninstall = manager.installSignalHandlers((_signal, exitCode) => {

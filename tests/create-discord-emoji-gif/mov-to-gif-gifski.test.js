@@ -139,12 +139,16 @@ test('skill instructions define the Discord target and fallback rules', () => {
   assert.match(skill, /3 seconds or less/);
   assert.match(skill, /Use gifski by default/);
   assert.match(skill, /Node\.js 22\.0\.0 or newer/);
-  assert.match(skill, /fall through to Node\.js gifsicle only for/);
-  assert.match(skill, /fall through only from Node\.js gifski\n   `no_candidate`/);
-  assert.match(skill, /An explicit gifsicle request selects Node\.js gifsicle/);
-  assert.match(skill, /A normal backend comparison runs both Node\.js implementations/);
+  assert.match(skill, /must be installed and stop there/);
+  assert.match(skill, /fall through to\s+gifsicle only for/);
+  assert.match(skill, /fall through only from gifski `no_candidate`/);
+  assert.match(skill, /A normal backend comparison runs both entrypoints/);
   assert.match(skill, /`min\(FPS count, max\(1, floor\(JOBS \/ 2\)\)\)`/);
   assert.match(skill, /`RAYON_NUM_THREADS = clamp\(floor\(JOBS \/ encoder workers\), 2, 8\)`/);
+  assert.match(skill, /^## Deprecated$/m);
+  assert.match(skill, /They exist only for hosts that cannot run Node\.js 22/);
+  assert.match(skill, /not run any further command against the input or the output/);
+  assert.match(skill, /confirmed the digest again after/);
 
   const agentMetadata = fs.readFileSync(path.join(
     REPO_ROOT,

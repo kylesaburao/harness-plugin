@@ -88,3 +88,61 @@ test('VMAF parser uses the final numeric score', () => {
   assert.equal(shared.parseVmafScore('VMAF score: 1.0\nVMAF score: 97.125\n'), '97.125');
   assert.throws(() => shared.parseVmafScore('no score'), { code: 'vmaf_nonnumeric' });
 });
+
+test('publishVerified skips the post-rename digest check when verify() returns no digest', async () => {
+  const directory = temporaryDirectory('node-publication-no-digest.');
+  const source = path.join(directory, 'source.gif');
+  const output = path.join(directory, 'output.gif');
+  fs.writeFileSync(source, 'plain output');
+  try {
+    const verified = await shared.publishVerified(source, output, 'test', async () => 'verified');
+    assert.equal(verified, 'verified');
+    assert.equal(fs.readFileSync(output, 'utf8'), 'plain output');
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('resultPayload and emitResult report the file that was actually published, both backends', () => {
+  const gifskiConfig = { gifSize: 128, maxBytes: 256000 };
+  const gifskiWinner = { fps: 15, quality: 90, motionQuality: 90, lossyQuality: 90, score: '85.587572' };
+  const gifskiVerified = { dimensions: '128x128', frameCount: 60, duration: '2.500000', bytes: 227780, digest: 'a'.repeat(64) };
+  const gifskiPayload = shared.resultPayload({
+    script: 'mov-to-gif-gifski.js', backend: 'gifski',
+    input: '/tmp/clip.mov', output: '/tmp/clip_128x128.gif',
+    config: gifskiConfig, winner: gifskiWinner, verified: gifskiVerified,
+  });
+  assert.equal(gifskiPayload.selected, '15 FPS, quality 90, motion quality 90, lossy quality 90, VMAF 85.587572');
+  assert.equal(gifskiPayload.headroomBytes, 256000 - 227780);
+  assert.deepEqual(gifskiPayload.parameters, { quality: 90, motionQuality: 90, lossyQuality: 90 });
+  assert.equal(gifskiPayload.sha256, gifskiVerified.digest);
+  assert.ok(gifskiPayload.checks.length > 0);
+  assert.ok(gifskiPayload.checks.every(check => check.status === 'pass'));
+
+  const gifsicleConfig = { gifSize: 64, maxBytes: 100000 };
+  const gifsicleWinner = { fps: 8, colors: 100, dither: 2, score: '80.1' };
+  const gifsicleVerified = { dimensions: '64x64', frameCount: 4, duration: '0.500000', bytes: 5000, digest: 'b'.repeat(64) };
+  const gifsiclePayload = shared.resultPayload({
+    script: 'mov-to-gif.js', backend: 'gifsicle',
+    input: '/tmp/clip.mov', output: '/tmp/clip_64x64.gif',
+    config: gifsicleConfig, winner: gifsicleWinner, verified: gifsicleVerified,
+  });
+  assert.equal(gifsiclePayload.selected, '8 FPS, 100 colors, dither 2, VMAF 80.1');
+  assert.deepEqual(gifsiclePayload.parameters, { colors: 100, dither: 2 });
+
+  const originalWrite = process.stdout.write;
+  let captured = '';
+  process.stdout.write = chunk => { captured += chunk; return true; };
+  try { shared.emitResult(gifskiPayload, false); } finally { process.stdout.write = originalWrite; }
+  const lines = captured.split('\n');
+  assert.equal(lines[0], 'Selected: 15 FPS, quality 90, motion quality 90, lossy quality 90, VMAF 85.587572');
+  assert.equal(lines[1], 'Output: /tmp/clip_128x128.gif');
+  assert.equal(lines[2], 'Verified: 128x128, 60 frames, 2.500000s, 227780 bytes');
+  assert.ok(lines.some(line => line.startsWith('Report: mov-to-gif-gifski.js, gifski backend')));
+  assert.equal(lines.filter(line => line.startsWith('Check: PASS')).length, gifskiPayload.checks.length);
+  assert.ok(lines.some(line => line.includes('sha256')));
+
+  let jsonCaptured = '';
+  process.stdout.write = chunk => { jsonCaptured += chunk; return true; };
+  try { shared.emitResult(gifskiPayload, true); } finally { process.stdout.write = originalWrite; }
+  const parsed = JSON.parse(jsonCaptured);
+  assert.deepEqual(parsed.result, gifskiPayload);
+});

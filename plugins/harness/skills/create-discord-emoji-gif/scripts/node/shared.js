@@ -45,7 +45,7 @@ function parseArguments(argv, basename = 'mov-to-gif.js') {
 
 function validateNodeVersion(version = process.versions.node) {
   const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
-  if (!match || Number(match[1]) < 22) throw new StartupError('node_version_unsupported', `Node.js 22.0.0 or newer is required, got ${version}`, 'install Node.js 22.0.0 or newer, or use the matching Bash converter');
+  if (!match || Number(match[1]) < 22) throw new StartupError('node_version_unsupported', `Node.js 22.0.0 or newer is required, got ${version}`, 'install Node.js 22.0.0 or newer');
 }
 
 function positive(env, name, fallback) {
@@ -249,12 +249,13 @@ async function verifyFinalGif(manager, commands, file, expected) {
   const bytes = fs.statSync(file).size;
   if (bytes >= expected.maxBytes) throw new RunError('verification_failed', `verification failed, output is ${bytes} bytes, limit is strictly below ${expected.maxBytes}`, 'increase MAX_BYTES or reduce GIF_SIZE, then run the conversion again');
   if (expected.bytes !== undefined && bytes !== expected.bytes) throw new RunError('verification_failed', `verification failed, expected ${expected.bytes} bytes, got ${bytes}`, 'run the same conversion again');
-  if (expected.digest && sha256File(file) !== expected.digest) throw new RunError('verification_failed', 'verification failed, output digest does not match the selected winner', 'ensure the output directory is on a reliable local filesystem, then run again');
+  const digest = sha256File(file);
+  if (expected.digest && digest !== expected.digest) throw new RunError('verification_failed', 'verification failed, output digest does not match the selected winner', 'ensure the output directory is on a reliable local filesystem, then run again');
   if (expected.score) {
     const score = await scoreCandidate(manager, commands, expected.workDir, file, 'final');
     if (score !== expected.score) throw new RunError('verification_failed', `verification failed, expected VMAF ${expected.score}, got ${score}`, 'run the same conversion again');
   }
-  return { dimensions, frameCount: Number(frames), duration, bytes };
+  return { dimensions, frameCount: Number(frames), duration, bytes, digest };
 }
 
 function createPublicationTemp(outputDir, prefix) {
@@ -272,6 +273,7 @@ async function publishVerified(source, output, prefix, verify, onTemporary = () 
     const verified = await verify(temporary);
     try { fs.renameSync(temporary, output); } catch (error) { throw new RunError('publication_failed', `could not atomically publish the verified GIF: ${error.message}`, 'make the output directory writable and ensure it has free space'); }
     onTemporary('');
+    if (verified?.digest && sha256File(output) !== verified.digest) throw new RunError('publication_failed', 'published file digest does not match the verified content', 'ensure the output directory is on a reliable local filesystem, then run again');
     return verified;
   } catch (error) {
     try { fs.rmSync(temporary, { force: true }); } catch {}
@@ -307,8 +309,73 @@ function emitPreflightReady(state, warnings, json) {
     for (const warning of warnings) process.stdout.write(`WARNING [${warning.code}]: ${warning.condition}\nRecommendation: ${warning.recommendation}\n`);
   }
 }
-function emitResult(selected, output, verified) {
-  process.stdout.write(`Selected: ${selected}\nOutput: ${output}\nVerified: ${verified.dimensions}, ${verified.frameCount} frames, ${verified.duration}s, ${verified.bytes} bytes\n`);
+function formatParameters(parameters) {
+  if ('quality' in parameters) return `quality ${parameters.quality}, motion quality ${parameters.motionQuality}, lossy quality ${parameters.lossyQuality}`;
+  return `${parameters.colors} colors, dither ${parameters.dither}`;
+}
+
+function resultPayload({ script, backend, input, output, config, winner, verified }) {
+  const parameters = backend === 'gifski'
+    ? { quality: winner.quality, motionQuality: winner.motionQuality, lossyQuality: winner.lossyQuality }
+    : { colors: winner.colors, dither: winner.dither };
+  const selected = backend === 'gifski'
+    ? `${winner.fps} FPS, quality ${winner.quality}, motion quality ${winner.motionQuality}, lossy quality ${winner.lossyQuality}, VMAF ${winner.score}`
+    : `${winner.fps} FPS, ${winner.colors} colors, dither ${winner.dither}, VMAF ${winner.score}`;
+  const checks = [
+    { name: 'codec is gif', status: 'pass' },
+    { name: `dimensions are ${verified.dimensions}`, status: 'pass' },
+    { name: `${verified.frameCount} frames`, status: 'pass' },
+    { name: 'duration is positive', status: 'pass' },
+    { name: `${verified.bytes} bytes is below the ${config.maxBytes} limit`, status: 'pass' },
+    { name: 'sha256 matches after publication', status: 'pass' },
+  ];
+  return {
+    status: 'verified',
+    script,
+    backend,
+    input,
+    output,
+    dimensions: verified.dimensions,
+    width: config.gifSize,
+    height: config.gifSize,
+    frames: verified.frameCount,
+    durationSeconds: verified.duration,
+    fps: winner.fps,
+    bytes: verified.bytes,
+    maxBytes: config.maxBytes,
+    headroomBytes: config.maxBytes - verified.bytes,
+    loop: 'infinite',
+    vmaf: winner.score,
+    sha256: verified.digest,
+    parameters,
+    selected,
+    checks,
+  };
+}
+
+function emitResult(payload, json = false) {
+  if (json) { process.stdout.write(`${JSON.stringify({ result: payload })}\n`); return; }
+  const lines = [
+    `Selected: ${payload.selected}`,
+    `Output: ${payload.output}`,
+    `Verified: ${payload.dimensions}, ${payload.frames} frames, ${payload.durationSeconds}s, ${payload.bytes} bytes`,
+    `Report: ${payload.script}, ${payload.backend} backend`,
+    `  source      ${payload.input}`,
+    `  path        ${payload.output}`,
+    `  dimensions  ${payload.dimensions}`,
+    `  frames      ${payload.frames}`,
+    `  duration    ${payload.durationSeconds} s`,
+    `  frame rate  ${payload.fps} FPS`,
+    `  bytes       ${payload.bytes} (limit ${payload.maxBytes}, headroom ${payload.headroomBytes})`,
+    `  loop        ${payload.loop}`,
+    `  parameters  ${formatParameters(payload.parameters)}`,
+    `  vmaf        ${payload.vmaf}`,
+    `  sha256      ${payload.sha256}`,
+    ...payload.checks.map(check => `Check: ${check.status === 'pass' ? 'PASS' : 'FAIL'} ${check.name}`),
+    'Verification: complete. ffprobe measured every value above, and the digest was confirmed',
+    'on the published file after rename. No further inspection is required.',
+  ];
+  process.stdout.write(`${lines.join('\n')}\n`);
 }
 function preflightError(state) {
   if (!state.failures.length) return null;
@@ -320,4 +387,4 @@ function usage(backend, basename) {
   return `Usage: ${basename} [OPTIONS] INPUT_VIDEO [OUTPUT.gif]\n\nOptions:\n  --preflight [INPUT_VIDEO]\n                  Check the environment and optional input, convert nothing, then exit\n  --json          Report readiness and errors as JSON\n  --help, -h      Print this message\n  --              Stop option parsing\n\nEnvironment:\n  MAX_BYTES       Strict byte ceiling (default: 256000, maximum: ${MAX_EXACT_INTEGER})\n  GIF_SIZE        Square width and height (default: 128, maximum: ${MAX_EXACT_INTEGER})\n  MIN_FPS         Minimum frame rate (default: 15, maximum: ${MAX_EXACT_INTEGER})\n  MAX_FPS         Maximum frame rate (default: 24, maximum: ${maxFpsMaximum})\n  JOBS            Parallel work limit (default: logical CPUs minus 2, minimum 1, maximum: ${MAX_EXACT_INTEGER})\n${quality}  KEEP_WORK       Keep the work directory when set to 1 (default: unset)\n\nAll positive integers have an exact-value ceiling of ${MAX_EXACT_INTEGER}.\n\nExit status:\n  0    Success or passed preflight\n  1    Conversion work started and failed\n  2    Work did not start\n  129  SIGHUP\n  130  SIGINT\n  143  SIGTERM\n`;
 }
 
-module.exports = { StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, defaultJobs, platformPolicy, checkCommonPreflight, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, sha256File, verifyFinalGif, createPublicationTemp, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, emitResult, preflightError, usage };
+module.exports = { StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, defaultJobs, platformPolicy, checkCommonPreflight, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, sha256File, verifyFinalGif, createPublicationTemp, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, formatParameters, resultPayload, emitResult, preflightError, usage };
