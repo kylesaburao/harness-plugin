@@ -99,6 +99,41 @@ Module._load = function(request, ...args) {
   assert.equal(JSON.parse(result.stderr).error.code, 'usage_error');
 });
 
+// archiver became ESM-only at 8.0.0 and lost its default export, so loadArchiver reaches
+// for a named ZipArchive. A missing property is undefined rather than a throw, so an
+// archiver that resolves but no longer carries that export would clear the preflight and
+// only fail once the run is already underway. This stubs that exact shape: the module
+// loads, the export is gone, and the environment check has to be what stops the run.
+test('CLI rejects an archiver that resolves without ZipArchive', async (t) => {
+  const root = await temporaryRoot(t, 'backup-cli-archiver-shape-');
+  const { source, output } = await makeDirectories(root, ['source', 'output']);
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: output,
+    targetDirectories: [output],
+  }));
+  const preload = path.join(root, 'hollow-archiver.cjs');
+  await fsp.writeFile(preload, `const Module = require('node:module');
+const original = Module._load;
+Module._load = function(request, ...args) {
+  if (request === 'archiver') return {};
+  return original.call(this, request, ...args);
+};
+`);
+
+  const result = await runCli(t, ['--json', config], {
+    input: 'yes\n',
+    environment: { NODE_OPTIONS: `--require=${preload}` },
+  });
+
+  assert.equal(result.exitCode, EXIT.USAGE);
+  const { error } = JSON.parse(result.stderr);
+  assert.equal(error.code, 'dependency_missing');
+  assert.match(error.condition, /does not export ZipArchive/);
+  assert.deepEqual(await fsp.readdir(output), []);
+});
+
 test('readAndValidate rejects each invalid configuration shape', async (t) => {
   const root = await temporaryRoot(t);
   const cases = [

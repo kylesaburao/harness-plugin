@@ -51,21 +51,33 @@ class StartupError extends Error {
 // demand. A top-level require turned a missing install into a MODULE_NOT_FOUND
 // stack trace instead of an answerable diagnostic. Repeat calls are free:
 // require caches the module itself. archiver is ESM-only as of 8.0.0; Node's
-// require(esm) support handles that, but the package has no default export
-// anymore, so this wraps ZipArchive in the zero-argument factory shape
-// createArchive expects.
+// require(esm) support handles that, but the package no longer has a default
+// export, so this wraps its named ZipArchive in the zero-argument factory shape
+// createArchive expects. The export is checked here rather than left to the
+// wrapper: a resolvable archiver that no longer carries ZipArchive would
+// otherwise pass this preflight and fail much later, mid-run, as a bare
+// "ZipArchive is not a constructor".
 function loadArchiver() {
+  const remedy = `npm install --omit=dev --prefix ${path.resolve(__dirname, '..')}`;
+  let archiver;
   try {
-    const { ZipArchive } = require('archiver');
-    return (options) => new ZipArchive(options);
+    archiver = require('archiver');
   } catch (error) {
     if (error.code !== 'MODULE_NOT_FOUND') throw error;
     throw new StartupError(
       'dependency_missing',
       'the archiver package is not installed, so no ZIP can be written',
-      `npm install --omit=dev --prefix ${path.resolve(__dirname, '..')}`,
+      remedy,
     );
   }
+  if (typeof archiver.ZipArchive !== 'function') {
+    throw new StartupError(
+      'dependency_missing',
+      'the installed archiver package does not export ZipArchive, so no ZIP can be written',
+      remedy,
+    );
+  }
+  return (options) => new archiver.ZipArchive(options);
 }
 
 function nodeVersionAtLeast(version, minimum) {
@@ -84,7 +96,7 @@ function checkEnvironment() {
     throw new StartupError(
       'node_version_unsupported',
       `Node.js ${MINIMUM_NODE.join('.')} or newer is required, running ${process.version}`,
-      'install Node.js 22.12.0 or newer',
+      `install Node.js ${MINIMUM_NODE.join('.')} or newer`,
     );
   }
   loadArchiver();
