@@ -26,15 +26,9 @@ const {
   resolveRunLockPath,
   shortTempPath,
 } = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
+const { directoryDetails, runCli, successfulArchiveFactory, temporaryRoot } = require('./test-helpers.js');
 
-const SCRIPT = path.resolve(__dirname, '../../plugins/harness/skills/back-up-directories/scripts/backup.js');
 const FIXED_DATE = new Date(2026, 6, 11, 12);
-
-async function temporaryRoot(t, prefix = 'backup-test-') {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), prefix));
-  t.after(() => fsp.rm(root, { recursive: true, force: true }));
-  return root;
-}
 
 async function makeDirectories(root, names) {
   const result = Object.fromEntries(names.map((name) => [name, path.join(root, name)]));
@@ -42,54 +36,6 @@ async function makeDirectories(root, names) {
   return result;
 }
 
-async function directoryDetails(directory, label) {
-  const canonicalPath = await fsp.realpath(directory);
-  const details = await fsp.stat(canonicalPath, { bigint: true });
-  return {
-    label,
-    configuredPath: directory,
-    canonicalPath,
-    identity: `${details.dev}:${details.ino}`,
-  };
-}
-
-function successfulArchiveFactory(contents = 'zip-data') {
-  return () => {
-    const archive = new EventEmitter();
-    archive.pipe = (output) => { archive.output = output; };
-    archive.directory = () => {};
-    archive.finalize = async () => { archive.output.end(contents); };
-    archive.abort = () => archive.output?.destroy();
-    return archive;
-  };
-}
-
-async function runCli(t, args, input = '', environment = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
-  const child = spawn(process.execPath, [SCRIPT, ...args], {
-    env: { ...process.env, ...environment },
-    stdio: ['pipe', 'pipe', 'pipe'],
-    signal: controller.signal,
-  });
-  t.after(() => {
-    clearTimeout(timeout);
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-  });
-  let stdout = '';
-  let stderr = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk) => { stdout += chunk; });
-  child.stderr.on('data', (chunk) => { stderr += chunk; });
-  child.stdin.end(input);
-  const exitCode = await new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', resolve);
-  });
-  clearTimeout(timeout);
-  return { exitCode, stdout, stderr };
-}
 
 test('backupFilename sanitizes names and emits a stable dated filename', () => {
   assert.equal(
@@ -836,7 +782,10 @@ test('CLI rejects a relative BACKUP_LOCK_PATH before creating a lock', async (t)
     targetDirectories: [output],
   }));
 
-  const result = await runCli(t, [config], 'yes\n', { BACKUP_LOCK_PATH: 'relative.lock' });
+  const result = await runCli(t, [config], {
+    input: 'yes\n',
+    environment: { BACKUP_LOCK_PATH: 'relative.lock' },
+  });
 
   assert.equal(result.exitCode, EXIT.VALIDATION);
   assert.match(result.stderr, /BACKUP_LOCK_PATH must be an absolute path/);
@@ -860,7 +809,7 @@ test('CLI cancellation leaves backup directories untouched', async (t) => {
     targetDirectories: [target],
   }));
 
-  const result = await runCli(t, [config], 'n\n');
+  const result = await runCli(t, [config], { input: 'n\n' });
 
   assert.equal(result.exitCode, 0, result.stderr);
   assert.match(result.stdout, /Targets \(1\)\n-----------\n1\. .*source_Backup_.*\.zip\n   Action             will be created/);
@@ -889,7 +838,10 @@ test('CLI creates a real ZIP, reports completion, and releases its lock', async 
   }));
 
   const lockPath = path.join(root, '.backup-tool.lock');
-  const result = await runCli(t, [config], 'yes\n', { BACKUP_LOCK_PATH: lockPath });
+  const result = await runCli(t, [config], {
+    input: 'yes\n',
+    environment: { BACKUP_LOCK_PATH: lockPath },
+  });
 
   assert.equal(result.exitCode, 0, result.stderr);
   assert.match(result.stdout, /Backup preview\n==============/);

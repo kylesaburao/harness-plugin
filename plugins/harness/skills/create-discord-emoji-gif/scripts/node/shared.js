@@ -72,7 +72,7 @@ function readConfiguration(env, backend) {
     for (const [name, value] of [['MIN_QUALITY', config.minQuality], ['MAX_QUALITY', config.maxQuality]]) {
       if (value > 100) throw new StartupError('config_invalid', `${name} must be between 1 and 100, got '${value}'`, `set ${name} to an integer from 1 through 100`);
     }
-    if (config.maxFps > 100) throw new StartupError('config_invalid', `MAX_FPS (${config.maxFps}) must not exceed 100, gifski's maximum frame rate`, 'set MAX_FPS to 100 or lower, or use mov-to-gif.sh for higher frame rates');
+    if (config.maxFps > 100) throw new StartupError('config_invalid', `MAX_FPS (${config.maxFps}) must not exceed 100, gifski's maximum frame rate`, 'set MAX_FPS to 100 or lower, or use mov-to-gif.js for higher frame rates');
     if (config.minQuality > config.maxQuality) throw new StartupError('config_invalid', `MIN_QUALITY (${config.minQuality}) must not exceed MAX_QUALITY (${config.maxQuality})`, 'set MIN_QUALITY at or below MAX_QUALITY, or unset both to take the defaults');
   }
   return config;

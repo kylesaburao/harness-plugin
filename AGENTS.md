@@ -14,7 +14,7 @@ Claude-only component kinds with no Codex equivalent (e.g. `plugins/harness/outp
 
 ## Skills that run scripts
 
-Only `plugins/harness/` is installed by the plugin. Anything a skill executes therefore lives inside that skill's own directory, never at the repository root:
+Only `plugins/harness/` is installed by the plugin. Skill entrypoints and skill-specific deterministic code live under `plugins/harness/skills/<skill>/`:
 
 ```
 plugins/harness/skills/<skill>/
@@ -24,7 +24,9 @@ plugins/harness/skills/<skill>/
   package.json  only when the skill has npm dependencies
 ```
 
-The no-dual-copy rule applies here too. A script has one home, under the skill that runs it, and other things point at that path rather than keeping a second copy.
+A deterministic module used by two or more production skills can live under `plugins/harness/shared/` only when it implements the same non-trivial operation, has a narrow API, and all consumers need coordinated changes. Every imported production module remains under `plugins/harness/` so plugin installation includes it. Do not create a shared module for superficial structural similarity.
+
+Shared production code does not relax the requirement that every `SKILL.md` contains its own complete instructions and contract. The GIF runner is skill-local because only one skill consumes it. The backup helper is test-only because production never imports it.
 
 New skill executables use Node.js by default. Use the oldest supported Node.js version that
 provides the required standard-library APIs, and document that minimum in the skill. Use
@@ -36,11 +38,14 @@ not rewrite an existing executable only to make its runtime match this default.
 
 Tests live at the repository root, in `tests/<skill-name>/`, never inside the skill.
 
-Installing a plugin copies the whole plugin directory into the harness's plugin cache, and neither Claude Code nor Codex supports excluding files from that copy. Anything under `plugins/harness/` is therefore shipped to every install. Keeping tests outside that tree is the only mechanism that keeps them out, and it costs nothing: tests reach their subject by relative path, and they run from a clone, where both trees exist.
+Tests, fixtures, benchmarks, and development-only helpers remain at repository root and never ship. Installing a plugin copies the whole plugin directory into the harness's plugin cache, and neither Claude Code nor Codex supports excluding files from that copy. Anything under `plugins/harness/` is therefore shipped to every install. Tests reach their subject by relative path, and they run from a clone, where both trees exist.
+
+Documentation-restatement tests are intentionally retained. Test stable public behavior at the lowest useful layer, plus a small consumer integration test. Remove runtime parity tests when the obsolete runtime is removed. Remove implementation-detail tests when retained observable tests cover the contract. Treat performance comparisons as execution evidence, not permanent timing tests, unless timing is already a public contract.
 
 ```sh
 node --test tests/back-up-directories/*.test.js
 node --test tests/wake-desktop/*.test.js
+node --test tests/create-discord-emoji-gif/*.test.js
 node --test tests/bump-version/*.test.js
 node --test tests/git-hooks/*.test.js
 python3 -m unittest discover -s tests/write-asd-ste100 -v

@@ -3,16 +3,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const {
+  repoRoot,
+  skillDir,
+  temporaryDirectory,
+  makeExecutable,
+  runEntrypoint,
+} = require('./test-helpers');
 
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const SCRIPT = path.join(
-  REPO_ROOT,
-  'plugins/harness/skills/create-discord-emoji-gif/scripts/bash/mov-to-gif-gifski.sh',
-);
-const BASH = '/bin/bash';
+const REPO_ROOT = repoRoot;
+const SCRIPT = path.join(skillDir, 'scripts/node/mov-to-gif-gifski.js');
 const FFMPEG = 'ffmpeg';
 const FFPROBE = 'ffprobe';
 const BASE_ENV = {
@@ -26,7 +28,7 @@ const BASE_ENV = {
   JOBS: '1',
 };
 
-const suiteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mov-to-gif-gifski-tests.'));
+const suiteDir = temporaryDirectory('mov-to-gif-gifski-tests.');
 const inputWithSpaces = path.join(suiteDir, 'input with spaces.mp4');
 const movInput = path.join(suiteDir, 'input.mov');
 const longInput = path.join(suiteDir, 'long-input.mp4');
@@ -42,19 +44,17 @@ function run(command, args, options = {}) {
 }
 
 function runScript(args, env = {}) {
-  return run(BASH, [SCRIPT, ...args], {
-    env: { ...BASE_ENV, ...env },
-  });
-}
-
-function makeExecutable(file, contents) {
-  fs.writeFileSync(file, contents, { mode: 0o755 });
+  return runEntrypoint(process.execPath, SCRIPT, args, { ...BASE_ENV, ...env });
 }
 
 function commandPath(command) {
-  const result = run('/bin/sh', ['-c', `command -v ${command}`]);
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.trim();
+  for (const directory of process.env.PATH.split(path.delimiter)) {
+    const candidate = path.join(directory, command);
+    try {
+      if (fs.statSync(candidate).isFile() && (fs.statSync(candidate).mode & 0o111)) return candidate;
+    } catch {}
+  }
+  assert.fail(`required command not found: ${command}`);
 }
 
 function verifyGif(file, maxBytes, expectedSize = 64) {
@@ -117,14 +117,8 @@ test.after(() => {
 test('help reports the sibling interface and quality controls', () => {
   const result = runScript(['--help']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Usage: mov-to-gif-gifski\.sh/);
+  assert.match(result.stdout, /Usage: mov-to-gif-gifski\.js/);
   assert.match(result.stdout, /MIN_QUALITY[\s\S]*MAX_QUALITY/);
-  const source = fs.readFileSync(SCRIPT, 'utf8');
-  const requiredCommands = source.match(/required_commands=\(([^)]*)\)/)?.[1];
-  const removedCommand = ['mk', 'fifo'].join('');
-  assert.ok(requiredCommands);
-  assert.equal(requiredCommands.split(/\s+/).includes(removedCommand), false);
-  assert.match(source, /^readonly DEFAULT_MIN_QUALITY=1$/m);
 });
 
 test('skill instructions define the Discord target and fallback rules', () => {
@@ -142,13 +136,11 @@ test('skill instructions define the Discord target and fallback rules', () => {
   assert.match(skill, /must be installed and stop there/);
   assert.match(skill, /fall through to\s+gifsicle only for/);
   assert.match(skill, /fall through only from gifski `no_candidate`/);
-  assert.match(skill, /A normal backend comparison runs both entrypoints/);
+  assert.match(skill, /For an explicit backend comparison, dispatch both entrypoints/);
   assert.match(skill, /`min\(FPS count, max\(1, floor\(JOBS \/ 2\)\)\)`/);
   assert.match(skill, /`RAYON_NUM_THREADS = clamp\(floor\(JOBS \/ encoder workers\), 2, 8\)`/);
-  assert.match(skill, /^## Deprecated$/m);
-  assert.match(skill, /They exist only for hosts that cannot run Node\.js 22/);
   assert.match(skill, /not run any further command against the input or the output/);
-  assert.match(skill, /confirmed the digest again after/);
+  assert.match(skill, /confirmed the digest after the atomic rename/);
 
   const agentMetadata = fs.readFileSync(path.join(
     REPO_ROOT,
@@ -156,73 +148,6 @@ test('skill instructions define the Discord target and fallback rules', () => {
   ), 'utf8');
   assert.match(agentMetadata, /display_name: "Discord Emoji GIF"/);
   assert.match(agentMetadata, /\$create-discord-emoji-gif/);
-});
-
-test('plain and JSON preflight report the selected dependencies', () => {
-  let result = runScript(['--preflight']);
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^READY:/m);
-  assert.match(result.stdout, /^gifski: /m);
-
-  result = runScript(['--preflight', '--json']);
-  assert.equal(result.status, 0, result.stderr);
-  const report = JSON.parse(result.stdout);
-  assert.equal(report.status, 'ready');
-  assert.ok(report.commands.ffmpeg);
-  assert.ok(report.commands.ffprobe);
-  assert.ok(report.commands.gifski);
-});
-
-test('JSON preflight identifies a missing gifski command', () => {
-  const expectedRemedy = process.platform === 'darwin'
-    ? 'brew install gifski'
-    : 'cargo install gifski, or install the prebuilt binary from https://gif.ski';
-  const result = run(BASH, [SCRIPT, '--preflight', '--json'], {
-    env: { ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' },
-  });
-  assert.equal(result.status, 2);
-  const report = JSON.parse(result.stderr);
-  assert.equal(report.error.code, 'preflight_failed');
-  assert.ok(report.error.failures.some(
-    (failure) => failure.condition === 'required command not found: gifski'
-      && failure.remedy === expectedRemedy,
-  ));
-});
-
-test('preflight rejects an unusable gifski executable', () => {
-  const mockDir = fs.mkdtempSync(path.join(suiteDir, 'mock-unusable.'));
-  makeExecutable(path.join(mockDir, 'gifski'), '#!/bin/sh\nexit 1\n');
-  const result = runScript(['--preflight', '--json'], {
-    PATH: `${mockDir}:${process.env.PATH}`,
-  });
-  assert.equal(result.status, 2);
-  const report = JSON.parse(result.stderr);
-  assert.ok(report.error.failures.some(
-    (failure) => failure.code === 'gifski_probe_failed',
-  ));
-});
-
-test('preflight rejects gifski when a required option is missing', () => {
-  const mockDir = fs.mkdtempSync(path.join(suiteDir, 'mock-options.'));
-  makeExecutable(path.join(mockDir, 'gifski'), `#!/bin/sh
-if [ "$1" = "--version" ]; then
-  echo 'gifski test'
-  exit 0
-fi
-if [ "$1" = "--help" ]; then
-  echo '--fps --width --height --quality --lossy-quality --repeat --quiet --output'
-  exit 0
-fi
-exit 1
-`);
-  const result = runScript(['--preflight', '--json'], {
-    PATH: `${mockDir}:${process.env.PATH}`,
-  });
-  assert.equal(result.status, 2);
-  const report = JSON.parse(result.stderr);
-  assert.ok(report.error.failures.some(
-    (failure) => failure.condition === 'gifski is missing required option: --motion-quality',
-  ));
 });
 
 test('usage and configuration failures exit 2 with stable codes', () => {
@@ -338,7 +263,8 @@ test('a tight limit is strict and a one-byte-smaller ceiling fails without repla
     MAX_BYTES: String(exactBytes),
   });
   assert.equal(result.status, 1, result.stderr);
-  assert.equal(JSON.parse(result.stderr).error.code, 'no_candidate');
+  const jsonLine = result.stderr.split('\n').find(line => line.startsWith('{'));
+  assert.equal(JSON.parse(jsonLine).error.code, 'no_candidate');
   assert.equal(fs.readFileSync(tightOutput, 'utf8'), 'existing output\n');
   assert.equal(
     fs.readdirSync(suiteDir).some((name) => name.startsWith('.mov-to-gif-gifski-output.')),
@@ -374,7 +300,7 @@ test('worker and Rayon settings cover pinned, narrow, and default FPS ranges', (
   }
 });
 
-test('KEEP_WORK retains deterministic candidates, metadata, logs, and caches', () => {
+test('KEEP_WORK retains deterministic candidates and caches', () => {
   const output = path.join(suiteDir, 'kept-work.gif');
   const result = runScript([inputWithSpaces, output], { KEEP_WORK: '1' });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
@@ -382,18 +308,13 @@ test('KEEP_WORK retains deterministic candidates, metadata, logs, and caches', (
   assert.ok(kept, result.stderr);
   try {
     const names = fs.readdirSync(kept);
-    const pipeSuffix = ['.', 'pipe'].join('');
-    const fifoMarker = ['.', 'mk', 'fifo'].join('');
-    assert.ok(names.includes('all-results.txt'));
-    assert.ok(names.includes('result-f8.txt'));
     assert.ok(names.includes('f8-q80-m80-l80.gif'));
     assert.ok(names.includes('source-f8.y4m'));
+    assert.ok(names.includes('vmaf-reference.mkv'));
     assert.ok(names.includes('winner-regenerated.gif'));
     const y4mHeader = fs.readFileSync(path.join(kept, 'source-f8.y4m'))
       .subarray(0, 200).toString('ascii').split('\n')[0];
     assert.match(y4mHeader, / C444(?: |$)/);
-    assert.equal(names.some((name) => name.endsWith(pipeSuffix)), false);
-    assert.equal(names.some((name) => name.includes(fifoMarker)), false);
     verifyGif(output, 100000);
   } finally {
     fs.rmSync(kept, { recursive: true, force: true });
@@ -402,17 +323,33 @@ test('KEEP_WORK retains deterministic candidates, metadata, logs, and caches', (
 
 test('the default quality ladder behaviorally reaches quality 1', () => {
   const output = path.join(suiteDir, 'default-quality-floor.gif');
-  const env = { ...BASE_ENV, MAX_BYTES: '1', KEEP_WORK: '1' };
-  delete env.MIN_QUALITY;
-  delete env.MAX_QUALITY;
-  const result = run(BASH, [SCRIPT, '--json', inputWithSpaces, output], { env });
+  const qualityLog = path.join(suiteDir, 'quality-floor.log');
+  const mockDir = fs.mkdtempSync(path.join(suiteDir, 'mock-quality-floor.'));
+  const realGifski = commandPath('gifski');
+  makeExecutable(path.join(mockDir, 'gifski'), `#!/bin/sh
+case "$1" in
+  --version|--help) exec "${realGifski}" "$@" ;;
+esac
+printf '%s\\n' "$*" >> "$QUALITY_LOG"
+exec "${realGifski}" "$@"
+`);
+  const env = {
+    MAX_BYTES: '1',
+    KEEP_WORK: '1',
+    MIN_QUALITY: undefined,
+    MAX_QUALITY: undefined,
+    QUALITY_LOG: qualityLog,
+    PATH: `${mockDir}:${process.env.PATH}`,
+  };
+  const result = runScript(['--json', inputWithSpaces, output], env);
   assert.equal(result.status, 1, result.stderr);
-  assert.equal(JSON.parse(result.stderr.match(/\{"error".*\}/)?.[0] || '{}').error.code, 'no_candidate');
+  const jsonLine = result.stderr.split('\n').find(line => line.startsWith('{'));
+  assert.equal(JSON.parse(jsonLine).error.code, 'no_candidate');
   const kept = result.stderr.match(/^Kept work directory: (.+)$/m)?.[1];
   assert.ok(kept, result.stderr);
   try {
-    const seen = fs.readFileSync(path.join(kept, 'seen-f8.txt'), 'utf8').split('\n');
-    assert.ok(seen.includes('1|1|1'), 'default coarse ladder did not reach quality 1');
+    const calls = fs.readFileSync(qualityLog, 'utf8');
+    assert.match(calls, /--quality 1(?: |$)/, 'default coarse ladder did not reach quality 1');
   } finally {
     fs.rmSync(kept, { recursive: true, force: true });
   }
@@ -434,7 +371,7 @@ test('normal conversion removes its work directory and source cache', () => {
 test('concurrent source caches stay within the worker bound and disappear as workers finish', async () => {
   const temporaryRoot = fs.mkdtempSync(path.join(suiteDir, 'bounded-caches.'));
   const output = path.join(suiteDir, 'bounded-caches.gif');
-  const child = spawn(BASH, [SCRIPT, longInput, output], {
+  const child = spawn(process.execPath, [SCRIPT, longInput, output], {
     cwd: REPO_ROOT,
     env: {
       ...BASE_ENV,
@@ -486,41 +423,50 @@ test('concurrent source caches stay within the worker bound and disappear as wor
   }
 });
 
-test('real quality range records candidates and selects with the production order', () => {
+test('real quality range retains candidates and selects a production winner', () => {
   const output = path.join(suiteDir, 'real-range.gif');
-  const result = runScript([inputWithSpaces, output], {
+  const mockDir = fs.mkdtempSync(path.join(suiteDir, 'mock-winner-scoring.'));
+  const realFfmpeg = commandPath('ffmpeg');
+  makeExecutable(path.join(mockDir, 'ffmpeg'), `#!/bin/sh
+case "$*" in
+  *libvmaf*)
+    candidate=''
+    previous=''
+    for argument do
+      if [ "$previous" = '-i' ]; then candidate=$argument; fi
+      previous=$argument
+    done
+    case "$candidate" in
+      *f8-q80-m80-l80.gif) score=99 ;;
+      *f8-q90-m90-l90.gif) score=95 ;;
+      *f8-q100-m100-l100.gif) score=90 ;;
+      *) score=80 ;;
+    esac
+    printf 'VMAF score: %s\\n' "$score" >&2
+    exit 0
+    ;;
+esac
+exec "${realFfmpeg}" "$@"
+`);
+  const result = runScript(['--json', inputWithSpaces, output], {
     MIN_FPS: '8',
     MAX_FPS: '8',
     MIN_QUALITY: '60',
     MAX_QUALITY: '100',
     MAX_BYTES: '1000000',
     KEEP_WORK: '1',
+    PATH: `${mockDir}:${process.env.PATH}`,
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const kept = result.stderr.match(/^Kept work directory: (.+)$/m)?.[1];
   assert.ok(kept, result.stderr);
   try {
-    const rows = fs.readFileSync(path.join(kept, 'result-f8.txt'), 'utf8')
-      .split('\n').filter(Boolean).map((line) => line.split('|'));
-    assert.ok(rows.length > 1, `expected multiple result rows, got ${rows.length}`);
-    assert.ok(rows.every((row) => row.length === 7));
-    const expected = rows.reduce((best, row) => {
-      if (!best) return row;
-      const rowValues = row.slice(0, 6).map(Number);
-      const bestValues = best.slice(0, 6).map(Number);
-      const higherFields = [0, 2, 3, 4, 5];
-      for (const index of higherFields) {
-        if (rowValues[index] !== bestValues[index]) {
-          return rowValues[index] > bestValues[index] ? row : best;
-        }
-      }
-      return rowValues[1] < bestValues[1] ? row : best;
-    }, null);
-    const selected = result.stdout.match(
-      /^Selected: (\d+) FPS, quality (\d+), motion quality (\d+), lossy quality (\d+), VMAF (-?[0-9.]+)$/m,
-    );
-    assert.ok(selected, result.stdout);
-    assert.deepEqual(selected.slice(1), [expected[2], expected[3], expected[4], expected[5], expected[0]]);
+    const payload = JSON.parse(result.stdout).result;
+    const names = fs.readdirSync(kept).filter(name => /^f8-q\d+-m\d+-l\d+[.]gif$/.test(name));
+    assert.ok(names.length > 1, `expected multiple candidate files, got ${names.length}`);
+    assert.deepEqual(payload.parameters, { quality: 80, motionQuality: 80, lossyQuality: 80 });
+    assert.equal(payload.vmaf, '99');
+    assert.ok(names.includes('f8-q80-m80-l80.gif'));
   } finally {
     fs.rmSync(kept, { recursive: true, force: true });
   }
@@ -641,29 +587,108 @@ exec "${realGifski}" "$@"
   );
 });
 
-test('publication errors include captured stderr and preserve the destination', () => {
-  for (const { command, diagnostic } of [
-    { command: 'cp', diagnostic: 'forced cp publication failure' },
-    { command: 'mv', diagnostic: 'forced mv publication failure' },
-  ]) {
-    const mockDir = fs.mkdtempSync(path.join(suiteDir, `mock-${command}-failure.`));
-    makeExecutable(path.join(mockDir, command), `#!/bin/sh\necho '${diagnostic}' >&2\nexit 1\n`);
-    const outputDir = fs.mkdtempSync(path.join(suiteDir, `${command}-publication.`));
-    const output = path.join(outputDir, 'output.gif');
-    fs.writeFileSync(output, 'existing output\n');
+test('winner source failure reports regeneration_failed and preserves the destination', () => {
+  const mockDir = fs.mkdtempSync(path.join(suiteDir, 'mock-winner-source-failure.'));
+  const outputDir = fs.mkdtempSync(path.join(suiteDir, 'winner-source-output.'));
+  const output = path.join(outputDir, 'output.gif');
+  const counter = path.join(mockDir, 'counter');
+  const realFfmpeg = commandPath('ffmpeg');
+  makeExecutable(path.join(mockDir, 'ffmpeg'), `#!/bin/sh
+for argument do
+  case "$argument" in
+    *source-f8.y4m)
+      count=0
+      if [ -f "$TEST_COUNTER" ]; then read count < "$TEST_COUNTER"; fi
+      count=$((count + 1))
+      printf '%s\\n' "$count" > "$TEST_COUNTER"
+      if [ "$count" -eq 2 ]; then
+        printf 'forced winner source failure\\n' >&2
+        exit 1
+      fi
+      ;;
+  esac
+done
+exec "${realFfmpeg}" "$@"
+`);
+  fs.writeFileSync(output, 'existing destination\n');
+  const result = runScript(['--json', inputWithSpaces, output], {
+    PATH: `${mockDir}:${process.env.PATH}`, TEST_COUNTER: counter,
+  });
+  assert.equal(result.status, 1, result.stderr);
+  const report = JSON.parse(result.stderr).error;
+  assert.equal(report.code, 'regeneration_failed');
+  assert.equal(report.condition, 'winner source preparation failed: forced winner source failure');
+  assert.equal(report.remedy, 'fix the reported ffmpeg decode or filter error, then run the same conversion again');
+  assert.equal(fs.readFileSync(output, 'utf8'), 'existing destination\n');
+  assert.equal(fs.readdirSync(outputDir).some(name => name.startsWith('.mov-to-gif-gifski-output.')), false);
+});
+
+test('winner encode failure reports regeneration_failed and preserves the destination', () => {
+  const mockDir = fs.mkdtempSync(path.join(suiteDir, 'mock-winner-encode-failure.'));
+  const outputDir = fs.mkdtempSync(path.join(suiteDir, 'winner-encode-output.'));
+  const output = path.join(outputDir, 'output.gif');
+  const realGifski = commandPath('gifski');
+  makeExecutable(path.join(mockDir, 'gifski'), `#!/bin/sh
+case "$1" in --version|--help) exec "${realGifski}" "$@" ;; esac
+previous=''
+output=''
+for argument do
+  if [ "$previous" = '--output' ]; then output=$argument; fi
+  previous=$argument
+done
+case "$output" in
+  *winner-regenerated.gif)
+    printf 'forced winner encode failure\\n' >&2
+    exit 1
+    ;;
+esac
+exec "${realGifski}" "$@"
+`);
+  fs.writeFileSync(output, 'existing destination\n');
+  const result = runScript(['--json', inputWithSpaces, output], { PATH: `${mockDir}:${process.env.PATH}` });
+  assert.equal(result.status, 1, result.stderr);
+  const report = JSON.parse(result.stderr).error;
+  assert.equal(report.code, 'regeneration_failed');
+  assert.equal(report.condition, 'winner regeneration failed: forced winner encode failure');
+  assert.equal(report.remedy, 'fix the reported gifski error, then run the same conversion again');
+  assert.equal(fs.readFileSync(output, 'utf8'), 'existing destination\n');
+  assert.equal(fs.readdirSync(outputDir).some(name => name.startsWith('.mov-to-gif-gifski-output.')), false);
+});
+
+test('atomic publication failure preserves the destination', () => {
+  const outputDir = fs.mkdtempSync(path.join(suiteDir, 'publication-failure.'));
+  const output = path.join(outputDir, 'output.gif');
+  fs.writeFileSync(output, 'existing output\n');
+  const preload = path.join(outputDir, 'force-publication-failure.cjs');
+  fs.writeFileSync(preload, `const fs = require('node:fs');
+if (process.argv[1] && process.argv[1].endsWith('mov-to-gif-gifski.js')) {
+  const originalRename = fs.renameSync;
+  fs.renameSync = (source, destination) => {
+    if (destination === ${JSON.stringify(output)}) {
+      const error = new Error('forced atomic publication failure');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalRename(source, destination);
+  };
+}
+`);
+  try {
     const result = runScript(['--json', inputWithSpaces, output], {
-      PATH: `${mockDir}:${process.env.PATH}`,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require=${preload}`.trim(),
     });
     assert.equal(result.status, 1, result.stderr);
     const report = JSON.parse(result.stderr);
     assert.equal(report.error.code, 'publication_failed');
-    assert.match(report.error.condition, new RegExp(diagnostic));
+    assert.match(report.error.condition, /forced atomic publication failure/);
     assert.ok(report.error.remedy);
     assert.equal(fs.readFileSync(output, 'utf8'), 'existing output\n');
     assert.equal(
       fs.readdirSync(outputDir).some((name) => name.startsWith('.mov-to-gif-gifski-output.')),
       false,
     );
+  } finally {
+    fs.rmSync(preload, { force: true });
   }
 });
 
@@ -672,7 +697,21 @@ async function verifyInterruption(signal, expectedStatus) {
   const output = path.join(suiteDir, `interrupted-${signalName}.gif`);
   fs.writeFileSync(output, 'existing output\n');
   const interruptTmp = fs.mkdtempSync(path.join(suiteDir, `interrupt-${signalName}.`));
-  const child = spawn(BASH, [SCRIPT, longInput, output], {
+  const mockDir = fs.mkdtempSync(path.join(suiteDir, `mock-interrupt-${signalName}.`));
+  const mediaPidFile = path.join(mockDir, 'media.pid');
+  const realFfmpeg = commandPath('ffmpeg');
+  makeExecutable(path.join(mockDir, 'ffmpeg'), `#!/bin/sh
+for argument do
+  case "$argument" in
+    *source-f*.y4m)
+      printf '%s\\n' "$$" > "$MEDIA_PID_FILE"
+      sleep 30
+      ;;
+  esac
+done
+exec "${realFfmpeg}" "$@"
+`);
+  const child = spawn(process.execPath, [SCRIPT, longInput, output], {
     cwd: REPO_ROOT,
     env: {
       ...BASE_ENV,
@@ -684,6 +723,8 @@ async function verifyInterruption(signal, expectedStatus) {
       MIN_QUALITY: '20',
       MAX_QUALITY: '100',
       MAX_BYTES: '1000000',
+      PATH: `${mockDir}:${process.env.PATH}`,
+      MEDIA_PID_FILE: mediaPidFile,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -706,13 +747,11 @@ async function verifyInterruption(signal, expectedStatus) {
         .filter((name) => name.startsWith('mov-to-gif-gifski.'));
       if (dirs.length > 0) {
         workDir = path.join(interruptTmp, dirs[0]);
-        const pidFiles = fs.readdirSync(workDir)
-          .filter((name) => name.startsWith('active-child-'));
-        if (pidFiles.length > 0) {
-          activePids = fs.readFileSync(path.join(workDir, pidFiles[0]), 'utf8')
-            .trim().split('\n').filter(Boolean).map(Number);
+        if (fs.existsSync(mediaPidFile)) {
+          const mediaPid = Number(fs.readFileSync(mediaPidFile, 'utf8').trim());
+          try { process.kill(mediaPid, 0); activePids = [mediaPid]; } catch {}
+          sourcePreparationStarted = activePids.length === 1;
         }
-        sourcePreparationStarted = fs.existsSync(path.join(workDir, 'source-f20.y4m'));
       }
       if (!(activePids.length === 1 && sourcePreparationStarted)) {
         await new Promise((resolve) => setTimeout(resolve, 10));
@@ -730,9 +769,7 @@ async function verifyInterruption(signal, expectedStatus) {
     assert.equal(fs.readFileSync(output, 'utf8'), 'existing output\n');
     assert.ok(workDir && fs.existsSync(workDir));
 
-    for (const pid of activePids) {
-      assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
-    }
+    for (const pid of activePids) assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
     assert.equal(
       fs.readdirSync(suiteDir).some((name) => name.startsWith('.mov-to-gif-gifski-output.')),
       false,

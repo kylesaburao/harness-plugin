@@ -2,9 +2,8 @@
 'use strict';
 
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { ProcessManager } = require('./process-manager');
+const { runConverter } = require('./converter-runner');
 const shared = require('./shared');
 
 function calculateGifskiWorkers(config) {
@@ -129,44 +128,21 @@ async function convert(state) {
 }
 
 async function main(argv = process.argv.slice(2), env = process.env) {
-  let parsed = { json: argv.includes('--json') };
-  let state;
-  try {
-    shared.validateNodeVersion();
-    const scriptName = path.basename(process.argv[1] || 'mov-to-gif-gifski.js');
-    parsed = shared.parseArguments(argv, scriptName);
-    if (parsed.help) { process.stdout.write(shared.usage('gifski', path.basename(process.argv[1]))); return 0; }
-    const config = shared.readConfiguration(env, 'gifski');
-    if (parsed.positional[0]) shared.validateInput(parsed.positional[0]);
-    const manager = new ProcessManager();
-    const preflight = await shared.checkGifskiPreflight(manager, process.platform, env);
-    const preflightFailure = shared.preflightError(preflight);
-    if (preflightFailure) throw preflightFailure;
-    let warnings = [];
-    if (parsed.positional[0]) warnings = await shared.inspectInput(manager, preflight.commands, parsed.positional[0]);
-    if (parsed.preflight) { shared.emitPreflightReady(preflight, warnings, parsed.json); return 0; }
-    const outputState = shared.validateOutput(parsed.positional[0], parsed.positional[1], config.gifSize);
-    shared.emitWarnings(warnings, parsed.json);
-    let workDir;
-    try { workDir = fs.mkdtempSync(path.join(env.TMPDIR || os.tmpdir(), 'mov-to-gif-gifski.')); } catch { throw new shared.StartupError('work_directory_unusable', `could not create a work directory under ${env.TMPDIR || os.tmpdir()}`, 'set TMPDIR to a writable local directory and try again'); }
-    state = { ...outputState, input: parsed.positional[0], config, manager, commands: preflight.commands, workDir, outputTemp: '', json: parsed.json, scriptName };
-    state.workers = calculateGifskiWorkers(config);
-    state.rayonThreads = calculateRayonThreads(config, state.workers);
-    const uninstall = manager.installSignalHandlers((_signal, exitCode) => {
-      shared.cleanupArtifacts(state);
-      process.exit(exitCode);
-    });
-    try { await convert(state); } finally { uninstall(); }
-    shared.cleanupArtifacts(state);
-    return 0;
-  } catch (error) {
-    if (state) {
-      try { await state.manager.cancel('SIGTERM'); } catch {}
-      shared.cleanupArtifacts(state);
-    }
-    shared.emitError(error, parsed.json || error.json);
-    return error.exitCode || 1;
-  }
+  return runConverter({
+    argv,
+    env,
+    backend: 'gifski',
+    defaultScriptName: 'mov-to-gif-gifski.js',
+    workPrefix: 'mov-to-gif-gifski.',
+    buildState(state) {
+      const { config } = state;
+      state.keepWork = config.keepWork;
+      state.workers = calculateGifskiWorkers(config);
+      state.rayonThreads = calculateRayonThreads(config, state.workers);
+      return state;
+    },
+    convert,
+  });
 }
 
 if (require.main === module) main().then(code => { process.exitCode = code; });

@@ -5,18 +5,39 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const shared = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/shared');
+const { runConverter } = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/converter-runner');
 const gifski = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/mov-to-gif-gifski');
 const gifsicle = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/mov-to-gif');
-const { skillDir, temporaryDirectory, runEntrypoint } = require('./test-helpers');
+const { temporaryDirectory } = require('./test-helpers');
 
-test('Node help and option parsing preserve the direct CLI contract', () => {
-  for (const script of ['mov-to-gif-gifski.js', 'mov-to-gif.js']) {
-    for (const flag of ['--help', '-h']) {
-      const result = runEntrypoint(process.execPath, path.join(skillDir, 'scripts/node', script), [flag]);
-      assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, /--preflight/);
-      assert.match(result.stdout, /129  SIGHUP/);
+test('shared Node runner preserves backend-specific help and explicit option parsing', async () => {
+  const originalScript = process.argv[1];
+  const originalWrite = process.stdout.write;
+  try {
+    process.argv[1] = undefined;
+    for (const spec of [
+      { backend: 'gifski', script: 'mov-to-gif-gifski.js', quality: true },
+      { backend: 'gifsicle', script: 'mov-to-gif.js', quality: false },
+    ]) {
+      let stdout = '';
+      process.stdout.write = chunk => { stdout += chunk; return true; };
+      const code = await runConverter({
+        argv: ['--help'],
+        env: {},
+        backend: spec.backend,
+        defaultScriptName: spec.script,
+        workPrefix: 'unused.',
+        convert: async () => assert.fail('help must not start conversion'),
+      });
+      assert.equal(code, 0);
+      assert.match(stdout, new RegExp(`^Usage: ${spec.script.replaceAll('.', '\\.')}`));
+      assert.match(stdout, /--preflight/);
+      assert.match(stdout, /129  SIGHUP/);
+      assert.equal(stdout.includes('MIN_QUALITY'), spec.quality);
     }
+  } finally {
+    process.argv[1] = originalScript;
+    process.stdout.write = originalWrite;
   }
   assert.deepEqual(shared.parseArguments(['--json', '--', '-input.mp4'], 'tool.js').positional, ['-input.mp4']);
 });
@@ -30,6 +51,16 @@ test('Node version and configuration errors are stable startup errors', () => {
   assert.doesNotThrow(() => shared.readConfiguration({ MAX_BYTES: '9007199254740991' }, 'gifsicle'));
   assert.throws(() => shared.readConfiguration({ MAX_BYTES: '9007199254740992' }, 'gifsicle'), { code: 'config_invalid' });
   assert.throws(() => shared.readConfiguration({ MAX_BYTES: '9007199254740993' }, 'gifsicle'), { code: 'config_invalid' });
+});
+
+test('gifski high-FPS configuration directs users to the supported Node gifsicle entrypoint', () => {
+  assert.throws(
+    () => shared.readConfiguration({ MAX_FPS: '101' }, 'gifski'),
+    {
+      code: 'config_invalid',
+      remedy: 'set MAX_FPS to 100 or lower, or use mov-to-gif.js for higher frame rates',
+    },
+  );
 });
 
 test('platform policy exposes exact macOS and Linux remedies', () => {
@@ -56,6 +87,36 @@ test('publication verifies a destination-local temporary file before rename', as
     const verified = await shared.publishVerified(source, output, 'test', async () => 'verified');
     assert.equal(verified, 'verified');
     assert.equal(fs.readFileSync(output, 'utf8'), 'new output');
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a non-GIF verification result preserves the destination and removes the publication temporary', async () => {
+  const directory = temporaryDirectory('node-wrong-codec.');
+  const source = path.join(directory, 'source.gif');
+  const output = path.join(directory, 'output.gif');
+  fs.writeFileSync(source, 'new output');
+  fs.writeFileSync(output, 'old output');
+  const manager = {
+    async runOwned(task) {
+      assert.equal(task, 'output codec');
+      return { code: 0, stdout: 'png|video\n', stderr: '' };
+    },
+  };
+  try {
+    await assert.rejects(
+      shared.publishVerified(source, output, 'test', temporary => shared.verifyFinalGif(
+        manager,
+        { ffprobe: 'ffprobe' },
+        temporary,
+        { size: 64, maxBytes: 256000 },
+      )),
+      {
+        code: 'verification_failed',
+        condition: 'verification failed, expected a GIF video stream, got png|video',
+      },
+    );
+    assert.equal(fs.readFileSync(output, 'utf8'), 'old output');
+    assert.equal(fs.readdirSync(directory).some(name => name.startsWith('.test-output.')), false);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 

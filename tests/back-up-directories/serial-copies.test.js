@@ -2,36 +2,12 @@
 
 const assert = require('node:assert/strict');
 const fsp = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
-const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 const test = require('node:test');
 
 const { EXIT, OperationContext, execute } = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
-
-async function temporaryRoot(t) {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'backup-serial-copies-'));
-  t.after(() => fsp.rm(root, { recursive: true, force: true }));
-  return root;
-}
-
-async function directoryDetails(directory, label) {
-  const canonicalPath = await fsp.realpath(directory);
-  const details = await fsp.stat(canonicalPath, { bigint: true });
-  return { label, configuredPath: directory, canonicalPath, identity: `${details.dev}:${details.ino}` };
-}
-
-function successfulArchiveFactory(contents = 'archive data') {
-  return () => {
-    const archive = new EventEmitter();
-    archive.pipe = (output) => { archive.output = output; };
-    archive.directory = () => {};
-    archive.finalize = async () => { archive.output.end(contents); };
-    archive.abort = () => archive.output?.destroy();
-    return archive;
-  };
-}
+const { directoryDetails, successfulArchiveFactory, temporaryRoot } = require('./test-helpers.js');
 
 async function makePlan(t) {
   const root = await temporaryRoot(t);
@@ -90,7 +66,7 @@ test('execute installs each target before starting the next copy', async (t) => 
   };
 
   const execution = execute(plan, new OperationContext(), {
-    archive: { archiveFactory: successfulArchiveFactory() },
+    archive: { archiveFactory: successfulArchiveFactory('archive data') },
     copy: { createReadStream },
     onStage: (stage) => stages.push(stage),
   });
@@ -129,7 +105,7 @@ test('a failed first copy prevents the second copy from starting', async (t) => 
 
   await assert.rejects(
     execute(plan, new OperationContext(), {
-      archive: { archiveFactory: successfulArchiveFactory() },
+      archive: { archiveFactory: successfulArchiveFactory('archive data') },
       copy: { createReadStream },
     }),
     (error) => error.exitCode === EXIT.COPY && /first target failed/.test(error.message),
@@ -153,7 +129,7 @@ test('a failed second copy preserves the first installed destination', async (t)
 
   await assert.rejects(
     execute(plan, context, {
-      archive: { archiveFactory: successfulArchiveFactory() },
+      archive: { archiveFactory: successfulArchiveFactory('archive data') },
       copy: { createReadStream },
     }),
     (error) => error.exitCode === EXIT.COPY &&

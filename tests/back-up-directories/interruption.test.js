@@ -3,37 +3,13 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { EventEmitter } = require('node:events');
 const test = require('node:test');
 
 const { OperationContext, copyAtomically, execute } = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
 const SCRIPT = path.resolve(__dirname, '../../plugins/harness/skills/back-up-directories/scripts/backup.js');
-
-async function temporaryRoot(t) {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'backup-interruption-'));
-  t.after(() => fsp.rm(root, { recursive: true, force: true }));
-  return root;
-}
-
-async function directoryDetails(directory, label) {
-  const canonicalPath = await fsp.realpath(directory);
-  const details = await fsp.stat(canonicalPath, { bigint: true });
-  return { label, configuredPath: directory, canonicalPath, identity: `${details.dev}:${details.ino}` };
-}
-
-function successfulArchiveFactory(contents = 'new archive') {
-  return () => {
-    const archive = new EventEmitter();
-    archive.pipe = (output) => { archive.output = output; };
-    archive.directory = () => {};
-    archive.finalize = async () => { archive.output.end(contents); };
-    archive.abort = () => archive.output?.destroy();
-    return archive;
-  };
-}
+const { directoryDetails, successfulArchiveFactory, temporaryRoot } = require('./test-helpers.js');
 
 function delayedValidation(t, canonicalPath, occurrence) {
   const originalStat = fsp.stat;
@@ -90,7 +66,7 @@ test('interruption during retained archive validation prevents archive replaceme
   const context = new OperationContext();
   const delay = delayedValidation(t, output.canonicalPath, 2);
 
-  const execution = execute(plan, context, { archive: { archiveFactory: successfulArchiveFactory() } });
+  const execution = execute(plan, context, { archive: { archiveFactory: successfulArchiveFactory('new archive') } });
   await delay.entered;
   await context.interrupt('SIGTERM');
   delay.release();
@@ -121,7 +97,7 @@ test('interruption during final staging cleanup remains authoritative', async (t
   };
 
   const execution = execute(plan, context, {
-    archive: { archiveFactory: successfulArchiveFactory() },
+    archive: { archiveFactory: successfulArchiveFactory('new archive') },
     removeFile,
   });
   await entered;

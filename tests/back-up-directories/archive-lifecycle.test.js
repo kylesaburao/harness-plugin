@@ -2,19 +2,13 @@
 
 const assert = require('node:assert/strict');
 const fsp = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { Writable } = require('node:stream');
 const test = require('node:test');
 
 const { OperationContext, createArchive } = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
-
-async function temporaryRoot(t) {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'backup-archive-lifecycle-'));
-  t.after(() => fsp.rm(root, { recursive: true, force: true }));
-  return root;
-}
+const { temporaryRoot } = require('./test-helpers.js');
 
 function archiveDouble(configure = () => {}) {
   const archive = new EventEmitter();
