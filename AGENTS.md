@@ -6,7 +6,16 @@ This repository distributes the same Agent Skills package to Codex and Claude Co
 
 `src/harness/` is the editable source of truth for plugin implementation and bundled resources. Production Node implementation is TypeScript.
 
-`dist/harness/` is the complete generated installation artifact, tracked in Git and installed directly by both marketplaces. Regenerate it with `npm run build` after source changes and commit source and distribution together. Never manually edit generated implementation. Run `npm run build:check` before delivery. Read [build workflow](docs/development/build.md) when changing compilation or assembly.
+`dist/harness/` is the complete generated installation artifact, tracked in Git and installed directly by both marketplaces. Never manually edit generated implementation. Follow this procedure to deliver implementation changes:
+
+1. Edit `src/harness/`. Install the locked root toolchain with `npm ci --include=dev` on first setup or after dependency changes.
+2. Run `npm run build` after changes to source implementation, resources, manifest templates, canonical version, compiler configuration, or build tooling. This explicitly compiles TypeScript, copies assets, and injects the source version into both generated host manifests.
+3. Run `node scripts/setup-tests.js`, then `node scripts/run-tests.js`. Build before setup, focused runtime tests, or local marketplace testing. Setup and the gate expect an existing current distribution and reject drift without rebuilding it. Setup is required before each full gate because the gate removes `.venv`.
+4. Stage intended source and generated distribution together. Run `npm run build:check` and `node scripts/validate-dist.js --tracked` against the staged delivery, inspect the staged diff, then commit both together before pushing. Build check compares the working artifact with a fresh candidate without repairing it. Tracked validation checks the index inventory and modes, so also confirm no intended changes remain unstaged.
+
+On macOS run development commands directly. On Linux/WSL2 use `./scripts/dev exec` for development commands and keep Git operations on the host. Read the [build workflow](docs/development/build.md) for assembly and recovery details.
+
+Both marketplace catalogs select `./dist/harness`. Claude Code and Codex consume that committed tree without root npm installation or a build. Runtime tests and skill setup commands execute its installed paths. CI verifies the checked-in artifact instead of repairing ordinary source changes. The release workflow is the explicit exception: after changing the canonical source version, it builds and tests the versioned artifact before committing it, repeating from fresh source on each push retry. A fresh checkout must therefore already contain usable distribution output. Building does not install skill runtime dependencies, initialize user reference data, or compile the Swift helper.
 
 Do not create separate Claude and Codex copies of a skill (e.g. `claude/skills/foo/` and `codex/skills/foo/`). One `SKILL.md` per skill, consumed directly by both harnesses.
 

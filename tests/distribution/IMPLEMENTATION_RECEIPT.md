@@ -162,3 +162,51 @@ Executed verification:
 - Compared `tiff-to-heic.swift` from both source and distribution byte-for-byte against `git show 233fd2792ef598464152a52b7e96e110eacde70f:plugins/harness/skills/extract-video-frames/scripts/tiff-to-heic.swift`: unchanged.
 
 Evidence: `tmp/ts-stage6-focused.log`, `tmp/ts-stage6-node206-frames.log`, `tmp/ts-stage6-preparation.log`, `tmp/ts-stage6-host-gate-final.log`, `tmp/ts-stage6-container-gate-final.log`, `tmp/ts-stage6-container-inventory.log`, and `tmp/ts-stage6-container-gate-repaired.log`, plus setup and earlier partial-check logs. Stage7 remains, including fresh checkout, full isolated-artifact and supported-host qualification, release/version regeneration, and final acceptance audit.
+
+## Stage 7 qualification checkpoint: host loading and release rehearsal
+
+Working checkpoint starts at `bcadf5f50fc9e37a1ac38a2ad7c29e9542eb9e05`, with the empty transitional JavaScript mechanism removed and build documentation updated. `npm run typecheck`, `npm run build:check`, and `node --test tests/distribution/*.test.js` passed (7 tests). Distribution bytes remain identical to Stage6. Final review, complete acceptance audit, final checks, and Stage7 commit remain pending.
+
+Live host qualification used a fresh local clone with no root node_modules or build output under `/private/tmp/harness-ts-stage7-t7o54xnn/fresh checkout`. Exact fixture paths are in `tmp/ts-stage7-host-paths.json`.
+
+- **CodexCLI0.154.0:** with an isolated CODEX_HOME, ran `codex plugin marketplace add <fresh checkout> --json`, `codex plugin add harness@harness-plugin --json`, and `codex plugin list --json`. Installation selected `dist/harness`, version3.1.5. An actual app-server stdio session used initialize, initialized, and skills/list to verify all13 expected enabled skills, each at the host-supplied isolated cache path. The host's generated JSON schema supplied request shapes. No model request was sent. Evidence: `tmp/qualify-codex-host.py`, `tmp/ts-stage7-codex-server.jsonl`, and `tmp/ts-stage7-codex-plugin-skills.json`.
+- **ClaudeCode2.1.270:** with isolated CLAUDE_CONFIG_DIR, ran marketplace add, plugin install, plugin details, and plugin list. Actual streaming control initialization reported all13 expected plugin skills and all3 output styles: harness:Casual, harness:Encoded, harness:Natural. No user/model request was sent. Debug logging reports loading the skills from the fresh clone's `dist/harness/skills`, not the cache path printed by plugin list. This observed host authority governs the qualification. Evidence: `tmp/qualify-claude-host.py`, `tmp/ts-stage7-claude-install.json`, `tmp/ts-stage7-claude-initialization.json`, and `tmp/ts-stage7-claude-debug.log`.
+- Used the exact extract-video-frames SKILL.md path from Codex skills/list to locate the installed entrypoint, then ran Node20.6.0 `--preflight --json`. Actual synthetic HLG TIFF/HEIC preparation passed on macOS27, with no source/root build dependencies or module-resolution environment shortcuts. This verifies native adjacent Swift resource lookup from the installed artifact. Evidence: `tmp/ts-stage7-installed-frame-preflight.json`.
+- These installations changed only isolated qualification configuration, not the user's installed plugin settings. No credentials were copied and no model inference was invoked. Ordinary user-level skills remained visible to the Codex host, but the asserted13 plugin records were identified by their exact pluginId and isolated installed paths.
+
+Official [OpenAI plugin packaging documentation](https://developers.openai.com/plugins/build/plugins) confirms marketplace-root-relative local source paths. The installed CLI help supplied the actual version-specific installation commands. The [Claude Agent SDK reference](https://code.claude.com/docs/en/agent-sdk/typescript) describes initialization command and output-style inventory fields. Actual host results above, rather than documentation or schema validity alone, establish discovery.
+
+A separate disposable release clone received the current Stage7 patch. Executed `node scripts/setup-tests.js`, `node scripts/run-tests.js --skip-gif`, `node scripts/bump-version.js --bump-patch`, `npm run build`, setup again, the same partial gate again, and `npm run build:check`. Both partial gates passed **535 tests, zero failed/skipped**, with the GIF group explicitly excluded. Canonical and both emitted host versions became3.1.6, while backup stayed1.0.0. No rehearsal commit or push occurred. Main remains3.1.5. This is a local rehearsal of the hosted sequence, not a GitHub Actions run or a full media gate. Evidence: `tmp/qualify-release.py` and `tmp/ts-stage7-release-rehearsal.log`.
+
+
+## Stage 7 final acceptance audit
+
+Final implementation checkpoint: Stage6 `bcadf5f50fc9e37a1ac38a2ad7c29e9542eb9e05` plus the Stage7 commit containing this section. Original baseline: `233fd2792ef598464152a52b7e96e110eacde70f`. Stage7 removes the transitional JavaScript classifier and file, including the validator's residual branch. README and AGENTS now state rebuild triggers, the implementation/build/setup/test/commit sequence, all consumers of existing distribution, and explicit release regeneration. No production artifact bytes changed after Stage6.
+
+| Specification section14 criterion | Final disposition and evidence |
+| --- | --- |
+| 1. Complete source ownership | Passed: complete editable `src/harness`, generated `dist/harness`, no obsolete `plugins/harness` tree. Inventory and documentation gates pass. |
+| 2. First-party Node TypeScript | Passed: production `.ts`/`.mts` sources only, JavaScript input rejected by builder, transitional mechanism deleted. Root development JavaScript remains deliberately outside production. |
+| 3. Installed module contracts | Passed: NodeNext CommonJS `.js` with explicit package boundary, sampler native ESM `.mjs`. Runtime-floor and isolated installation checks below and in prior stages pass. |
+| 4. Marketplaces | Passed: both tracked catalogs select `./dist/harness`, actual host installations discover it. |
+| 5. Complete fresh checkout | Passed: both hosts loaded a fresh committed clone without root npm installation or build, followed by native installed frame preparation. |
+| 6. Strict typing | Passed: `npm run typecheck`, no broad any/suppression/double-cast escapes. Remaining assertions concern known signal-map keys, configured UTF-8 stream strings, object narrowing with unknown fields, and the parser-enforced JSON object envelope. Field values remain unknown until validated. |
+| 7. Deterministic output | Passed: `npm run build:check`, `node scripts/validate-dist.js --tracked`, 87 generated files. Distribution tests check filenames, bytes, executable intent, and repeated assembly. |
+| 8. Drift rejection | Passed: distribution tests change, delete, add and chmod output, verify failure without repair, and cover stale rename/deletion reconciliation. |
+| 9. Complete resources | Passed: static source/output validation, baseline asset parity, native installed Swift lookup, and isolated artifact execution. |
+| 10. Artifact isolation | Passed: `tests/distribution/installation.test.js`, isolated ESM parent with spaces/non-ASCII paths, no source/root dependencies or environment module shortcuts. Actual host qualification adds a separate installation check. |
+| 11. Local dependency/state boundaries | Passed: isolated backup own-lockfile installation and real archive qualification, unchanged Python initialization contract, opaque overlays retained. |
+| 12. Existing gate | Passed: final native658/0/0 and Docker598/0/60. The gate verifies output without repairing it and preserves reporting and cleanup. |
+| 13. Container | Passed: final Docker gate, earlier mounted dependency inode/package preservation and Linux/macOS artifact parity. Scoped read-only Git ownership exception fixes the observed inventory failure. |
+| 14. Version/release | Passed locally: single canonical source version, equal emitted versions, unchanged backup version, pre/post-bump partial-gate rehearsal. Workflow re-fetches and regenerates from fresh source on each retry. Hosted execution must be reported separately after push. |
+| 15. Runtime/native/host qualification | Node20.6 frame/shared, Node22 GIF/Advisor/sampler direct qualification, Node22.12 backup, Node26 full development, Codex0.154.0, and Claude2.1.270 passed as recorded. Exact macOS26 execution remains an unavailable release qualification: the available native host is macOS27. The modern sampler fault-injection harness runs on Node26, with direct Node22 runtime qualification separately recorded. |
+
+Final commands after all implementation and build-lifecycle documentation edits:
+
+- `npm_config_cache=/private/tmp/harness-ts-npm-cache node scripts/setup-tests.js` and host-access `node scripts/run-tests.js`: **658 passed, zero failed/skipped/cancelled**, no excluded groups. Logs `tmp/ts-stage7-host-setup.log` and `tmp/ts-stage7-host-gate.log`.
+- `./scripts/dev setup` and `./scripts/dev exec node scripts/run-tests.js`: **598 passed, zero failed, 60 platform skips**, no excluded groups. Logs `tmp/ts-stage7-container-setup.log` and `tmp/ts-stage7-container-gate.log`.
+- `npm run typecheck`, `npm run build:check`, `node scripts/validate-dist.js --tracked`, and `git diff --check`: passed. Full gates include all7 distribution tests and documentation/inventory checks.
+
+Final fresh Astra/high Advisor consultation found no concrete defect in the supplied evidence. This was an evidence review with no tools or source inspection, not a claim of independent line-by-line verification. Its requests to check the final index and final gates are reflected here. Automatic consultations used3 total, no paid external invocation. No further abstraction was added.
+
+Earlier failures and exclusions remain recorded in their stage sections. Native macOS26 and actual hosted CI are not claimed passed by the local tests. User authorization now includes cleanup and push when implementation is finished. The root HANDOFF records the final commit and delivery state.

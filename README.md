@@ -1,6 +1,6 @@
 # harness-plugin
 
-One repository of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills), packaged for Claude Code and Codex. Canonical skills live once under `dist/harness/skills/`. The harness-specific plugin layers package that shared content.
+One repository of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills), packaged for Claude Code and Codex. Canonical skills are authored once under `src/harness/skills/`. Both harnesses install the generated, Git-tracked `dist/harness/` artifact.
 
 ## Install
 
@@ -51,6 +51,23 @@ Claude Code only: `.codex-plugin/plugin.json` pins its component list to `./skil
 - [Natural](dist/harness/output-styles/natural.md): natural technical prose with default Claude Code behavior.
 
 The plugin ships skills and output styles only: no commands, no hooks, no plugin-level agents.
+
+## From implementation to installed distribution
+
+Edit `src/harness/`, then explicitly rebuild `dist/harness/` before testing or installing your changes. Rebuild after changes to implementation, bundled resources, source manifests or version, compiler configuration, or build tooling. On macOS, run from the repository root:
+
+```sh
+npm ci --include=dev
+npm run build
+node scripts/setup-tests.js
+node scripts/run-tests.js
+```
+
+The first command installs the locked development toolchain. The build compiles TypeScript to JavaScript, copies bundled resources, and injects the canonical source version into both host manifests. On Linux/WSL2, run these development commands through `./scripts/dev exec`, as described in the [container guide](docs/development/container.md).
+
+Setup, runtime tests, and CI expect `dist/harness/` to exist and match source. Setup and the full gate check it without rebuilding it. `npm run build:check` also checks without repairing drift. Both marketplace installers consume the committed distribution directly and never run the compiler. Plugin users need no TypeScript build, though individual skills retain their documented runtime setup requirements.
+
+Commit source and regenerated distribution together before pushing. The release workflow explicitly bumps the source version, rebuilds, and tests the versioned distribution before committing it. See the [build workflow](docs/development/build.md) for validation and recovery, and [versioning](docs/development/versioning.md) for release details.
 
 ## Documentation
 

@@ -36,7 +36,7 @@ function validate(root, tracked = false) {
     expected.add(output);
     const installed = files.get(output);
     if (!installed || installed.mode !== entry.mode) throw new Error(`Missing artifact or wrong mode: ${output}`);
-    if (['asset', 'javascript'].includes(kind) && !fs.readFileSync(entry.absolute).equals(fs.readFileSync(installed.absolute))) throw new Error(`Asset differs from source: ${name}`);
+    if (kind === 'asset' && !fs.readFileSync(entry.absolute).equals(fs.readFileSync(installed.absolute))) throw new Error(`Asset differs from source: ${name}`);
   }
   for (const name of files.keys()) if (!expected.has(name)) throw new Error(`Unexpected artifact: ${name}`);
   if (tracked) validateTracked(root, files);

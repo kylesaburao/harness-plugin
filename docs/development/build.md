@@ -21,7 +21,7 @@ Commit source and regenerated distribution together. `npm run build:check` assem
 
 TypeScript compiles through the local CLI with strict checking, NodeNext resolution, and ES2022 output. Ordinary `.ts` modules emit CommonJS `.js` under the explicit plugin package boundary. The sampler's `.mts` emits native ESM `.mjs`. Installed skill commands continue to name JavaScript. Python and Swift stay in their existing languages. Assets copy byte for byte. The canonical version in `src/harness/package.json` is injected into both versionless source manifest templates.
 
-The migration temporarily enumerates unmigrated JavaScript in `scripts/transitional-javascript.json`. Remove each entry when converting its module, and remove the entire mechanism at migration completion.
+All first-party Node implementation is authored as TypeScript. The builder rejects JavaScript source resources. Installed JavaScript is generated under `dist/harness/`.
 
 Each build uses unique ignored staging under `.build/`. It validates the complete candidate before reconciling owned generated files in place. It removes obsolete generated files and empty directories. Backup's `skills/back-up-directories/node_modules` and the writer's `scripts/__pycache__` are the only allowed local overlays. Their contents are opaque and their ancestors are retained, including mounted dependency directories. Source authoring directories have no dependency overlays.
 

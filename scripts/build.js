@@ -6,7 +6,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const transitional = new Set(require('./transitional-javascript.json'));
 const templates = ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json'];
 const assetExtensions = new Set(['.md', '.json', '.jsonl', '.yaml', '.yml', '.py', '.swift']);
 const backupModules = 'skills/back-up-directories/node_modules';
@@ -56,7 +55,6 @@ function classify(relative) {
   }
   if (templates.includes(relative)) return 'template';
   if (/\.(?:ts|mts|cts)$/.test(relative)) return 'typescript';
-  if (transitional.has(relative)) return 'javascript';
   if (assetExtensions.has(path.extname(relative))) return 'asset';
   throw new Error(`Unclassified source resource: ${relative}`);
 }
@@ -116,7 +114,6 @@ function assemble(root, stage) {
     if (destinations.has(folded)) throw new Error(`Output collision: ${relative} and ${destinations.get(folded).relative}`);
     destinations.set(folded, { relative, entry, kind, output });
   }
-  for (const allowed of transitional) if (!files.has(allowed)) throw new Error(`Remove stale transitional JavaScript entry: ${allowed}`);
   const pkg = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8'));
   for (const template of templates) {
     const data = JSON.parse(fs.readFileSync(path.join(source, template), 'utf8'));
