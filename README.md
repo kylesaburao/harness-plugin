@@ -21,6 +21,7 @@ See [DEPENDENCIES.md](DEPENDENCIES.md) for the authoritative runtime, tool, and 
 | `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. |
 | `install-harness-plugin-capabilities` | Install or repair Harness host integration, including the Claude native-first Advisor gate and fallback support. |
 | `record-decision` | Capture a consequential technical decision, its constraints, and its reversibility. |
+| `demonstrate-workflow` | Turn completed session work or a new demonstration into a reusable skill through explicit invocation. |
 | `research-precedent` | Research whether a proposed approach has precedent, internally or in the wider industry. |
 | `wake-desktop` | Manage named LAN wake targets and send a magic packet, optionally waiting for a ping response. |
 | `write-asd-ste100` | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. |

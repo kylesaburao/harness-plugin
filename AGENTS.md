@@ -10,6 +10,8 @@ Do not create separate Claude and Codex copies of a skill (e.g. `claude/skills/f
 
 Shared `SKILL.md` files stick to portable Agent Skills frontmatter: `name`, `description`, and optionally `license`, `compatibility`, `metadata`, `allowed-tools`. Platform-specific behavior belongs in `.claude-plugin/`, `.codex-plugin/`, hooks, agents, or configuration, not in `SKILL.md`.
 
+Exception limited to `demonstrate-workflow`: its shared frontmatter may contain `disable-model-invocation: true`. Codex 0.154.0 accepts this Claude extension alongside `agents/openai.yaml` with `policy.allow_implicit_invocation: false`. Codex registers `$harness:demonstrate-workflow` and can load its instructions from quoted mentions. Loading is permitted, but formalization still requires explicit user invocation. Claude behavior is unqualified and outside the current validation scope. Every other shared-frontmatter restriction remains unchanged. See `tests/demonstrate-workflow/QUALIFICATION.md` for evidence.
+
 Claude-only component kinds with no Codex equivalent (e.g. `plugins/harness/output-styles/`) live at the plugin root next to `skills/`. Codex ignores them since `.codex-plugin/plugin.json` pins its component list explicitly. No dual-copy concern applies here since there is nothing to keep in sync.
 
 ## Skills that run scripts

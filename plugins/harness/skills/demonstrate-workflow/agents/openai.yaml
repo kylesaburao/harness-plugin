@@ -1,0 +1,6 @@
+interface:
+  display_name: "Demonstrate Workflow"
+  short_description: "Formalize live or completed work into a skill"
+  default_prompt: "Use $harness:demonstrate-workflow to review the relevant work from this session, ask what to formalize, and create the agreed reusable skill."
+policy:
+  allow_implicit_invocation: false

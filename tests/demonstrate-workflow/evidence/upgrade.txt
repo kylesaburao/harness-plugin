@@ -1,0 +1,8 @@
+{
+  "pluginId": "harness@workflow-qualification",
+  "name": "harness",
+  "marketplaceName": "workflow-qualification",
+  "version": "0.0.2",
+  "installedPath": "/private/tmp/demonstrate-workflow-qualification/codex/plugins/cache/workflow-qualification/harness/0.0.2",
+  "authPolicy": "ON_INSTALL"
+}

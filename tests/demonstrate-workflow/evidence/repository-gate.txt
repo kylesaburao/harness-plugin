@@ -1,0 +1,723 @@
+
+==> validate test prerequisites
+
+==> validate ASD-STE100 references
+{
+  "dictionary_rows": 2195,
+  "dictionary_sha256": "40ba24a8a7adc103893aff06e15000f1c236f2f15718587726664776ddae96e6",
+  "generated_data_location": "/Users/kyle/.harness-plugin/write-asd-ste100/bundles/b1db21717f12a3aff89f0067ebc2f7f52a2f0d1333b7090de20fc4f9ad996964",
+  "source": {
+    "issue": 9,
+    "issue_date": "2025-01-15",
+    "pdf_sha256": "d1f4ea9e7cd6e46b47aa9057209f99e78c0e9cfc4e27a5b07895b05c1a166431",
+    "publisher": "ASD Simplified Technical English Maintenance Group",
+    "title": "ASD-STE100 Simplified Technical English, Standard for Technical Documentation",
+    "url": "https://www.asd-ste100.org/assets/files/ASD-STE100_ISSUE9.pdf"
+  },
+  "status": "ready"
+}
+
+==> preflight GIF converter (gifski)
+{"status":"ready","os":"darwin","commands":{"ffmpeg":"/opt/homebrew/Cellar/ffmpeg/9.0.1_1/bin/ffmpeg","ffprobe":"/opt/homebrew/Cellar/ffmpeg/9.0.1_1/bin/ffprobe","gifski":"/opt/homebrew/Cellar/gifski/1.34.0_1/bin/gifski"},"warnings":[]}
+
+==> preflight GIF converter (gifsicle)
+{"status":"ready","os":"darwin","commands":{"ffmpeg":"/opt/homebrew/Cellar/ffmpeg/9.0.1_1/bin/ffmpeg","ffprobe":"/opt/homebrew/Cellar/ffmpeg/9.0.1_1/bin/ffprobe","gifsicle":"/opt/homebrew/Cellar/gifsicle/1.96/bin/gifsicle"},"warnings":[]}
+test_benchmark_workload_equivalence (test_prose_mask.ProseMaskTests.test_benchmark_workload_equivalence) ... ok
+test_policy_and_complete_findings_differential (test_prose_mask.ProseMaskTests.test_policy_and_complete_findings_differential) ... ok
+test_span_union_exact_character_offsets (test_prose_mask.ProseMaskTests.test_span_union_exact_character_offsets) ... ok
+test_competing_publisher_is_busy_without_retries_or_mutation (test_reference_publication.ConcurrentPublicationTests.test_competing_publisher_is_busy_without_retries_or_mutation) ... ok
+test_reader_process_observes_valid_bundle_before_lock_after_revalidation_and_completion (test_reference_publication.ConcurrentPublicationTests.test_reader_process_observes_valid_bundle_before_lock_after_revalidation_and_completion) ... ok
+test_sigkill_after_invalid_move_retains_backup_and_stale_lock_for_manual_recovery (test_reference_publication.ConcurrentPublicationTests.test_sigkill_after_invalid_move_retains_backup_and_stale_lock_for_manual_recovery) ... ok
+test_sigkill_before_publication_and_while_locked_keeps_valid_readers_available (test_reference_publication.ConcurrentPublicationTests.test_sigkill_before_publication_and_while_locked_keeps_valid_readers_available) ... ok
+test_writer_that_finishes_during_other_build_is_retained_after_revalidation (test_reference_publication.ConcurrentPublicationTests.test_writer_that_finishes_during_other_build_is_retained_after_revalidation) ... ok
+test_backup_cleanup_failure_preserves_ready_fields_and_retained_path (test_reference_publication.PublicationTests.test_backup_cleanup_failure_preserves_ready_fields_and_retained_path) ... ok
+test_baseexception_injection_after_invalid_move_is_not_oserror_rollback (test_reference_publication.PublicationTests.test_baseexception_injection_after_invalid_move_is_not_oserror_rollback) ... ok
+test_busy_lock_is_unchanged_and_has_explicit_manual_remedy (test_reference_publication.PublicationTests.test_busy_lock_is_unchanged_and_has_explicit_manual_remedy) ... ok
+test_failed_publish_and_failed_rollback_preserve_both_diagnostics_and_backup (test_reference_publication.PublicationTests.test_failed_publish_and_failed_rollback_preserve_both_diagnostics_and_backup) ... ok
+test_failed_publish_restores_invalid_bundle (test_reference_publication.PublicationTests.test_failed_publish_restores_invalid_bundle) ... ok
+test_forced_build_still_builds_and_validates_stage_but_retains_identity (test_reference_publication.PublicationTests.test_forced_build_still_builds_and_validates_stage_but_retains_identity) ... ok
+test_forced_import_retains_valid_bundle_and_discards_stage (test_reference_publication.PublicationTests.test_forced_import_retains_valid_bundle_and_discards_stage) ... ok
+test_invalid_file_and_directory_are_replaced_and_backup_cleaned (test_reference_publication.PublicationTests.test_invalid_file_and_directory_are_replaced_and_backup_cleaned) ... ok
+test_invalid_stage_never_acquires_lock_or_changes_destination (test_reference_publication.PublicationTests.test_invalid_stage_never_acquires_lock_or_changes_destination) ... ok
+test_lock_create_failure_preserves_destination (test_reference_publication.PublicationTests.test_lock_create_failure_preserves_destination) ... ok
+test_lock_mode_token_pid_and_ownership_safe_release (test_reference_publication.PublicationTests.test_lock_mode_token_pid_and_ownership_safe_release) ... ok
+test_lock_partial_write_failure_closes_descriptor_and_cleans_only_owned_lock (test_reference_publication.PublicationTests.test_lock_partial_write_failure_closes_descriptor_and_cleans_only_owned_lock) ... ok
+test_lock_write_and_cleanup_failures_both_reported (test_reference_publication.PublicationTests.test_lock_write_and_cleanup_failures_both_reported) ... ok
+test_missing_destination_publishes_with_one_rename (test_reference_publication.PublicationTests.test_missing_destination_publishes_with_one_rename) ... ok
+test_permission_error_wrapped_by_validation_is_not_invalid_data (test_reference_publication.PublicationTests.test_permission_error_wrapped_by_validation_is_not_invalid_data) ... ok
+test_primary_build_and_stage_cleanup_failure_keep_original_error (test_reference_publication.PublicationTests.test_primary_build_and_stage_cleanup_failure_keep_original_error) ... ok
+test_primary_import_and_cleanup_failures_survive_json_reporting (test_reference_publication.PublicationTests.test_primary_import_and_cleanup_failures_survive_json_reporting) ... ok
+test_replaced_lock_inode_is_not_removed (test_reference_publication.PublicationTests.test_replaced_lock_inode_is_not_removed) ... ok
+test_rollback_does_not_overwrite_an_unexpected_destination (test_reference_publication.PublicationTests.test_rollback_does_not_overwrite_an_unexpected_destination) ... ok
+test_successful_stage_cleanup_failure_reports_ready_and_exit_one_json_and_plain (test_reference_publication.PublicationTests.test_successful_stage_cleanup_failure_reports_ready_and_exit_one_json_and_plain) ... ok
+test_uninspectable_destination_and_required_file_symlinks_are_retained (test_reference_publication.PublicationTests.test_uninspectable_destination_and_required_file_symlinks_are_retained) ... ok
+test_uninspectable_lstat_is_not_absent (test_reference_publication.PublicationTests.test_uninspectable_lstat_is_not_absent) ... ok
+test_valid_destination_identity_and_bytes_are_immutable (test_reference_publication.PublicationTests.test_valid_destination_identity_and_bytes_are_immutable) ... ok
+test_input_failures_prevent_analysis_and_dependency_loading (test_ste_tools.BatchOrchestrationTests.test_input_failures_prevent_analysis_and_dependency_loading) ... ok
+test_references_dictionary_and_terms_load_once_per_batch (test_ste_tools.BatchOrchestrationTests.test_references_dictionary_and_terms_load_once_per_batch) ... ok
+test_comments_and_docstrings_preserve_identifiers (test_ste_tools.CheckerTests.test_comments_and_docstrings_preserve_identifiers) ... ok
+test_complete_shape_and_all_category_actions (test_ste_tools.CheckerTests.test_complete_shape_and_all_category_actions) ... ok
+test_contraction_is_not_also_an_unknown_term (test_ste_tools.CheckerTests.test_contraction_is_not_also_an_unknown_term) ... ok
+test_descriptive_boundaries (test_ste_tools.CheckerTests.test_descriptive_boundaries) ... ok
+test_exact_single_line_and_multiline_spans (test_ste_tools.CheckerTests.test_exact_single_line_and_multiline_spans) ... ok
+test_fence_delimiters_protect_only_the_fenced_text (test_ste_tools.CheckerTests.test_fence_delimiters_protect_only_the_fenced_text) ... ok
+test_hard_wrapped_sentences_match_unwrapped_sentences (test_ste_tools.CheckerTests.test_hard_wrapped_sentences_match_unwrapped_sentences) ... ok
+test_indexed_positions_equal_legacy_results_and_boundaries (test_ste_tools.CheckerTests.test_indexed_positions_equal_legacy_results_and_boundaries) ... ok
+test_inflected_unapproved_word_is_an_error (test_ste_tools.CheckerTests.test_inflected_unapproved_word_is_an_error) ... ok
+test_markdown_and_exact_text_exclusions (test_ste_tools.CheckerTests.test_markdown_and_exact_text_exclusions) ... ok
+test_multiword_expression_and_term_override (test_ste_tools.CheckerTests.test_multiword_expression_and_term_override) ... ok
+test_outcomes (test_ste_tools.CheckerTests.test_outcomes) ... ok
+test_paragraph_limit (test_ste_tools.CheckerTests.test_paragraph_limit) ... ok
+test_possessive_of_an_approved_word_is_not_an_unknown_term (test_ste_tools.CheckerTests.test_possessive_of_an_approved_word_is_not_an_unknown_term) ... ok
+test_procedural_boundaries (test_ste_tools.CheckerTests.test_procedural_boundaries) ... ok
+test_project_term_protects_an_unapproved_expression_inside_it (test_ste_tools.CheckerTests.test_project_term_protects_an_unapproved_expression_inside_it) ... ok
+test_protected_contractions_do_not_produce_findings (test_ste_tools.CheckerTests.test_protected_contractions_do_not_produce_findings) ... ok
+test_repeated_contractions_have_separate_exact_spans (test_ste_tools.CheckerTests.test_repeated_contractions_have_separate_exact_spans) ... ok
+test_repeated_unknown_terms_are_not_deduplicated (test_ste_tools.CheckerTests.test_repeated_unknown_terms_are_not_deduplicated) ... ok
+test_semicolon_contraction_passive_and_ing (test_ste_tools.CheckerTests.test_semicolon_contraction_passive_and_ing) ... ok
+test_source_order_ids_and_shared_position_severity (test_ste_tools.CheckerTests.test_source_order_ids_and_shared_position_severity) ... ok
+test_technical_term_override (test_ste_tools.CheckerTests.test_technical_term_override) ... ok
+test_unapproved_and_unknown_terms (test_ste_tools.CheckerTests.test_unapproved_and_unknown_terms) ... ok
+test_unknown_term_beside_contraction_remains_a_review (test_ste_tools.CheckerTests.test_unknown_term_beside_contraction_remains_a_review) ... ok
+test_word_count_special_cases (test_ste_tools.CheckerTests.test_word_count_special_cases) ... ok
+test_checker_import_needs_no_literal_or_typed_dict_at_runtime (test_ste_tools.CheckerTypingCompatibilityTests.test_checker_import_needs_no_literal_or_typed_dict_at_runtime) ... ok
+test_declared_structure_and_statuses (test_ste_tools.DictionaryIntegrationTests.test_declared_structure_and_statuses) ... ok
+test_inflected_and_irregular_forms (test_ste_tools.DictionaryIntegrationTests.test_inflected_and_irregular_forms) ... ok
+test_multiple_meanings (test_ste_tools.DictionaryIntegrationTests.test_multiple_meanings) ... ok
+test_multiple_parts_of_speech (test_ste_tools.DictionaryIntegrationTests.test_multiple_parts_of_speech) ... ok
+test_representative_source_pages (test_ste_tools.DictionaryIntegrationTests.test_representative_source_pages) ... ok
+test_assign_column_uses_the_boundary_tolerance (test_ste_tools.ExtractDictionaryTests.test_assign_column_uses_the_boundary_tolerance) ... ok
+test_cluster_column_lines_groups_a_trailing_glyph_within_tolerance (test_ste_tools.ExtractDictionaryTests.test_cluster_column_lines_groups_a_trailing_glyph_within_tolerance) ... ok
+test_cluster_column_lines_keeps_distinct_lines_separate (test_ste_tools.ExtractDictionaryTests.test_cluster_column_lines_keeps_distinct_lines_separate) ... ok
+test_config_requires_exactly_five_column_offsets (test_ste_tools.ExtractDictionaryTests.test_config_requires_exactly_five_column_offsets) ... ok
+test_config_requires_the_extraction_key (test_ste_tools.ExtractDictionaryTests.test_config_requires_the_extraction_key) ... ok
+test_line_text_inserts_a_space_at_the_configured_gap (test_ste_tools.ExtractDictionaryTests.test_line_text_inserts_a_space_at_the_configured_gap) ... ok
+test_load_pdfium_reports_a_clear_install_hint_when_missing (test_ste_tools.ExtractDictionaryTests.test_load_pdfium_reports_a_clear_install_hint_when_missing) ... ok
+test_module_does_not_import_pypdfium2_at_module_level (test_ste_tools.ExtractDictionaryTests.test_module_does_not_import_pypdfium2_at_module_level) ... ok
+test_normalize_char_fails_loudly_on_an_unexpected_format_character (test_ste_tools.ExtractDictionaryTests.test_normalize_char_fails_loudly_on_an_unexpected_format_character) ... ok
+test_normalize_char_known_values (test_ste_tools.ExtractDictionaryTests.test_normalize_char_known_values) ... ok
+test_page_anchor_extracts_the_standard_page (test_ste_tools.ExtractDictionaryTests.test_page_anchor_extracts_the_standard_page) ... ok
+test_page_anchor_fails_without_a_match (test_ste_tools.ExtractDictionaryTests.test_page_anchor_fails_without_a_match) ... ok
+test_bundle_is_stored_under_the_plugin_user_directory (test_ste_tools.GeneratedBundlePathTests.test_bundle_is_stored_under_the_plugin_user_directory) ... ok
+test_changed_source_config_selects_a_separate_bundle (test_ste_tools.GeneratedBundlePathTests.test_changed_source_config_selects_a_separate_bundle) ... ok
+test_plugin_versions_with_the_same_config_share_a_bundle (test_ste_tools.GeneratedBundlePathTests.test_plugin_versions_with_the_same_config_share_a_bundle) ... ok
+test_child_progress_never_contaminates_success_stdout (test_ste_tools.InitializerRecoveryTests.test_child_progress_never_contaminates_success_stdout) ... ok
+test_existing_bundle_survives_build_failure (test_ste_tools.InitializerRecoveryTests.test_existing_bundle_survives_build_failure) ... ok
+test_existing_bundle_survives_download_failure (test_ste_tools.InitializerRecoveryTests.test_existing_bundle_survives_download_failure) ... ok
+test_existing_bundle_survives_extraction_failure (test_ste_tools.InitializerRecoveryTests.test_existing_bundle_survives_extraction_failure) ... ok
+test_existing_bundle_survives_hash_failure (test_ste_tools.InitializerRecoveryTests.test_existing_bundle_survives_hash_failure) ... ok
+test_existing_bundle_survives_validation_failure (test_ste_tools.InitializerRecoveryTests.test_existing_bundle_survives_validation_failure) ... ok
+test_import_from_and_pdf_are_mutually_exclusive (test_ste_tools.InitializerRecoveryTests.test_import_from_and_pdf_are_mutually_exclusive) ... ok
+test_import_installs_a_valid_legacy_bundle_without_extraction (test_ste_tools.InitializerRecoveryTests.test_import_installs_a_valid_legacy_bundle_without_extraction) ... ok
+test_invalid_import_leaves_the_existing_bundle_unchanged (test_ste_tools.InitializerRecoveryTests.test_invalid_import_leaves_the_existing_bundle_unchanged) ... ok
+test_invalid_import_reports_that_work_did_not_start (test_ste_tools.InitializerRecoveryTests.test_invalid_import_reports_that_work_did_not_start) ... ok
+test_json_preflight_does_not_dispatch_initialization (test_ste_tools.InitializerRecoveryTests.test_json_preflight_does_not_dispatch_initialization) ... ok
+test_json_success_reports_the_installed_artifact (test_ste_tools.InitializerRecoveryTests.test_json_success_reports_the_installed_artifact) ... ok
+test_local_pdf_does_not_download (test_ste_tools.InitializerRecoveryTests.test_local_pdf_does_not_download) ... ok
+test_missing_pypdfium2_fails_before_running_the_extractor (test_ste_tools.InitializerRecoveryTests.test_missing_pypdfium2_fails_before_running_the_extractor) ... ok
+test_preflight_and_real_run_match_for_invalid_source_config (test_ste_tools.InitializerRecoveryTests.test_preflight_and_real_run_match_for_invalid_source_config) ... ok
+test_preflight_matches_a_valid_bundle_no_op_without_dependencies (test_ste_tools.InitializerRecoveryTests.test_preflight_matches_a_valid_bundle_no_op_without_dependencies) ... ok
+test_preflight_validates_an_import_without_writing (test_ste_tools.InitializerRecoveryTests.test_preflight_validates_an_import_without_writing) ... ok
+test_success_replaces_invalid_existing_bundle_after_validation (test_ste_tools.InitializerRecoveryTests.test_success_replaces_invalid_existing_bundle_after_validation) ... ok
+test_valid_bundle_is_reused_without_download_or_extraction (test_ste_tools.InitializerRecoveryTests.test_valid_bundle_is_reused_without_download_or_extraction) ... ok
+test_install_guide_documents_reference_initialization (test_ste_tools.InstallGuideTests.test_install_guide_documents_reference_initialization) ... ok
+test_incomplete_manifest (test_ste_tools.ReadinessValidationTests.test_incomplete_manifest) ... ok
+test_malformed_dictionary (test_ste_tools.ReadinessValidationTests.test_malformed_dictionary) ... ok
+test_missing_directory_and_file (test_ste_tools.ReadinessValidationTests.test_missing_directory_and_file) ... ok
+test_stale_source_configuration (test_ste_tools.ReadinessValidationTests.test_stale_source_configuration) ... ok
+test_valid_bundle (test_ste_tools.ReadinessValidationTests.test_valid_bundle) ... ok
+test_wrong_byte_count (test_ste_tools.ReadinessValidationTests.test_wrong_byte_count) ... ok
+test_wrong_hash (test_ste_tools.ReadinessValidationTests.test_wrong_hash) ... ok
+test_wrong_source_identity (test_ste_tools.ReadinessValidationTests.test_wrong_source_identity) ... ok
+test_batch_unknown_terms_deduplicate_and_offsets_restart (test_ste_tools.RuntimeEntryPointTests.test_batch_unknown_terms_deduplicate_and_offsets_restart) ... ok
+test_checker_and_lookup_cli_contract (test_ste_tools.RuntimeEntryPointTests.test_checker_and_lookup_cli_contract) ... ok
+test_checker_file_outcomes_match_process_statuses (test_ste_tools.RuntimeEntryPointTests.test_checker_file_outcomes_match_process_statuses) ... ok
+test_every_entry_point_accepts_a_valid_bundle (test_ste_tools.RuntimeEntryPointTests.test_every_entry_point_accepts_a_valid_bundle) ... ok
+test_every_entry_point_validates_automatically (test_ste_tools.RuntimeEntryPointTests.test_every_entry_point_validates_automatically) ... ok
+test_invalid_arguments_and_terms_use_structured_diagnostics (test_ste_tools.RuntimeEntryPointTests.test_invalid_arguments_and_terms_use_structured_diagnostics) ... ok
+test_invalid_layers_value_is_rejected (test_ste_tools.RuntimeEntryPointTests.test_invalid_layers_value_is_rejected) ... ok
+test_invalid_utf8_and_combined_standard_input_are_rejected (test_ste_tools.RuntimeEntryPointTests.test_invalid_utf8_and_combined_standard_input_are_rejected) ... ok
+test_json_initialization_errors (test_ste_tools.RuntimeEntryPointTests.test_json_initialization_errors) ... ok
+test_layers_flag_selects_vocabulary_layers (test_ste_tools.RuntimeEntryPointTests.test_layers_flag_selects_vocabulary_layers) ... ok
+test_malformed_term_fields_use_structured_diagnostics (test_ste_tools.RuntimeEntryPointTests.test_malformed_term_fields_use_structured_diagnostics) ... Passed: create-discord-emoji-gif / gifsicle full search publishes complete JSON and retains KEEP_WORK artifacts (4.996s)
+Full-search result: {"sha256":"1c02ad391278ec1912033bbe86966be9a5be5993b08753321843312766304916","vmaf":"93.387698","parameters":{"colors":244,"dither":5},"bytes":4644,"candidates":1012}
+tests 1
+suites 0
+pass 1
+fail 0
+cancelled 0
+skipped 0
+todo 0
+duration_ms 5030.95375
+Passed: back-up-directories / createArchive rejects an output stream failure (0.006s)
+Passed: back-up-directories / createArchive rejects an archive error and preserves the first failure through close (0.004s)
+Passed: back-up-directories / createArchive interruption stops active progress reporting and rejects with the signal (0.025s)
+Passed: back-up-directories / createArchive handles warning followed by close exactly once (0.002s)
+Passed: back-up-directories / createArchive rejects a premature output close and keeps its temporary path tracked (0.003s)
+Passed: back-up-directories / createArchive rejects a finalization failure that arrives after output close (0.013s)
+Passed: back-up-directories / createArchive handles a synchronous outputFactory failure (0.046s)
+Passed: back-up-directories / createArchive handles a synchronous archiveFactory failure (0.053s)
+Passed: back-up-directories / createArchive handles a synchronous pipe failure (0.012s)
+Passed: back-up-directories / createArchive handles a synchronous finalize failure (0.005s)
+Passed: back-up-directories / new and replacement archives and copies are private on POSIX (0.023s)
+Passed: back-up-directories / replacing a retained archive installs mode 0600 on POSIX (0.015s)
+Passed: back-up-directories / missing output directories are private and existing output modes are unchanged on POSIX (0.023s)
+Passed: back-up-directories / archive construction requests DEFLATE level 6 (0.003s)
+Passed: back-up-directories / cancellation identifies an output directory created during preflight (0.201s)
+Passed: back-up-directories / backupFilename sanitizes names and emits a stable dated filename (0.027s)
+Passed: back-up-directories / backupFilename truncates long UTF-8 names on character boundaries with a stable hash (0.001s)
+Passed: back-up-directories / formatBytes presents byte counts with binary units (0.000s)
+Passed: back-up-directories / shortTempPath stays in its directory and uses the owned-artifact shape (0.000s)
+Passed: back-up-directories / readAndValidate reports unreadable and malformed configurations (0.009s)
+Passed: back-up-directories / CLI rejects a missing configuration before checking dependencies (0.040s)
+Passed: back-up-directories / CLI rejects an archiver that resolves without ZipArchive (0.073s)
+Passed: back-up-directories / readAndValidate rejects each invalid configuration shape (0.007s)
+Passed: back-up-directories / readAndValidate resolves relative paths and plans aliases without duplicate copies (0.005s)
+Passed: back-up-directories / readAndValidate accepts a target root with an unreadable descendant (0.004s)
+Passed: back-up-directories / readAndValidate rejects an output root without read access during preflight (0.003s)
+Passed: back-up-directories / readAndValidate recursively creates and validates a missing output directory (0.003s)
+Passed: back-up-directories / readAndValidate creates a missing output that is also a target (0.003s)
+Passed: back-up-directories / readAndValidate recognizes an existing retained archive (0.003s)
+Passed: back-up-directories / readAndValidate rejects non-directories and output or target paths inside the source (0.009s)
+Passed: back-up-directories / readAndValidate rejects output file conflicts and reports directory creation failures (0.010s)
+Passed: back-up-directories / readAndValidate rejects a directory where a destination file must go (0.004s)
+Passed: back-up-directories / assertDirectoryUnchanged detects a replaced configured symlink (0.003s)
+Passed: back-up-directories / cleanupStartupArtifacts removes only current archive and copy temporary files (0.003s)
+Passed: back-up-directories / OperationContext interrupts once, notifies handlers, and exposes signal exit codes (0.000s)
+Passed: back-up-directories / OperationContext immediately notifies handlers registered after interruption (0.000s)
+Passed: back-up-directories / OperationContext cleanup removes successfully tracked artifacts (0.001s)
+Passed: back-up-directories / OperationContext cleanup reports and keeps an artifact it cannot remove (0.004s)
+Passed: back-up-directories / createArchive writes output and untracks only after the caller installs it (0.003s)
+Passed: back-up-directories / createArchive with the real archiver produces a ZIP containing the source tree (0.348s)
+Passed: back-up-directories / createArchive reports initial and Archiver progress while work is in flight (0.002s)
+Passed: back-up-directories / createArchive treats warnings as failures and includes the omitted entry (0.005s)
+Passed: back-up-directories / createArchive does not start an archive for an already interrupted context (0.004s)
+Passed: back-up-directories / copyAtomically overwrites the destination and leaves no temporary artifact (0.028s)
+Passed: back-up-directories / copyAtomically tracks partial output after a stream failure for later cleanup (0.010s)
+Passed: back-up-directories / execute replicates a staging-only archive directly from its temporary path (0.012s)
+Passed: back-up-directories / execute retains the archive, overwrites it atomically, and replicates from it (0.034s)
+Passed: back-up-directories / execute classifies archive creation failures and leaves cleanup to the context (0.002s)
+ok
+test_missing_diagnostic_source_fields_are_structured_at_every_entry_point (test_ste_tools.RuntimeEntryPointTests.test_missing_diagnostic_source_fields_are_structured_at_every_entry_point) ... Passed: back-up-directories / execute classifies copy failures and always removes a staging-only archive (0.039s)
+Passed: back-up-directories / execute preserves a copy failure when staging cleanup also fails (0.050s)
+Passed: back-up-directories / run lock rejects a second active backup and releases cleanly (0.013s)
+Passed: back-up-directories / run lock path uses the home directory independently of TMPDIR (0.005s)
+Passed: back-up-directories / run lock path honors an absolute override and rejects a relative override (0.000s)
+Passed: back-up-directories / resolved singleton lock paths conflict (0.004s)
+Passed: back-up-directories / run lock leaves stale ownership decisions to the local operator (0.003s)
+Passed: back-up-directories / run lock release does not delete a lock whose ownership token changed (0.006s)
+Passed: back-up-directories / CLI returns usage and validation exit codes with actionable errors (0.108s)
+Passed: back-up-directories / CLI rejects a relative BACKUP_LOCK_PATH before creating a lock (0.074s)
+Passed: back-up-directories / CLI cancellation leaves backup directories untouched (0.153s)
+ok
+test_missing_source_config_uses_a_structured_diagnostic (test_ste_tools.RuntimeEntryPointTests.test_missing_source_config_uses_a_structured_diagnostic) ... Passed: back-up-directories / CLI creates a real ZIP, reports completion, and releases its lock (0.149s)
+ok
+test_multiple_files_have_ordered_reports_and_aggregate_summary (test_ste_tools.RuntimeEntryPointTests.test_multiple_files_have_ordered_reports_and_aggregate_summary) ... ok
+test_one_file_uses_the_batch_json_envelope (test_ste_tools.RuntimeEntryPointTests.test_one_file_uses_the_batch_json_envelope) ... ok
+test_plain_text_uses_file_sections_and_aggregate_summary (test_ste_tools.RuntimeEntryPointTests.test_plain_text_uses_file_sections_and_aggregate_summary) ... Passed: back-up-directories / JSON backup completion remains parseable with interactive confirmation (0.246s)
+Passed: back-up-directories / interruption during final copy validation prevents destination replacement (0.022s)
+Passed: back-up-directories / interruption during retained archive validation prevents archive replacement (0.014s)
+Passed: back-up-directories / interruption during final staging cleanup remains authoritative (0.008s)
+Passed: back-up-directories / CLI SIGINT interruption uses exit code 130 and cleans up (0.200s)
+Passed: back-up-directories / CLI SIGTERM interruption uses exit code 143 and cleans up (0.168s)
+Passed: back-up-directories / execute installs each target before starting the next copy (0.034s)
+Passed: back-up-directories / a failed first copy prevents the second copy from starting (0.010s)
+Passed: back-up-directories / a failed second copy preserves the first installed destination (0.014s)
+Passed: back-up-directories / startup cleanup classifies unknown Dirents and removes only owned regular files (0.015s)
+0.1.0 -> 0.1.1 (patch)
+  /var/folders/_y/b2bh7rrs0hg1f0j21j5_q2y80000gn/T/bump-version-8FUwb7/plugins/harness/.codex-plugin/plugin.json
+  /var/folders/_y/b2bh7rrs0hg1f0j21j5_q2y80000gn/T/bump-version-8FUwb7/plugins/harness/.claude-plugin/plugin.json
+Passed: bump-version / bumpVersion applies each level (0.001s)
+Passed: bump-version / run: writes the same next version to both manifests (0.002s)
+Passed: bump-version / parseArguments: no bump flag is NO_LEVEL (0.000s)
+Passed: bump-version / parseArguments: more than one bump flag is AMBIGUOUS_LEVEL (0.001s)
+Passed: bump-version / run: manifests disagreeing on version is VERSION_MISMATCH (0.001s)
+Passed: bump-version / run: a non-semver version is INVALID_VERSION (0.001s)
+Passed: bump-version / run: --json reports previous and next (0.001s)
+Passed: bump-version / run: an unreadable manifest is MANIFEST_UNREADABLE, not a raw exception (0.001s)
+Passed: bump-version / CLI: a second-manifest write failure rolls the first back byte-for-byte (0.035s)
+ok
+test_runtime_entry_points_do_not_open_network_sockets (test_ste_tools.RuntimeEntryPointTests.test_runtime_entry_points_do_not_open_network_sockets) ... ok
+test_stdin_is_strict_utf8_independent_of_inherited_encoding (test_ste_tools.RuntimeEntryPointTests.test_stdin_is_strict_utf8_independent_of_inherited_encoding) ... ok
+test_ste_lookup_plain_text_for_a_software_entry_has_no_issue_9_line (test_ste_tools.RuntimeEntryPointTests.test_ste_lookup_plain_text_for_a_software_entry_has_no_issue_9_line) ... ok
+test_ste_lookup_resolves_a_software_terminology_entry_as_json (test_ste_tools.RuntimeEntryPointTests.test_ste_lookup_resolves_a_software_terminology_entry_as_json) ... ok
+test_unreadable_inputs_are_transactional (test_ste_tools.RuntimeEntryPointTests.test_unreadable_inputs_are_transactional) ... ok
+test_initialization_decision_prefers_ask_user_api_with_plain_chat_fallback (test_ste_tools.SkillInstructionTests.test_initialization_decision_prefers_ask_user_api_with_plain_chat_fallback) ... ok
+test_skill_documents_absolute_path_rule (test_ste_tools.SkillInstructionTests.test_skill_documents_absolute_path_rule) ... ok
+test_skill_documents_shared_user_level_references (test_ste_tools.SkillInstructionTests.test_skill_documents_shared_user_level_references) ... ok
+test_skill_frontmatter_description_is_harness_neutral (test_ste_tools.SkillInstructionTests.test_skill_frontmatter_description_is_harness_neutral) ... ok
+test_by_headword_carries_software_entries_for_lookup (test_ste_tools.SoftwareTerminologyLayerTests.test_by_headword_carries_software_entries_for_lookup) ... ok
+test_committed_software_terminology_file_is_schema_valid (test_ste_tools.SoftwareTerminologyLayerTests.test_committed_software_terminology_file_is_schema_valid) ... ok
+test_layers_software_only_suppresses_unknown_term (test_ste_tools.SoftwareTerminologyLayerTests.test_layers_software_only_suppresses_unknown_term) ... ok
+test_load_software_terms_rejects_a_form_claimed_by_two_entries (test_ste_tools.SoftwareTerminologyLayerTests.test_load_software_terms_rejects_a_form_claimed_by_two_entries) ... ok
+test_load_software_terms_rejects_a_missing_required_field (test_ste_tools.SoftwareTerminologyLayerTests.test_load_software_terms_rejects_a_missing_required_field) ... ok
+test_load_software_terms_rejects_a_non_unapproved_status (test_ste_tools.SoftwareTerminologyLayerTests.test_load_software_terms_rejects_a_non_unapproved_status) ... ok
+test_no_inflection_synthesis_for_software_entries (test_ste_tools.SoftwareTerminologyLayerTests.test_no_inflection_synthesis_for_software_entries) ... ok
+test_overused_term_is_review_severity_and_never_fails_the_outcome (test_ste_tools.SoftwareTerminologyLayerTests.test_overused_term_is_review_severity_and_never_fails_the_outcome) ... ok
+test_project_term_shields_a_software_tic (test_ste_tools.SoftwareTerminologyLayerTests.test_project_term_shields_a_software_tic) ... ok
+test_software_entry_outranks_an_asd_entry_on_the_same_key (test_ste_tools.SoftwareTerminologyLayerTests.test_software_entry_outranks_an_asd_entry_on_the_same_key) ... ok
+test_source_attribution_per_layer (test_ste_tools.SoftwareTerminologyLayerTests.test_source_attribution_per_layer) ... ok
+
+----------------------------------------------------------------------
+Ran 143 tests in 7.232s
+
+OK
+Passed: bump-version / deriveBumpLevel: all-patch subjects default to patch (0.001s)
+Passed: bump-version / deriveBumpLevel: one [bump:minor] among several patch-shaped subjects wins (0.000s)
+Passed: bump-version / deriveBumpLevel: [bump:major] beats [bump:minor] when both are present (0.000s)
+Passed: bump-version / deriveBumpLevel: empty subject list defaults to patch (0.000s)
+Passed: bump-version / deriveBumpLevel: the tag matches wherever it sits in the subject (0.000s)
+Passed: bump-version / deriveFromRange: scans the complete selected range (0.000s)
+Passed: bump-version / deriveFromRange: a batched push spanning several commits still finds the deepest tag (0.000s)
+Passed: bump-version / deriveFromRange: nothing since the last bump is "none" (0.000s)
+Passed: bump-version / deriveFromRange: an empty log is "none" (0.000s)
+Passed: bump-version / deriveFromRange: no prior bump commit at all scans the whole history (0.000s)
+Passed: bump-version / deriveFromRange: bump-looking prose does not affect the selected range (0.000s)
+Passed: bump-version / deriveFromRange: a docs-only range is "none" (0.000s)
+Passed: bump-version / deriveFromRange: a tests-only range is "none" (0.000s)
+Passed: bump-version / deriveFromRange: changes to this repo's own tooling are "none" (0.000s)
+Passed: bump-version / deriveFromRange: one relevant commit among docs commits still bumps (0.000s)
+Passed: bump-version / deriveFromRange: a tag on an irrelevant commit is honored when the range is relevant (0.000s)
+Passed: bump-version / deriveFromRange: a tag cannot force a bump when nothing relevant changed (0.000s)
+Passed: bump-version / deriveFromRange: touching the root claude marketplace manifest bumps (0.000s)
+Passed: bump-version / deriveFromRange: touching the codex marketplace manifest bumps (0.000s)
+Passed: bump-version / deriveFromRange: an empty merge diff relies on the merged commits (0.000s)
+Passed: bump-version / isRelevantPath: everything shipped inside the plugin tree counts (0.000s)
+Passed: bump-version / isRelevantPath: both marketplace manifests count (0.000s)
+Passed: bump-version / isRelevantPath: development-only trees and root docs do not count (0.000s)
+Passed: bump-version / CLI release range includes features created before the release and merged afterward (0.387s)
+Passed: bump-version / CLI handles no anchor, anchor HEAD, docs, catch-up, and rename out of the plugin (0.785s)
+Passed: bump-version / CLI includes plugin changes introduced only during merge resolution (0.352s)
+Passed: bump-version / CLI Git failures emit diagnostics and never a release level (0.048s)
+Passed: bump-version / native paths survive add/delete/rename-out: "plain.md", quotePath=true (0.618s)
+Passed: bump-version / native paths survive add/delete/rename-out: "café.md", quotePath=true (0.523s)
+Passed: bump-version / native paths survive add/delete/rename-out: "tab\tname.md", quotePath=true (0.496s)
+Passed: bump-version / native paths survive add/delete/rename-out: "line\nname.md", quotePath=true (0.503s)
+Passed: bump-version / native paths survive add/delete/rename-out: "quote\"name.md", quotePath=true (0.511s)
+Passed: bump-version / native paths survive add/delete/rename-out: "plain.md", quotePath=false (0.499s)
+Passed: bump-version / native paths survive add/delete/rename-out: "café.md", quotePath=false (0.494s)
+Passed: bump-version / native paths survive add/delete/rename-out: "tab\tname.md", quotePath=false (0.453s)
+Passed: bump-version / native paths survive add/delete/rename-out: "line\nname.md", quotePath=false (0.432s)
+Passed: bump-version / native paths survive add/delete/rename-out: "quote\"name.md", quotePath=false (0.458s)
+Passed: bump-version / native paths preserve whitespace and cannot inject subjects or shipped prefixes (0.293s)
+Passed: bump-version / native mixed range derives severity from every subject independently of paths (0.227s)
+Passed: create-discord-emoji-gif / both Node entrypoints satisfy the exact help and exit-status contract for --help and -h (0.191s)
+Passed: create-discord-emoji-gif / both Node entrypoints reject missing conversion arguments with a JSON error (0.071s)
+Passed: create-discord-emoji-gif / both Node entrypoints reject malformed arguments before the Node version check (0.072s)
+Passed: create-discord-emoji-gif / both Node entrypoints accept the exact integer boundary and reject larger values before work (1.542s)
+Passed: create-discord-emoji-gif / Node gifski publishes a complete stable JSON result (0.721s)
+Passed: create-discord-emoji-gif / Node gifski accepts dash-prefixed media and temporary paths (0.763s)
+Passed: create-discord-emoji-gif / Node gifsicle accepts dash-prefixed media and temporary paths (0.878s)
+{"status":"ready","os":"darwin","commands":{},"warnings":[]}
+{"error":{"code":"probe_failed","condition":"fixture failure","remedy":"retry"}}
+{"status":"ready","os":"darwin","commands":{},"warnings":[]}
+Passed: create-discord-emoji-gif / runner preserves published result when cleanup fails (0.044s)
+Passed: create-discord-emoji-gif / runner preserves conversion failure when cleanup fails (0.057s)
+Passed: create-discord-emoji-gif / exit evidence survives VMAF and worker wrapping in JSON output (0.081s)
+Passed: create-discord-emoji-gif / exit evidence survives VMAF and worker wrapping in plain output (0.067s)
+Passed: create-discord-emoji-gif / signal evidence survives VMAF and worker wrapping in JSON output (0.069s)
+Passed: create-discord-emoji-gif / signal evidence survives VMAF and worker wrapping in plain output (0.062s)
+Passed: create-discord-emoji-gif / launch evidence survives VMAF and worker wrapping in JSON output (0.036s)
+Passed: create-discord-emoji-gif / launch evidence survives VMAF and worker wrapping in plain output (0.053s)
+Passed: create-discord-emoji-gif / repeated successful and failed preflights restore signal listeners (0.005s)
+Passed: create-discord-emoji-gif / interruption with duplicate score waiters prevents publication and cleans owned work (0.106s)
+Passed: create-discord-emoji-gif / loop walker accepts both identities, headers, color tables and compatible duplicates (0.001s)
+Passed: create-discord-emoji-gif / only structural supported application identifiers count (0.001s)
+Passed: create-discord-emoji-gif / finite, conflicting, absent and ambiguous loop controls fail (0.000s)
+Passed: create-discord-emoji-gif / truncated framing, invalid identifiers, missing terminators and trailers fail (0.001s)
+Passed: create-discord-emoji-gif / supplied decodable nonlooping GIF fails verification and preserves the destination (0.031s)
+Passed: create-discord-emoji-gif / help reports the sibling interface and quality controls (0.054s)
+Passed: create-discord-emoji-gif / skill instructions define the Discord target and fallback rules (0.001s)
+Passed: create-discord-emoji-gif / usage and configuration failures exit 2 with stable codes (0.159s)
+Passed: create-discord-emoji-gif / MAX_FPS above 100 fails before preflight or candidate encoding (0.052s)
+Passed: create-discord-emoji-gif / input and output validation reject unusable paths before search (2.086s)
+Passed: create-discord-emoji-gif / normal conversion supports spaces and a generous byte budget (0.494s)
+Passed: create-discord-emoji-gif / MOV input and the default output path use the established invocation (0.490s)
+Passed: create-discord-emoji-gif / a tight limit is strict and a one-byte-smaller ceiling fails without replacing output (1.769s)
+Passed: create-discord-emoji-gif / worker and Rayon settings cover pinned, narrow, and default FPS ranges (3.918s)
+Passed: create-discord-emoji-gif / KEEP_WORK retains deterministic candidates and caches (0.438s)
+Passed: create-discord-emoji-gif / the default quality ladder behaviorally reaches quality 1 (0.977s)
+Passed: create-discord-emoji-gif / normal conversion removes its work directory and source cache (0.442s)
+Passed: create-discord-emoji-gif / all source caches coexist during candidate evaluation and disappear after conversion (0.768s)
+Passed: create-discord-emoji-gif / real quality range retains candidates and selects a production winner (1.867s)
+Passed: create-discord-emoji-gif / source preparation failure uses its own error code and preserves the destination (0.397s)
+Passed: create-discord-emoji-gif / candidate and VMAF worker failures include stderr and a safe remedy in one JSON object (0.886s)
+Passed: create-discord-emoji-gif / atomic publication failure preserves the destination (0.413s)
+Passed: create-discord-emoji-gif / SIGTERM reaps the active child and preserves the destination (0.457s)
+Passed: create-discord-emoji-gif / Node gifski environment-only preflight reports no warnings (0.345s)
+Passed: create-discord-emoji-gif / Node gifski input preflight accepts clips at or below 3 seconds (0.836s)
+Passed: create-discord-emoji-gif / Node gifski reports a missing input before missing dependencies (0.041s)
+Passed: create-discord-emoji-gif / Node gifski long input preflight warns in plain and JSON modes without artifacts (0.678s)
+Passed: create-discord-emoji-gif / Node gifski normal runs warn before work-directory creation without changing status (0.608s)
+Passed: create-discord-emoji-gif / all input probes use absolute lexical paths while diagnoses retain spelling (0.003s)
+Passed: create-discord-emoji-gif / VMAF dimension boundary 1 (0.135s)
+Passed: create-discord-emoji-gif / VMAF dimension boundary 63 (0.156s)
+Passed: create-discord-emoji-gif / VMAF dimension boundary 64 (0.123s)
+Passed: create-discord-emoji-gif / VMAF dimension boundary 65 (0.143s)
+Passed: create-discord-emoji-gif / VMAF rejects 0.25s candidate against 2s reference (0.174s)
+Passed: create-discord-emoji-gif / VMAF rejects 3s candidate against 2s reference (0.149s)
+Passed: create-discord-emoji-gif / reject invalid VMAF report undefined (0.001s)
+Passed: create-discord-emoji-gif / reject invalid VMAF report { (0.001s)
+Passed: create-discord-emoji-gif / reject invalid VMAF report {"frames":[]} (0.001s)
+Passed: create-discord-emoji-gif / reject invalid VMAF report {"frames":[{}],"pooled_metrics":{"vmaf":{"mean":1e999}}} (0.001s)
+Passed: create-discord-emoji-gif / reject invalid VMAF report {"frames":[{}],"pooled_metrics":{"vmaf":{"mean":null}}} (0.001s)
+Passed: create-discord-emoji-gif / concurrent tasks use separate score files and KEEP_WORK retains them (0.013s)
+Passed: create-discord-emoji-gif / gifski accepts 15 FPS GIF timestamp rounding (0.604s)
+Passed: create-discord-emoji-gif / gifski accepts 24 FPS GIF timestamp rounding (0.548s)
+Passed: create-discord-emoji-gif / gifsicle accepts 15 FPS GIF timestamp rounding (0.640s)
+Passed: create-discord-emoji-gif / gifsicle accepts 24 FPS GIF timestamp rounding (0.616s)
+Passed: create-discord-emoji-gif / FFV1 CRC errors with exit zero fail both GIF backends and preserve destinations (0.673s)
+Passed: create-discord-emoji-gif / shared Node runner preserves backend-specific help and explicit option parsing (0.001s)
+Passed: create-discord-emoji-gif / Node version and configuration errors are stable startup errors (0.000s)
+Passed: create-discord-emoji-gif / gifski high-FPS configuration directs users to the supported Node gifsicle entrypoint (0.000s)
+Passed: create-discord-emoji-gif / platform policy exposes exact macOS and Linux remedies (0.000s)
+Passed: create-discord-emoji-gif / publication verifies a destination-local temporary file before rename (0.002s)
+Passed: create-discord-emoji-gif / a non-GIF verification result preserves the destination and removes the publication temporary (0.001s)
+Passed: create-discord-emoji-gif / gifski worker allocation and candidate ordering are deterministic (0.001s)
+Passed: create-discord-emoji-gif / backend selection tie-breakers and gifsicle task order are deterministic (0.000s)
+Passed: create-discord-emoji-gif / VMAF parser uses the pooled JSON mean (0.000s)
+Passed: create-discord-emoji-gif / publishVerified skips the post-rename digest check when verify() returns no digest (0.001s)
+Passed: create-discord-emoji-gif / resultPayload and emitResult report the file that was actually published, both backends (0.000s)
+Passed: create-discord-emoji-gif / default output names use only the input filename extension (0.002s)
+Passed: create-discord-emoji-gif / every ranking field wins independently of completion order (0.000s)
+Passed: create-discord-emoji-gif / combined final verification preserves values and rejects incomplete reports before publication (0.014s)
+Passed: create-discord-emoji-gif / Node gifski reports shared ffmpeg and ffprobe preflight failures with stable JSON details (0.510s)
+Passed: create-discord-emoji-gif / Node gifski reports every missing ffprobe option (0.390s)
+Passed: create-discord-emoji-gif / Node gifski reports missing, unusable, and incomplete gifski capabilities (0.661s)
+Passed: create-discord-emoji-gif / Node gifsicle reports missing, unusable, and incomplete gifsicle capabilities (0.588s)
+Passed: create-discord-emoji-gif / runOldestBounded launches in order and honors its bound (0.023s)
+Passed: create-discord-emoji-gif / an oldest worker failure stops queued work and preserves the original error (0.011s)
+Passed: create-discord-emoji-gif / a cancel() failure while cancelling siblings does not mask the original error or skip awaiting pending work (0.241s)
+Passed: create-discord-emoji-gif / a younger worker failure is prompt and leaves the next queued worker unstarted (0.028s)
+Passed: create-discord-emoji-gif / owned commands receive direct arguments without shell expansion (0.122s)
+Passed: create-discord-emoji-gif / cancellation prevents later spawns (0.000s)
+Passed: create-discord-emoji-gif / SIGTERM reaches an owned child and grandchild process group (0.093s)
+Passed: create-discord-emoji-gif / a signal-ignoring group is escalated after the configured timeout (0.205s)
+Passed: create-discord-emoji-gif / leader exit leaves its same-group descendant tracked until cancellation (0.179s)
+Passed: create-discord-emoji-gif / runOwned waits for a same-group descendant after its leader exits (0.305s)
+Passed: create-discord-emoji-gif / an escaped descendant is outside the original process group ownership (0.125s)
+Passed: create-discord-emoji-gif / mov-to-gif.js owns capability interruption during preflight (0.181s)
+Passed: create-discord-emoji-gif / mov-to-gif-gifski.js owns capability interruption during preflight (0.172s)
+Passed: create-discord-emoji-gif / mov-to-gif.js owns capability interruption during startup (0.174s)
+Passed: create-discord-emoji-gif / mov-to-gif-gifski.js owns input interruption during startup (0.174s)
+Passed: create-discord-emoji-gif / gifski prepares the first video stream and publishes its retained candidate (0.758s)
+Passed: create-discord-emoji-gif / gifsicle prepares the first video stream and publishes its retained candidate (0.950s)
+Passed: create-discord-emoji-gif / gifski retained-file lifecycle: forward (1.961s)
+Passed: create-discord-emoji-gif / gifski retained-file lifecycle: reverse (2.225s)
+Passed: create-discord-emoji-gif / gifski retained-file lifecycle: keep (1.820s)
+Passed: create-discord-emoji-gif / gifski retained-file lifecycle: corrupt (1.749s)
+Passed: create-discord-emoji-gif / gifski retained-file lifecycle: finite-loop (1.649s)
+Passed: create-discord-emoji-gif / gifski retained-file lifecycle: missing (1.613s)
+Passed: create-discord-emoji-gif / gifski retained-file lifecycle: rename (1.636s)
+Passed: create-discord-emoji-gif / gifski retained-file lifecycle: no-candidate (1.292s)
+Passed: create-discord-emoji-gif / gifski retained-file lifecycle: interrupt (0.673s)
+Passed: create-discord-emoji-gif / gifsicle retained-file lifecycle: forward (0.716s)
+Passed: create-discord-emoji-gif / gifsicle retained-file lifecycle: reverse (0.717s)
+Passed: create-discord-emoji-gif / gifsicle retained-file lifecycle: keep (0.703s)
+Passed: create-discord-emoji-gif / gifsicle retained-file lifecycle: corrupt (0.702s)
+Passed: create-discord-emoji-gif / gifsicle retained-file lifecycle: finite-loop (0.707s)
+Passed: create-discord-emoji-gif / gifsicle retained-file lifecycle: missing (0.681s)
+Passed: create-discord-emoji-gif / gifsicle retained-file lifecycle: rename (0.694s)
+Passed: create-discord-emoji-gif / gifsicle retained-file lifecycle: no-candidate (0.677s)
+Passed: create-discord-emoji-gif / gifsicle retained-file lifecycle: interrupt (0.607s)
+Passed: create-discord-emoji-gif / retained candidates (5.872s)
+Passed: create-discord-emoji-gif / small VMAF inputs produce stable scores under concurrent scoring (0.636s)
+Passed: create-discord-emoji-gif / identical concurrent candidates share scoring and hits survive original-file deletion (0.004s)
+Passed: create-discord-emoji-gif / shared failures retain original evidence and rejected entries are removed (0.001s)
+Passed: create-discord-emoji-gif / cancellation rejects waiting duplicates and subsequent cache hits (0.001s)
+Passed: create-discord-emoji-gif / KEEP_WORK scores every candidate and keeps independent reports (0.001s)
+Passed: demonstrate-workflow / A01: the shipped skill contains exactly six instruction and metadata files (0.001s)
+Passed: demonstrate-workflow / A02/A03: exact candidate extension and Codex manual-only metadata (0.001s)
+Passed: demonstrate-workflow / A03/A04: the approved exception is scoped and distribution uses the canonical directory (0.002s)
+Passed: demonstrate-workflow / A05: all instruction references resolve after relocating the skill (0.018s)
+Passed: dev / exec preserves argv and failure status with isolated dependencies (0.348s)
+Passed: dev / setup initializes only volume ownership and propagates installer failure (0.390s)
+Passed: dev / setup and reset refuse busy volumes before any mutation (0.292s)
+Passed: dev / reset removes exactly the three dependency volumes and retains image (0.378s)
+Passed: dev / missing image reports explicit build remedy without building (0.116s)
+Passed: extract-video-frames / preflight failure, denied encoder, plain (1.075s)
+Passed: extract-video-frames / preflight failure, denied none, plain (0.752s)
+Passed: extract-video-frames / preflight success, denied encoder, plain (0.647s)
+Passed: extract-video-frames / preflight success, denied none, plain (0.614s)
+Passed: extract-video-frames / extraction, denied partial, plain (0.622s)
+Passed: extract-video-frames / extraction, denied encoder, plain (0.626s)
+Passed: extract-video-frames / extraction, denied partial+encoder, plain (0.622s)
+Passed: extract-video-frames / extraction, denied none, plain (0.591s)
+Passed: extract-video-frames / structural, denied partial, plain (0.575s)
+Passed: extract-video-frames / structural, denied encoder, plain (0.603s)
+Passed: extract-video-frames / structural, denied partial+encoder, plain (0.565s)
+Passed: extract-video-frames / structural, denied none, plain (0.636s)
+Passed: extract-video-frames / publication, denied encoder, plain (0.810s)
+Passed: extract-video-frames / publication, denied none, plain (0.740s)
+Passed: extract-video-frames / interruption, denied partial, plain (0.575s)
+Passed: extract-video-frames / interruption, denied encoder, plain (0.597s)
+Passed: extract-video-frames / interruption, denied partial+encoder, plain (0.584s)
+Passed: extract-video-frames / interruption, denied none, plain (0.603s)
+Passed: extract-video-frames / preflight failure, denied encoder, JSON (0.501s)
+Passed: extract-video-frames / preflight failure, denied none, JSON (0.488s)
+Passed: extract-video-frames / preflight success, denied encoder, JSON (0.516s)
+Passed: extract-video-frames / preflight success, denied none, JSON (0.517s)
+Passed: extract-video-frames / extraction, denied partial, JSON (0.535s)
+Passed: extract-video-frames / extraction, denied encoder, JSON (0.535s)
+Passed: extract-video-frames / extraction, denied partial+encoder, JSON (0.538s)
+Passed: extract-video-frames / extraction, denied none, JSON (0.534s)
+Passed: extract-video-frames / structural, denied partial, JSON (0.531s)
+Passed: extract-video-frames / structural, denied encoder, JSON (0.532s)
+Passed: extract-video-frames / structural, denied partial+encoder, JSON (0.532s)
+Passed: extract-video-frames / structural, denied none, JSON (0.525s)
+Passed: extract-video-frames / publication, denied encoder, JSON (0.688s)
+Passed: extract-video-frames / publication, denied none, JSON (0.686s)
+Passed: extract-video-frames / interruption, denied partial, JSON (0.571s)
+Passed: extract-video-frames / interruption, denied encoder, JSON (0.573s)
+Passed: extract-video-frames / interruption, denied partial+encoder, JSON (0.574s)
+Passed: extract-video-frames / interruption, denied none, JSON (0.569s)
+Passed: extract-video-frames / help documents the deterministic interface and fixed sibling output (0.067s)
+Passed: extract-video-frames / bad usage reports the stable JSON error contract without probing tools (0.075s)
+Passed: extract-video-frames / missing input is diagnosed before toolchain discovery (0.036s)
+Passed: extract-video-frames / skill documentation defines the entrypoint and forbids redundant reinspection (0.000s)
+Passed: extract-video-frames / metadata malformed, cleanup complete (1.085s)
+Passed: extract-video-frames / metadata malformed, cleanup denied (0.675s)
+Passed: extract-video-frames / metadata write ENOSPC, cleanup complete (0.548s)
+Passed: extract-video-frames / metadata write ENOSPC, cleanup denied (0.520s)
+Passed: extract-video-frames / metadata read EIO, cleanup complete (0.537s)
+Passed: extract-video-frames / metadata read EIO, cleanup denied (0.558s)
+Passed: extract-video-frames / metadata interruption, cleanup complete (0.498s)
+Passed: extract-video-frames / metadata interruption, cleanup denied (0.498s)
+Passed: extract-video-frames / frame reader handles nested records, escaped strings, arbitrary UTF-8 boundaries and whitespace (0.234s)
+Passed: extract-video-frames / malformed, truncated, unexpected records and trailing data reject instead of partial success (0.237s)
+Passed: extract-video-frames / two replay passes equal complete baseline results and errors for 350 deterministic unusual reports (0.510s)
+Passed: extract-video-frames / stdout spool is exclusive mode 0600, uncaptured, and stream stdout still collects (0.166s)
+Passed: extract-video-frames / spool child cancellation waits for close and retains signal (0.002s)
+Passed: extract-video-frames / reader closes descriptors after cancellation, early return, malformed input and read errors (0.004s)
+Passed: extract-video-frames / frame child failures and deterministic ENOSPC preserve child evidence and prevent replay (0.002s)
+Passed: extract-video-frames / deterministic storage open/read failures include path, remedy, and exit 2 (0.001s)
+Passed: extract-video-frames / spool parent descriptors close on successful launch and synchronous spawn failure (0.080s)
+Passed: extract-video-frames / duplicate and non-monotonic timestamps preserve encounter order and exact point selection (0.007s)
+Passed: extract-video-frames / cancellation during the second replay preserves interruption status and closes the reader (0.001s)
+Passed: extract-video-frames / publication refuses a racing output directory without changing it (0.003s)
+Passed: extract-video-frames / publication exposes the completed frame set and removes partial work (0.001s)
+Passed: extract-video-frames / macOS publisher moves a directory and refuses an empty-directory replacement (0.094s)
+Passed: extract-video-frames / process interruption terminates the active child and records the signal (0.054s)
+Passed: extract-video-frames / HDR conversion reuses the helper with at most 10 direct workers (0.063s)
+Passed: extract-video-frames / source mutation is rejected after preflight (0.001s)
+Passed: extract-video-frames / raw preflight failures become stable exit-2 diagnostics (0.001s)
+Passed: extract-video-frames / preflight decodes SDR without compiling (1.065s)
+Passed: extract-video-frames / preflight compiles for hdr HDR (0.605s)
+Passed: extract-video-frames / preflight compiles for synthetic HDR (0.354s)
+Passed: extract-video-frames / CLI SIGTERM terminates HDR encoding, cleans TIFF/HEIC/helper partials, and exits 143 (1.111s)
+Passed: extract-video-frames / CLI SIGTERM terminates HDR verification, cleans TIFF/HEIC/helper partials, and exits 143 (1.081s)
+Passed: extract-video-frames / structural checks reject a wrong frame count (0.001s)
+Passed: extract-video-frames / result truthfully reports the artifact contract (0.000s)
+Passed: extract-video-frames / interruption is terminal and preserves the first signal (0.000s)
+Passed: extract-video-frames / interruption escalates and waits for an uncooperative child to close (0.075s)
+Passed: extract-video-frames / child signal survives extraction error reporting (plain) (0.052s)
+Passed: extract-video-frames / child signal survives extraction error reporting (JSON) (0.052s)
+Passed: extract-video-frames / process manager routes stdout progress without contaminating diagnostics (0.025s)
+Passed: extract-video-frames / extraction CLI preserves crash diagnostics (plain) (0.588s)
+Passed: extract-video-frames / extraction CLI preserves crash diagnostics (JSON) (0.575s)
+Passed: extract-video-frames / real rgb48be extraction preserves depth and fractional duration (0.874s)
+Passed: extract-video-frames / real rgba64be extraction preserves depth and fractional duration (0.875s)
+Passed: extract-video-frames / real gray16be extraction preserves depth and fractional duration (0.868s)
+Passed: extract-video-frames / real yuv420p extraction preserves depth and fractional duration (0.799s)
+Passed: extract-video-frames / native hdr-pq publishes verified HEIC10 frames (1.235s)
+Passed: extract-video-frames / native hdr-hlg publishes verified HEIC10 frames (1.059s)
+Passed: extract-video-frames / native HEIC10 encoder drops TIFF alpha and HDR alpha CLI rejects during preparation (0.972s)
+Passed: extract-video-frames / authoritative ya8 descriptor determines alpha and useful component depth (0.001s)
+Passed: extract-video-frames / authoritative ya16le descriptor determines alpha and useful component depth (0.000s)
+Passed: extract-video-frames / authoritative ya16be descriptor determines alpha and useful component depth (0.000s)
+Passed: extract-video-frames / authoritative rgba descriptor determines alpha and useful component depth (0.000s)
+Passed: extract-video-frames / authoritative rgba64le descriptor determines alpha and useful component depth (0.000s)
+Passed: extract-video-frames / authoritative rgba64be descriptor determines alpha and useful component depth (0.000s)
+Passed: extract-video-frames / authoritative yuv420p descriptor determines alpha and useful component depth (0.000s)
+Passed: extract-video-frames / authoritative yuv420p10le descriptor determines alpha and useful component depth (0.000s)
+Passed: extract-video-frames / missing and malformed descriptors fail without guessing a depth (0.000s)
+Passed: extract-video-frames / smpte2084 alpha is rejected before extraction (0.000s)
+Passed: extract-video-frames / arib-std-b67 alpha is rejected before extraction (0.000s)
+Passed: extract-video-frames / PNG checks reject rgb48be in first output (0.002s)
+Passed: extract-video-frames / PNG checks reject rgb48be in last output (0.001s)
+Passed: extract-video-frames / PNG checks reject rgba in first output (0.001s)
+Passed: extract-video-frames / PNG checks reject rgba in last output (0.001s)
+Passed: extract-video-frames / PNG checks reject unknown in first output (0.001s)
+Passed: extract-video-frames / PNG checks reject unknown in last output (0.001s)
+Passed: extract-video-frames / PNG checks accept equivalent endian descriptors and report measured properties (0.001s)
+Passed: extract-video-frames / time syntax is exact to nanoseconds (0.001s)
+Passed: extract-video-frames / invalid, negative, and over-precise times are rejected (0.001s)
+Passed: extract-video-frames / arguments accept independent inclusive bounds and reject reversed ranges (0.000s)
+Passed: extract-video-frames / environment-only preflight rejects window flags without an input (0.000s)
+Passed: extract-video-frames / output is a fixed sibling derived from the supplied path (0.000s)
+Passed: extract-video-frames / strict HDR classification produces 10-bit HEIC through a 16-bit TIFF (0.000s)
+Passed: extract-video-frames / HLG is accepted only as tagged 10-bit BT.2020 HDR (0.000s)
+Passed: extract-video-frames / SDR preserves useful depth while normalizing to sRGB PNG (0.000s)
+Passed: extract-video-frames / ambiguous color and Dolby Vision-only streams fail before work (0.000s)
+Passed: extract-video-frames / non-orthogonal display rotation is rejected (0.001s)
+Passed: extract-video-frames / complete display matrices become explicit rotation and flip filters (0.000s)
+Passed: extract-video-frames / display matrices with scale, shear, perspective, or arbitrary angles are rejected (0.000s)
+Passed: extract-video-frames / first real video stream is selected instead of attached artwork (0.000s)
+Passed: extract-video-frames / presented-frame selection includes exact start and end timestamps (0.006s)
+Passed: extract-video-frames / timestamp analysis ignores invalid records and retains exact large origins and final duration (0.008s)
+Passed: extract-video-frames / color changes outside the selected interval and on invalid timestamps remain errors (0.003s)
+Passed: extract-video-frames / clip duration includes the final frame, using either ffprobe duration field name (0.005s)
+Passed: extract-video-frames / ffmpeg extraction disables autorotation and applies explicit transforms (0.000s)
+Passed: extract-video-frames / representative decode probe uses the selected frame and a null sink (0.000s)
+Passed: extract-video-frames / HDR extraction writes TIFF intermediates with the source transfer intact (0.000s)
+Passed: extract-video-frames / representative decode requires an emitted frame (0.000s)
+Passed: extract-video-frames / diagnostics retain only the configured stderr tail (0.000s)
+Passed: extract-video-frames / representative decode retains child evidence for exit zero (0.000s)
+Passed: extract-video-frames / representative decode retains child evidence for SIGSEGV (0.000s)
+Passed: extract-video-frames / representative decode accepts normal stdout progress (0.000s)
+Passed: extract-video-frames / omitted fractional end uses exact duration ticks (0.003s)
+Passed: extract-video-frames / textual display matrices accept translation and reject both perspective fields (0.000s)
+Passed: git-hooks / a fresh commit ends up at the fixed author and committer date (0.221s)
+Passed: git-hooks / the amend does not create an extra commit or change the message/tree (0.187s)
+Passed: git-hooks / committing again on top of an already-correct HEAD stays correct and terminates (0.321s)
+Passed: harness-advisor / CLI requires parent native-absence attestation before dispatch (0.036s)
+Passed: harness-advisor / Claude CLI applies per-call profile, fresh input, tool restrictions, and no recursion (0.282s)
+Passed: harness-advisor / runtime failure ADVISOR_TEST_FAILURE reports once without consultation success (0.122s)
+Passed: harness-advisor / runtime failure ADVISOR_TEST_AUTH_FAILURE reports once without consultation success (0.129s)
+Passed: harness-advisor / missing and empty canonical contract fail before CLI dispatch with reinstall remedy (0.068s)
+Passed: harness-advisor / required but unlisted flag permits dispatch, genuine rejection fails without retry (0.267s)
+Passed: harness-advisor / absent CLI is unavailable without inference (0.044s)
+Passed: harness-advisor / built-ins and derived same-family modes (0.001s)
+Passed: harness-advisor / explicit family > exact route > host default > built-in, including deliberate downgrade (0.001s)
+Passed: harness-advisor / CLI missing config reads and no-op removals never create a file (0.134s)
+Passed: harness-advisor / CLI mutations preserve unrelated routes, serialize sparsely, and avoid no-op writes (0.279s)
+Passed: harness-advisor / invalid schema and exact model IDs fail before writing, bad args precede config reads (0.158s)
+Passed: harness-advisor / separate CLI writers fail explicitly on contention and preserve routes after retry (0.291s)
+Passed: harness-advisor / interrupted writer leaves an actionable lock and never permits silent stealing (0.135s)
+Passed: harness-advisor / publication failure preserves configuration and cleans staging and lock (0.065s)
+Passed: harness-advisor / lock cleanup failure reports possible publication and manual recovery (0.030s)
+Passed: harness-advisor / policy retains separate budgets, peer gate, and relevant model-neutral carryover (0.000s)
+Passed: harness-advisor / context policy preserves relevance, actual capacity, explicit budgets, and honest omissions (0.000s)
+Passed: harness-advisor / Claude activation suppresses Harness on native presence including native errors (0.000s)
+Passed: harness-advisor / Codex dispatch uses an ordinary fresh agent and distinguishes instructions from permissions (0.001s)
+Passed: install-harness-plugin-capabilities / three CLI installs preserve user bytes and converge without touching config (0.098s)
+Passed: install-harness-plugin-capabilities / managed block update preserves prefix and suffix exactly (0.000s)
+Passed: install-harness-plugin-capabilities / CLI updates activation while preserving a legacy role (0.046s)
+Passed: install-harness-plugin-capabilities / malformed and duplicate blocks fail without any file publication (0.152s)
+Passed: install-harness-plugin-capabilities / preflight without a CLI reports one instruction file and creates no home or files (0.035s)
+Passed: install-harness-plugin-capabilities / unowned legacy role is preserved and overriding instructions fail before writes (0.069s)
+Passed: install-harness-plugin-capabilities / Claude installs only the gate without a CLI and preserves legacy roles and settings (0.065s)
+Passed: install-harness-plugin-capabilities / obsolete installation-time native argument is rejected before writing (0.032s)
+Passed: install-harness-plugin-capabilities / usage errors precede environment probes (0.038s)
+Passed: install-harness-plugin-capabilities / instruction file conflict fails before publication and rerun repairs (0.073s)
+Passed: inventory / README lists exactly the skills present under plugins/harness/skills/ (0.003s)
+Passed: inventory / README lists exactly the output styles present under plugins/harness/output-styles/ (0.001s)
+Passed: run-tests / prerequisites remain sequential, preserve statuses, and report all unrun and excluded groups (0.047s)
+Passed: run-tests / Python overlaps full search, pool waits for full search, and failures do not stop later files (0.204s)
+Passed: run-tests / Python launch errors and Node file crashes still yield a complete final report (0.086s)
+Passed: run-tests / interruption preserves the first signal, stops scheduling, and terminates active children (0.317s)
+Passed: run-tests / interruption during full search cancels active work and leaves the pool unrun (0.068s)
+Passed: run-tests / Python subtests and expected failures count each test once (0.040s)
+Passed: run-tests / CLI accepts only the complete gate, --skip-gif, and --help (0.111s)
+Passed: run-tests / Node test groups are discovered deterministically and ignore non-test files (0.003s)
+Passed: run-tests / setup is separate from the validation and test command plan (0.001s)
+Passed: run-tests / every orchestration-stage failure stops later commands and returns its status (0.000s)
+Passed: run-tests / stage timers measure invocations and the total includes gaps (0.000s)
+Passed: run-tests / failed exits and launch failures report timing and exactly one final summary (0.000s)
+Passed: run-tests / a complete child invocation includes waiting time (0.182s)
+Passed: run-tests / workflow limits credentials and tests each exact revision before bumping it (0.001s)
+Passed: run-tests / missing test prerequisites give a setup remedy without installing (0.001s)
+Passed: shared-node / mediaFailed: empty stderr (0.001s)
+Passed: shared-node / mediaFailed: whitespace stderr (0.000s)
+Passed: shared-node / mediaFailed: nonzero exit (0.000s)
+Passed: shared-node / mediaFailed: termination signal (0.000s)
+Passed: shared-node / mediaFailed: nonempty stderr (0.000s)
+Passed: shared-node / mediaFailed: null exit (0.002s)
+Passed: shared-node / mediaFailed: missing stderr (0.000s)
+Passed: shared-node / childDetails preserves values and field order without mutating input (0.000s)
+Passed: shared-node / copied plugin layout resolves shared imports for every media entrypoint (0.121s)
+Passed: shared-node / first successful PATH entry wins (0.002s)
+Passed: shared-node / non-executable and unresolvable candidates do not prevent a later match (0.002s)
+Passed: shared-node / symlinks resolve to the canonical target (0.001s)
+Passed: shared-node / empty, missing, and relative PATH entries retain current-directory behavior (0.121s)
+Passed: shared-node / no match returns null (0.000s)
+Passed: wake-desktop / no-wait skips ping and sends exact packets once per port using one prepared socket (0.035s)
+Passed: wake-desktop / preflight prepares and closes without sending, preserving ready fields (0.037s)
+Passed: wake-desktop / sending precedes the first target probe, including an already reachable host (0.040s)
+Passed: wake-desktop / fail-9: at least one successful send is sufficient (0.033s)
+Passed: wake-desktop / fail-7: at least one successful send is sufficient (0.033s)
+Passed: wake-desktop / duplicate: at least one successful send is sufficient (0.031s)
+Passed: wake-desktop / late-socket-error: at least one successful send is sufficient (0.031s)
+Passed: wake-desktop / create: structured startup socket failure (0.034s)
+Passed: wake-desktop / bind: structured startup socket failure (0.034s)
+Passed: wake-desktop / broadcast: structured startup socket failure (0.032s)
+Passed: wake-desktop / socket-error: structured startup socket failure (0.029s)
+Passed: wake-desktop / both-fail: structured startup socket failure (0.032s)
+Passed: wake-desktop / send-throw: structured startup socket failure (0.031s)
+Passed: wake-desktop / cleanup failure after sending exits 1 (0.063s)
+Passed: wake-desktop / configuration errors precede runtime and platform checks (0.128s)
+Passed: wake-desktop / waiting checks ping before sending and preserves target subprocess errors (0.126s)
+Passed: wake-desktop / expired real subprocess is killed and reaped without retrying (1.034s)
+Passed: wake-desktop / a response after the deadline is not accepted (1.031s)
+Passed: wake-desktop / CLI help, text diagnostics and JSON usage errors (0.085s)
+Passed: wake-desktop / monotonic probe starts are one second apart without adding probe duration (0.004s)
+Passed: wake-desktop / a delayed start uses only the remaining deadline and rejects success at expiry (0.001s)
+Passed: wake-desktop / deadline checked before a new probe even when the scheduler wakes late (0.001s)
+Passed: wake-desktop / overlong probes never overlap or accept a late success (0.001s)
+Passed: wake-desktop / absent list, registration, direct-name sorting and exact own-property lookup (0.332s)
+Passed: wake-desktop / conflicts, replacement, partial update, rename and removal preserve unknown properties (0.373s)
+Passed: wake-desktop / missing sources, invalid names and command usage (0.602s)
+Passed: wake-desktop / invalid configuration and supplied addresses have structured diagnostics (0.514s)
+Passed: wake-desktop / management help and preflight do not write or network and need no wake platform (0.472s)
+Passed: wake-desktop / persistence failure preserves the original and cleans staging files (0.148s)
+Passed: wake-desktop / registration followed by simulated named wake, precedence and read-only results (0.207s)
+Passed: wake-desktop / named validation precedes overrides and networking, unrelated bad entries do not block waking (0.405s)
+Passed: wake-desktop / named configuration failures identify the requested name and configuration path (0.202s)
+Passed: wake-desktop / missing configuration remedy supports names beginning with a hyphen (0.088s)
+Passed: wake-desktop / text management output contains the same result facts (0.058s)
+Passed: wake-desktop / flags populate every option (0.001s)
+Passed: wake-desktop / short flags and --flag=value are accepted (0.000s)
+Passed: wake-desktop / the environment fills in only what the flags left out (0.000s)
+Passed: wake-desktop / an unknown argument is a usage error (0.000s)
+Passed: wake-desktop / a flag without a value is a usage error (0.000s)
+Passed: wake-desktop / missing configuration reports config_missing (0.000s)
+Passed: wake-desktop / malformed input reports config_invalid (0.000s)
+Passed: wake-desktop / valid configuration normalizes the timeout (0.000s)
+Passed: wake-desktop / hyphen-separated MAC addresses and hostnames are accepted (0.000s)
+Passed: wake-desktop / isValidIpv4 rejects out-of-range and zero-padded octets (0.000s)
+Passed: wake-desktop / the magic packet is 6 sync bytes then the MAC sixteen times (0.001s)
+Passed: wake-desktop / the magic packet ignores separator style and case (0.000s)
+Passed: wake-desktop / nodeVersionAtLeast compares release components (0.000s)
+Passed: wake-desktop / explicit empty values do not fall back and both modes require MAC and IP (0.000s)
+Passed: wake-desktop / seconds and milliseconds must both be safe integers (0.000s)
+tests 493
+suites 1
+pass 493
+fail 0
+cancelled 0
+skipped 0
+todo 0
+duration_ms 21927.32
+
+================ TEST GATE: PASSED ================
+Wall time: 27.554s | Node pool: 18 | full-search JOBS: 18 | retained scenarios: 4 | Python: 1
+Prerequisites:
+  Passed | validate test prerequisites | 0.118s
+  Passed | validate ASD-STE100 references | 0.050s
+  Passed | preflight GIF converter (gifski) | 0.212s
+  Passed | preflight GIF converter (gifsicle) | 0.159s
+Groups (elapsed spans overlap, do not sum):
+  Passed | back-up-directories | 70 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 1.559s
+  Passed | bump-version | 48 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 7.130s
+  Passed | create-discord-emoji-gif | 122 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 20.971s
+  Passed | demonstrate-workflow | 4 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 0.087s
+  Passed | dev | 5 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 1.564s
+  Passed | extract-video-frames | 132 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 21.829s
+  Passed | git-hooks | 3 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 0.773s
+  Passed | harness-advisor | 20 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 1.235s
+  Passed | install-harness-plugin-capabilities | 10 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 0.660s
+  Passed | inventory | 2 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 0.051s
+  Passed | run-tests | 15 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 0.804s
+  Passed | shared-node | 14 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 0.218s
+  Passed | wake-desktop | 49 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 3.522s
+  Passed | write-asd-ste100 | 143 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo | 7.346s
+Aggregate: 637 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo
+Excluded groups are omitted by option. Unrun groups never started. Skipped tests are reported by the test frameworks.
+Five slowest tests:
+  4.996s | create-discord-emoji-gif / gifsicle full search publishes complete JSON and retains KEEP_WORK artifacts | /Users/kyle/Documents/harness-plugin/tests/create-discord-emoji-gif/full-search.test.js:12
+  3.918s | create-discord-emoji-gif / worker and Rayon settings cover pinned, narrow, and default FPS ranges | /Users/kyle/Documents/harness-plugin/tests/create-discord-emoji-gif/gifski-converter.test.js:277
+  2.225s | create-discord-emoji-gif / gifski retained-file lifecycle: reverse | /Users/kyle/Documents/harness-plugin/tests/create-discord-emoji-gif/retained-candidates.test.js:52
+  2.086s | create-discord-emoji-gif / input and output validation reject unusable paths before search | /Users/kyle/Documents/harness-plugin/tests/create-discord-emoji-gif/gifski-converter.test.js:188
+  1.961s | create-discord-emoji-gif / gifski retained-file lifecycle: forward | /Users/kyle/Documents/harness-plugin/tests/create-discord-emoji-gif/retained-candidates.test.js:52
+Failures:
+  None

@@ -1,0 +1,82 @@
+{
+  "ordinary-host": {
+    "threadIds": [
+      "01a09c5c-6081-70e2-8d42-409b70d5c2da"
+    ],
+    "models": [
+      "gpt-6-astra"
+    ],
+    "injections": [
+      {
+        "turnIndex": 3,
+        "header": "<skill>\n<name>harness:demonstrate-workflow</name>\n<path>/private/tmp/demonstrate-workflow-qualification/codex/plugins/cache/workflow-qualification/harness/0.0.1/skills/demonstrate-workflow/SKILL.md</path>\n"
+      }
+    ],
+    "note": "Cumulative session trace. Resumed runs share a thread. turnIndex identifies when host injection occurred."
+  },
+  "retro": {
+    "threadIds": [
+      "01a09c5c-6081-70e2-8d42-409b70d5c2da"
+    ],
+    "models": [
+      "gpt-6-astra"
+    ],
+    "injections": [
+      {
+        "turnIndex": 3,
+        "header": "<skill>\n<name>harness:demonstrate-workflow</name>\n<path>/private/tmp/demonstrate-workflow-qualification/codex/plugins/cache/workflow-qualification/harness/0.0.1/skills/demonstrate-workflow/SKILL.md</path>\n"
+      }
+    ],
+    "note": "Cumulative session trace. Resumed runs share a thread. turnIndex identifies when host injection occurred."
+  },
+  "retro-author": {
+    "threadIds": [
+      "01a09c5c-6081-70e2-8d42-409b70d5c2da"
+    ],
+    "models": [
+      "gpt-6-astra"
+    ],
+    "injections": [
+      {
+        "turnIndex": 3,
+        "header": "<skill>\n<name>harness:demonstrate-workflow</name>\n<path>/private/tmp/demonstrate-workflow-qualification/codex/plugins/cache/workflow-qualification/harness/0.0.1/skills/demonstrate-workflow/SKILL.md</path>\n"
+      }
+    ],
+    "note": "Cumulative session trace. Resumed runs share a thread. turnIndex identifies when host injection occurred."
+  },
+  "quoted": {
+    "threadIds": [
+      "01a09c5e-149e-71c2-a90d-447f84a0acf6"
+    ],
+    "models": [
+      "gpt-6-astra"
+    ],
+    "injections": [
+      {
+        "turnIndex": 1,
+        "header": "<skill>\n<name>harness:demonstrate-workflow</name>\n<path>/private/tmp/demonstrate-workflow-qualification/codex/plugins/cache/workflow-qualification/harness/0.0.1/skills/demonstrate-workflow/SKILL.md</path>\n"
+      }
+    ],
+    "note": "Cumulative session trace. Resumed runs share a thread. turnIndex identifies when host injection occurred."
+  },
+  "replay-correct-cwd": {
+    "threadIds": [
+      "01a09c5f-143d-7be3-ba5b-5d7dc6811483"
+    ],
+    "models": [
+      "gpt-6-astra"
+    ],
+    "injections": [],
+    "note": "Cumulative session trace. Resumed runs share a thread. turnIndex identifies when host injection occurred."
+  },
+  "replay-final": {
+    "threadIds": [
+      "01a09c5f-b8b0-7b21-ae18-39685aaf0343"
+    ],
+    "models": [
+      "gpt-6-astra"
+    ],
+    "injections": [],
+    "note": "Cumulative session trace. Resumed runs share a thread. turnIndex identifies when host injection occurred."
+  }
+}

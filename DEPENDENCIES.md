@@ -73,6 +73,7 @@ Install the plugin into Codex or Claude Code using the [README installation inst
 | `diagnose-environment` | No fixed additional runtime or package. Needs shell and filesystem access to the environment being diagnosed, using its available tools. |
 | `inspect-development-environment` | No fixed additional runtime or package. Needs local, unprivileged shell/filesystem access on macOS or Linux and a writable report directory. Inventories available tools without installing missing ones. |
 | `record-decision` | No additional runtime or package. Needs access to the decision context and permission to write the requested record. |
+| `demonstrate-workflow` | Instruction-only, no additional runtime or package. Uses ordinary host tools and available session evidence. Codex 0.154.0 uses `$harness:demonstrate-workflow` and `policy.allow_implicit_invocation: false`. Quoted mentions can load instructions but do not authorize formalization. Shared frontmatter retains the narrowly approved `disable-model-invocation: true` extension. Claude behavior is unqualified. |
 | `research-precedent` | No fixed additional runtime or package. Needs repository/history access (Git for local history) and the available search/retrieval tools for external evidence. Unreachable source classes are reported as coverage gaps. |
 | Output styles | Claude Code only, with no additional runtime or package dependencies. Codex consumes the skills and ignores these styles. |
 

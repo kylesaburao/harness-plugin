@@ -1,0 +1,3 @@
+python3 /Users/kyle/.codex/skills/.system/skill-creator/scripts/quick_validate.py plugins/harness/skills/demonstrate-workflow
+Exit: 1
+Unexpected key(s) in SKILL.md frontmatter: disable-model-invocation. Allowed properties are: allowed-tools, description, license, metadata, name
