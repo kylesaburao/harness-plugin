@@ -79,6 +79,7 @@ Documentation-restatement tests are intentionally retained. Test stable public b
 ```sh
 node --test tests/back-up-directories/*.test.js
 node --test tests/create-discord-emoji-gif/*.test.js
+node --test tests/extract-video-frames/*.test.js
 node --test tests/bump-version/*.test.js
 node --test tests/git-hooks/*.test.js
 node --test tests/inventory/*.test.js
