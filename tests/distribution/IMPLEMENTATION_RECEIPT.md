@@ -85,3 +85,20 @@ Executed verification:
 - `git diff --check`: passed.
 
 Local raw evidence: `tmp/ts-stage2-host-gate.log`, `tmp/ts-stage2-container-gate.log`, `tmp/ts-stage2-node22.log`, `tmp/ts-stage2-node22-advisor.log`, and the focused logs. The runtime-floor script is development-only and is not distributed. Stages 3 through 7 remain.
+
+## Stage 3: wake tools
+
+Starting checkpoint: `757a788`. Converted all three wake modules as a typed local graph. Raw and fully validated registries remain distinct, selected-target loading tolerates unrelated invalid entries, and extensible saved records retain their unknown properties. Management commands/results and resolved wake requests/reports are explicit types. UDP and ping callbacks retain the existing packet-sent failure boundary and monotonic scheduling. Nine transitional modules remain.
+
+The deadline VM harness now supplies `exports` as the same object as `module.exports`, matching ordinary CommonJS execution. Its four scheduling assertions are unchanged. The distribution collision fixture now targets the still-transitional backup module, since wake no longer has a source JavaScript counterpart.
+
+Executed verification:
+
+- `npm run typecheck`, `npm run build`, `npm run build:check`, and `node scripts/validate-dist.js --tracked`: passed, 80 generated files.
+- Initial focused wake/distribution run: 52 passed, four deadline harness failures caused by the missing CommonJS `exports` alias.
+- After correcting that harness, `node --test tests/wake-desktop/*.test.js tests/distribution/*.test.js`: **56 passed, zero failed, zero skipped**.
+- Native setup followed by `node scripts/run-tests.js` with host access: **657 passed, zero failed, zero skipped**.
+- Container setup followed by `./scripts/dev exec node scripts/run-tests.js`: **597 passed, zero failed, 60 platform skips**.
+- `git diff --check`: passed. Tests used simulated networking and isolated configuration, without real wake traffic.
+
+Local logs: `tmp/ts-stage3-focused.log`, `tmp/ts-stage3-host-setup.log`, `tmp/ts-stage3-container-setup.log`, `tmp/ts-stage3-host-gate.log`, and `tmp/ts-stage3-container-gate.log`. Stages 4 through 7 remain.

@@ -13,9 +13,10 @@ const source = readFileSync(path.join(__dirname,
 function clockHarness({ durations, replies, sleepOverrun = 0 }) {
   let now = 0;
   const probes = [];
+  const module = { exports: {} };
   const context = vm.createContext({
     require: (name) => name === 'node:perf_hooks' ? { performance: { now: () => now } } : skillRequire(name),
-    module: { exports: {} }, process, Buffer, setTimeout, clearTimeout,
+    module, exports: module.exports, process, Buffer, setTimeout, clearTimeout,
     Date: { now: () => { throw new Error('wall clock must not be used'); } },
     probe: async (_, budget) => {
       const index = probes.length;

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 
-const dgram = require('node:dgram');
-const { spawn } = require('node:child_process');
-const os = require('node:os');
-const { performance } = require('node:perf_hooks');
+import dgram = require('node:dgram');
+import childProcess = require('node:child_process');
+const { spawn } = childProcess;
+import os = require('node:os');
+import perfHooks = require('node:perf_hooks');
+const { performance } = perfHooks;
 
 // Exit status contract, shared with the other scripts in this plugin:
 //   0  the host is online, or the packet was sent with --no-wait
@@ -16,8 +18,19 @@ const EXIT = Object.freeze({
   CANNOT_START: 2,
 });
 
-const { StartupError, isValidIpv4, isValidMac, isValidHost, nodeVersionAtLeast,
-  checkNodeVersion, reportError, loadTarget } = require('./target-config');
+import { StartupError, isValidIpv4, isValidMac, isValidHost, nodeVersionAtLeast,
+  checkNodeVersion, reportError, loadTarget, errorDetails } from './target-config.js';
+
+export interface WakeCliOptions {
+  target: string | null; mac: string | null; ip: string | null; timeout: string | null;
+  wait: boolean; preflightOnly: boolean; json: boolean; help: boolean;
+}
+export interface ResolvedWakeRequest { mac: string; ip: string; timeoutSeconds: number }
+type PingResult = { ok: boolean; error?: unknown };
+type WakeReport = { mac: string; ip: string; target?: string } & (
+  | { status: 'ready'; timeoutSeconds: number; waitedSeconds?: never }
+  | { status: 'online' | 'packet-sent'; waitedSeconds: number }
+);
 const BROADCAST_ADDRESS = '255.255.255.255';
 const WOL_PORTS = Object.freeze([9, 7]);
 const MAGIC_PACKET_BYTES = 102;
@@ -44,8 +57,8 @@ Environment fallbacks, used when the matching flag is absent:
 
 Exit status: 0 online or packet sent, 2 cannot start, 1 failure after sending.`;
 
-function parseArguments(argv, env = {}) {
-  const options = {
+function parseArguments(argv: string[], env: NodeJS.ProcessEnv = {}): WakeCliOptions {
+  const options: WakeCliOptions = {
     target: null,
     mac: null,
     ip: null,
@@ -55,7 +68,7 @@ function parseArguments(argv, env = {}) {
     json: false,
     help: false,
   };
-  const takesValue = new Map([
+  const takesValue = new Map<string, 'target' | 'mac' | 'ip' | 'timeout'>([
     ['--target', 'target'],
     ['--mac', 'mac'],
     ['-m', 'mac'],
@@ -66,7 +79,7 @@ function parseArguments(argv, env = {}) {
   ]);
 
   for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index];
+    const argument = argv[index]!;
     if (takesValue.has(argument)) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('-')) {
@@ -76,7 +89,7 @@ function parseArguments(argv, env = {}) {
           'run with --help to see the accepted options',
         );
       }
-      options[takesValue.get(argument)] = value;
+      options[takesValue.get(argument)!] = value;
       index += 1;
       continue;
     }
@@ -84,7 +97,7 @@ function parseArguments(argv, env = {}) {
     if (argument.startsWith('--') && equalsIndex > 2) {
       const flag = argument.slice(0, equalsIndex);
       if (takesValue.has(flag)) {
-        options[takesValue.get(flag)] = argument.slice(equalsIndex + 1);
+        options[takesValue.get(flag)!] = argument.slice(equalsIndex + 1);
         continue;
       }
     }
@@ -118,7 +131,7 @@ function parseArguments(argv, env = {}) {
   return options;
 }
 
-function validateConfiguration(options) {
+function validateConfiguration(options: WakeCliOptions): ResolvedWakeRequest {
   const missing = [];
   if (!options.mac) missing.push('MAC address (--mac or MAC_ADDRESS)');
   if (!options.ip) missing.push('target host (--ip or IP_ADDRESS)');
@@ -136,8 +149,7 @@ function validateConfiguration(options) {
       'pass a MAC address such as a1:b2:c3:d4:e5:f6',
     );
   }
-  const hostIsValid = isValidHost(options.ip);
-  if (!hostIsValid) {
+  if (!isValidHost(options.ip)) {
     throw new StartupError(
       'config_invalid',
       `target host is neither an IPv4 address nor a hostname: ${options.ip}`,
@@ -163,7 +175,7 @@ function validateConfiguration(options) {
   };
 }
 
-function buildMagicPacket(mac) {
+function buildMagicPacket(mac: string) {
   const bytes = Buffer.from(mac.replace(/[:-]/g, ''), 'hex');
   if (bytes.length !== 6) {
     throw new StartupError(
@@ -179,7 +191,7 @@ function buildMagicPacket(mac) {
   return packet;
 }
 
-function pingArguments(host) {
+function pingArguments(host: string) {
   // -W is the reply timeout on both platforms, but macOS counts milliseconds
   // where Linux counts seconds.
   const wait = os.platform() === 'darwin'
@@ -190,13 +202,13 @@ function pingArguments(host) {
 
 // The process deadline also bounds DNS lookup and ping implementations whose
 // own -W option does not bound the entire command.
-function runPing(host, timeoutMs = PROBE_INTERVAL_MS) {
-  return new Promise((resolve) => {
-    let child;
-    let timer;
+function runPing(host: string, timeoutMs = PROBE_INTERVAL_MS) {
+  return new Promise<PingResult>((resolve) => {
+    let child: childProcess.ChildProcess;
+    let timer: NodeJS.Timeout | undefined;
     let settled = false;
     let expired = false;
-    const finish = (result) => {
+    const finish = (result: PingResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -225,15 +237,15 @@ function runPing(host, timeoutMs = PROBE_INTERVAL_MS) {
   });
 }
 
-function probeError(result) {
+function probeError(result: PingResult) {
   return new StartupError(
-    result.error?.code === 'ENOENT' ? 'command_missing' : 'probe_unusable',
-    result.error ? `ping could not run: ${result.error.message}` : 'ping could not reach 127.0.0.1',
+    errorDetails(result.error).code === 'ENOENT' ? 'command_missing' : 'probe_unusable',
+    result.error ? `ping could not run: ${errorDetails(result.error).message}` : 'ping could not reach 127.0.0.1',
     'make ping available on PATH with ICMP permission (macOS: /sbin/ping, Linux: install iputils-ping), or use --no-wait',
   );
 }
 
-async function checkEnvironment(options) {
+async function checkEnvironment(options: Pick<WakeCliOptions, 'wait'>) {
   checkNodeVersion();
   if (!['darwin', 'linux'].includes(os.platform())) {
     throw new StartupError('platform_unsupported', `unsupported platform: ${os.platform()}`,
@@ -247,22 +259,22 @@ async function checkEnvironment(options) {
 
 // One socket preparation path for preflight and dispatch. Keep the error
 // listener through close so late events cannot become uncaught exceptions.
-function broadcast(packet, onSent = () => {}) {
-  return new Promise((resolve, reject) => {
-    let socket;
+function broadcast(packet: Buffer | null, onSent: () => void = () => {}) {
+  return new Promise<void>((resolve, reject) => {
+    let socket: dgram.Socket;
     let settled = false;
     let successes = 0;
-    const finish = (error) => {
+    const finish = (error?: unknown) => {
       if (settled) return;
       settled = true;
       try {
         if (socket) socket.close();
       } catch (closeError) {
         // A failed bind can leave a socket that is already stopped.
-        if (closeError.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') error = closeError;
+        if (errorDetails(closeError).code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') error = closeError;
       }
       if (error) reject(new StartupError('broadcast_unavailable',
-        `UDP broadcast failed: ${error.message}`,
+        `UDP broadcast failed: ${errorDetails(error).message}`,
         'run on the target LAN with UDP broadcast permitted'));
       else resolve();
     };
@@ -277,7 +289,7 @@ function broadcast(packet, onSent = () => {}) {
           let remaining = WOL_PORTS.length;
           for (const port of WOL_PORTS) {
             let completed = false;
-            const sent = (error) => {
+            const sent = (error: unknown) => {
               if (completed || settled) return;
               completed = true;
               if (!error) {
@@ -303,11 +315,11 @@ function broadcast(packet, onSent = () => {}) {
   });
 }
 
-function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function sleep(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function waitForHost(config) {
+async function waitForHost(config: ResolvedWakeRequest) {
   const start = performance.now();
   const deadline = start + config.timeoutSeconds * 1000;
   while (performance.now() < deadline) {
@@ -327,7 +339,7 @@ async function waitForHost(config) {
     'check target Wake-on-LAN firmware and network settings, the broadcast domain, and ICMP access. Stop without retrying');
 }
 
-function report(json, payload) {
+function report(json: boolean, payload: WakeReport) {
   const lines = {
     ready: `READY: can send a wake packet to ${payload.mac}`,
     'packet-sent': `Magic packet sent to ${payload.mac}`,
@@ -336,7 +348,7 @@ function report(json, payload) {
   process.stdout.write(`${json ? JSON.stringify(payload) : lines[payload.status]}\n`);
 }
 
-async function main(argv, env) {
+async function main(argv: string[], env: NodeJS.ProcessEnv) {
   let sent = false;
   const json = argv.includes('--json');
   try {
@@ -372,7 +384,7 @@ if (require.main === module) {
   main(process.argv.slice(2), process.env).then((code) => { process.exitCode = code; });
 }
 
-module.exports = {
+export {
   EXIT, StartupError, buildMagicPacket, isValidIpv4, nodeVersionAtLeast,
   parseArguments, validateConfiguration, waitForHost,
 };

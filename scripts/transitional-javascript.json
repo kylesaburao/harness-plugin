@@ -7,8 +7,5 @@
   "skills/create-discord-emoji-gif/scripts/node/process-manager.js",
   "skills/create-discord-emoji-gif/scripts/node/shared.js",
   "skills/extract-video-frames/scripts/extract-video-frames.js",
-  "skills/extract-video-frames/scripts/frame-records.js",
-  "skills/wake-desktop/scripts/manage-targets.js",
-  "skills/wake-desktop/scripts/target-config.js",
-  "skills/wake-desktop/scripts/wake-desktop.js"
+  "skills/extract-video-frames/scripts/frame-records.js"
 ]
