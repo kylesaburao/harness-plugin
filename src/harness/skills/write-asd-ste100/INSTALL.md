@@ -5,15 +5,27 @@ plugin commands). After install it has no local reference data yet.
 
 ## Initialize the local reference bundle
 
-Run once, on macOS or Linux, from the skill's installed path:
+Run once, on macOS or Linux. `<SKILL_DIR>` is the exact loaded skill directory established by
+`SKILL.md`.
+
+Building the bundle needs the `pypdfium2` package and a network connection. macOS's system
+`python3` is not meant to receive `pip install`s, so create a virtual environment outside the
+installed plugin directory, which plugin updates can replace:
 
 ```sh
-python3 "<SKILL_DIR>/scripts/initialize_references.py"
+python3 -m venv .venv
+.venv/bin/pip install pypdfium2
+.venv/bin/python "<SKILL_DIR>/scripts/initialize_references.py"
 ```
 
-`<SKILL_DIR>` is the exact loaded skill directory established by `SKILL.md`. First run needs the
-`pypdfium2` package and a network connection. `README.md` covers the virtual-environment setup and
-the `--pdf` / `--force` options.
+Only initialization uses `.venv/bin/python`. Every other command here, including `--import-from`
+and verification, and all runtime lookup and checking, uses `python3` and the standard library.
+
+Other initializer options (`--import-from` and `--force` are described below):
+
+- `--pdf PATH` uses a local copy of the pinned PDF instead of downloading it.
+- `--preflight` checks the source, configuration, and dependency without building.
+- `--json` makes the error or success report machine-readable.
 
 The bundle is written under `~/.harness-plugin/write-asd-ste100/bundles/`, in a directory named for
 the SHA-256 of the tracked `references/source-config.json`. Codex and Claude Code share it, and a

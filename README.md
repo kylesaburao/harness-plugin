@@ -42,7 +42,7 @@ Some skills retain configuration or generated data under `~/.harness-plugin/`, s
 | [random-sampler](dist/harness/skills/random-sampler/SKILL.md) | Make cryptographic random choices, integers, samples, shuffles, dice rolls, and coin flips. |
 | [wake-desktop](dist/harness/skills/wake-desktop/SKILL.md) | Manage named LAN wake targets and send a magic packet, optionally waiting for a ping response. [Guide](docs/skills/wake-desktop.md). |
 | [write-implementation-plan](dist/harness/skills/write-implementation-plan/SKILL.md) | Create self-contained implementation plans, offering optional HANDOFF.md support for multi-phase or long-horizon work. |
-| [write-asd-ste100](dist/harness/skills/write-asd-ste100/SKILL.md) | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. |
+| [write-asd-ste100](dist/harness/skills/write-asd-ste100/SKILL.md) | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. [Guide](docs/skills/write-asd-ste100.md). |
 
 ### Output styles
 
@@ -77,6 +77,7 @@ Start with the [documentation index](docs/README.md), or go directly to:
 
 - [Harness Advisor](docs/skills/harness-advisor.md): integration, requests, and routing preferences.
 - [Wake Desktop](docs/skills/wake-desktop.md): save and wake computers on your LAN.
+- [ASD-STE100 Writer](docs/skills/write-asd-ste100.md): set up, run, and scope the technical-English checker.
 - [Development](docs/development/README.md): setup, testing, containers, and versioning.
 - [Dependencies and skill setup](docs/development/dependencies.md): runtimes, tools, and initialization.
 - [Suggested plugins](docs/suggested-plugins.md): related projects.

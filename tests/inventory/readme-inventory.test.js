@@ -39,3 +39,14 @@ test('source and distribution expose the same components', () => {
     assert.deepEqual(fs.readdirSync(path.join(ROOT, 'src/harness', kind)).sort(), fs.readdirSync(artifactPath(kind)).sort());
   }
 });
+
+// Human guides live under docs/ (AGENTS.md, Documentation architecture); a
+// skill ships its SKILL.md contract and, when needed, an INSTALL.md setup file.
+test('shipped skills carry no human README guide', () => {
+  const skills = path.join(ROOT, 'src/harness/skills');
+  const withReadme = fs.readdirSync(skills, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .filter(entry => fs.readdirSync(path.join(skills, entry.name)).some(name => name.toLowerCase() === 'readme.md'))
+    .map(entry => entry.name);
+  assert.deepEqual(withReadme, []);
+});
