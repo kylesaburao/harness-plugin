@@ -317,6 +317,18 @@ test('process manager routes stdout progress without contaminating diagnostics',
   assert.equal(progress, 'frame=1\nprogress=end\n');
 });
 
+test('real extraction under a directory containing a percent sign publishes every frame', { skip: process.platform !== 'darwin' || !realFfmpeg }, t => {
+  const root = path.join(temporaryRoot(t), '50%off');
+  fs.mkdirSync(root);
+  const input = path.join(root, 'clip.mp4');
+  const generated = spawnSync(realFfmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=16x16:rate=2:duration=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv', input], { encoding: 'utf8' });
+  assert.equal(generated.status, 0, generated.stderr);
+  const result = spawnSync(process.execPath, [require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js')), '--json', input], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(fs.readdirSync(path.join(root, 'clip-frames')).sort(), ['frame-000001.png', 'frame-000002.png']);
+  assert.equal(fs.readdirSync(root).some(name => name.includes('.partial-')), false);
+});
+
 for (const json of [false, true]) test(`extraction CLI preserves crash diagnostics (${json ? 'JSON' : 'plain'})`, { skip: process.platform !== 'darwin' || !realFfmpeg }, t => {
   const root = temporaryRoot(t);
   const input = path.join(root, 'input.mp4');

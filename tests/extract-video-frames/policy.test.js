@@ -188,6 +188,12 @@ test('ffmpeg extraction disables autorotation and applies explicit transforms', 
   assert.equal(args[args.indexOf('-map') + 1], '0:2');
 });
 
+test('ffmpeg extraction escapes a literal percent in the partial directory and keeps the frame pattern', () => {
+  const args = subject.ffmpegArguments(fixtureState(), '/x/50%off/.clip-frames.partial-abc123');
+  assert.equal(args[args.length - 1], '/x/50%%off/.clip-frames.partial-abc123/frame-%06d.png');
+  assert.equal(subject.ffmpegArguments(fixtureState(), '/tmp/frames').at(-1), '/tmp/frames/frame-%06d.png');
+});
+
 test('representative decode probe uses the selected frame and a null sink', () => {
   const args = subject.decodeProbeArguments(fixtureState());
   assert.ok(args.includes('-noautorotate'));

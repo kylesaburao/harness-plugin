@@ -263,7 +263,9 @@ function ffmpegArguments(state: PreparedExtraction, temporary: string) {
   const color = media.color;
   const filters = filterGraph(media);
   const conversion = colorConversionFilter(color);
-  const output = path.join(temporary, `frame-%06d.${color.intermediateExtension || color.extension}`);
+  // image2 expands every `%` in its output path, so a literal `%` in the
+  // directory must be doubled while the frame-number pattern stays live.
+  const output = path.join(temporary.replace(/%/g, '%%'), `frame-%06d.${color.intermediateExtension || color.extension}`);
   const codec = codecArguments(color);
   return ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-noautorotate', '-progress', 'pipe:1', '-nostats', '-i', state.paths.supplied, '-map', `0:${media.stream.index}`, '-an', '-sn', '-dn', '-vf', `${filters},${conversion}`, '-fps_mode', 'passthrough', '-start_number', '1', ...codec, '-f', 'image2', '-n', output];
 }
