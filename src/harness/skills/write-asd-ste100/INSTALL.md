@@ -60,6 +60,37 @@ fails. Cleanup failures report absolute retained paths in `cleanupFailures`. A s
 `cleanupFailures` means the bundle is available but cleanup is incomplete, and exits with status 1.
 Relay these details without deleting retained paths or retrying initialization automatically.
 
+## Install the comment parser for JavaScript and TypeScript
+
+Prose and Python checks do not need this step. To check comments in `.js`, `.mjs`, `.cjs`, `.jsx`,
+`.ts`, `.mts`, `.cts`, `.tsx`, or `.d.ts` files, the skill needs Node.js 24.0.0 or newer and the
+`@babel/parser` package at the exact version pinned in this skill's `package.json` and
+`package-lock.json`. Install it once, outside the plugin, with a network connection:
+
+```sh
+mkdir -p "$HOME/.harness-plugin/write-asd-ste100"
+cp "<SKILL_DIR>/package.json" "<SKILL_DIR>/package-lock.json" \
+  "$HOME/.harness-plugin/write-asd-ste100/"
+npm ci --omit=dev --prefix "$HOME/.harness-plugin/write-asd-ste100"
+```
+
+The helper's `dependency_missing` and `dependency_invalid` diagnostics print this command with every
+path already filled in and quoted, so prefer copying it from there:
+
+```sh
+node "<SKILL_DIR>/scripts/extract-js-comments.js" --preflight --json
+```
+
+`{"status":"ready",...}` and exit status 0 mean JavaScript-family checking can run. The skill loads
+the parser only from `~/.harness-plugin/write-asd-ste100/node_modules/`: not from the skill
+directory, a project's `node_modules`, `NODE_PATH`, or a global install. The install must come from
+this skill's own `package.json` and `package-lock.json`. Run the command again when a plugin update
+changes them; the checker reports `dependency_invalid` until you do. `node_modules/` is not
+distributed with the plugin, and the install does not touch the reference bundle.
+
+Checking Python source needs Python 3.12 or newer. Prose checking, lookup, and the reference tools
+do not need Python 3.12.
+
 ## Verify
 
 ```sh

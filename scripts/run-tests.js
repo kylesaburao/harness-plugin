@@ -93,13 +93,23 @@ function backupDependencyRoot(home = os.homedir())
   return path.join(home, '.harness-plugin', 'back-up-directories');
 }
 
-// backupReady omits the backup install stages when the caller has confirmed
+// The ASD-STE100 comment parser follows the same pattern: @babel/parser is
+// installed from the selected artifact's write-asd-ste100 manifest and
+// lockfile into the skill's user-level directory, where its helper resolves it.
+function steDependencyRoot(home = os.homedir())
+{
+  return path.join(home, '.harness-plugin', 'write-asd-ste100');
+}
+
+// backupReady and steParserReady omit an install when the caller has confirmed
 // that the user-level install already came from the selected lockfile.
-function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), { backupReady = false } = {})
+function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), { backupReady = false, steParserReady = false } = {})
 {
   const selected = artifactRoot(repoRoot, target);
   const backupSkill = path.join(selected, 'skills/back-up-directories');
   const backupRoot = backupDependencyRoot(home);
+  const steSkill = path.join(selected, 'skills/write-asd-ste100');
+  const steRoot = steDependencyRoot(home);
   const python = path.join('.venv', 'bin', 'python');
   return [
     command('verify selected artifact', 'node', ['scripts/build.js', '--target', target, '--check'], repoRoot),
@@ -110,6 +120,17 @@ function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), {
       ], repoRoot),
       command('install backup dependencies', 'npm', ['ci', '--omit=dev', '--prefix', backupRoot], repoRoot),
     ]),
+    ...(steParserReady ? [] : [
+      command('create ASD-STE100 comment parser directory', 'mkdir', ['-p', steRoot], repoRoot),
+      command('copy ASD-STE100 comment parser manifest and lockfile', 'cp', [
+        path.join(steSkill, 'package.json'), path.join(steSkill, 'package-lock.json'), steRoot,
+      ], repoRoot),
+      command('install ASD-STE100 comment parser', 'npm', ['ci', '--omit=dev', '--prefix', steRoot], repoRoot),
+    ]),
+    // The helper's own readiness check, against the same home as the install.
+    { ...command('probe ASD-STE100 comment parser', 'node', [
+      path.join(steSkill, 'scripts/extract-js-comments.js'), '--preflight', '--json',
+    ], repoRoot), home },
     command('create or reuse Python virtual environment', 'python3', [
       '-m', 'venv', '.venv',
     ], repoRoot),
@@ -119,7 +140,10 @@ function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), {
     command('initialize ASD-STE100 references', python, [
       path.join(selected, 'skills/write-asd-ste100/scripts/initialize_references.py'),
     ], repoRoot),
-  ].map(spec => ({ ...spec, env: { ...process.env, HARNESS_TEST_TARGET: target } }));
+  ].map(({ home: probeHome, ...spec }) => ({
+    ...spec,
+    env: { ...process.env, ...(probeHome === undefined ? {} : { HOME: probeHome }), HARNESS_TEST_TARGET: target },
+  }));
 }
 
 function buildNodeTestGroups(repoRoot, skipGif)
@@ -266,6 +290,7 @@ module.exports = {
   backupDependencyRoot,
   buildSetupPlan,
   buildPrerequisitePlan,
+  steDependencyRoot,
   buildNodeTestGroups,
   discoverNodeTestGroups,
   main,

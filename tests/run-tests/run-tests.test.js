@@ -499,3 +499,94 @@ test('cleanup empties a busy venv mount and reports child cleanup failure', asyn
   assert.equal(await runWithVenvCleanup(root, async () => 0, { remove: busy, ...capture }), 1);
   assert.match(capture.output.stderr, /VENV_CLEANUP_FAILED/);
 });
+
+test('setup installs the ASD-STE100 comment parser from the selected artifact and probes it in the same home', () =>
+{
+  const { buildSetupPlan, steDependencyRoot } = loadRunner();
+  const root = path.join(os.tmpdir(), 'ste-plan-root');
+  const home = path.join(root, 'home');
+  for (const target of ['development', 'distribution'])
+  {
+    const skill = path.join(root, target === 'development' ? '.build/harness' : 'dist/harness', 'skills/write-asd-ste100');
+    const dependencyRoot = steDependencyRoot(home);
+    assert.equal(dependencyRoot, path.join(home, '.harness-plugin/write-asd-ste100'));
+    const plan = buildSetupPlan(root, target, home);
+    const stage = label => plan.find(spec => spec.label === label);
+    assert.deepEqual(stage('create ASD-STE100 comment parser directory').args, ['-p', dependencyRoot]);
+    assert.deepEqual(stage('copy ASD-STE100 comment parser manifest and lockfile').args,
+      [path.join(skill, 'package.json'), path.join(skill, 'package-lock.json'), dependencyRoot]);
+    assert.deepEqual(stage('install ASD-STE100 comment parser').args, ['ci', '--omit=dev', '--prefix', dependencyRoot]);
+    const probe = stage('probe ASD-STE100 comment parser');
+    assert.deepEqual(probe.args, [path.join(skill, 'scripts/extract-js-comments.js'), '--preflight', '--json']);
+    assert.equal(probe.env.HOME, home);
+    assert.equal(probe.env.HARNESS_TEST_TARGET, target);
+    assert.equal(Object.hasOwn(probe, 'home'), false);
+    const labels = plan.map(spec => spec.label);
+    assert.ok(labels.indexOf('install ASD-STE100 comment parser') < labels.indexOf('probe ASD-STE100 comment parser'));
+    const skipped = ['create ASD-STE100 comment parser directory', 'copy ASD-STE100 comment parser manifest and lockfile',
+      'install ASD-STE100 comment parser'];
+    assert.deepEqual(buildSetupPlan(root, target, home, { steParserReady: true }).map(spec => spec.label),
+      labels.filter(label => !skipped.includes(label)));
+  }
+});
+
+test('comment parser readiness uses the selected helper: location, lockfile, version, and load', t =>
+{
+  const { artifactPath } = require('../helpers/plugin-paths');
+  const helper = artifactPath('skills/write-asd-ste100/scripts/extract-js-comments.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ste-parser-ready.'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const selected = path.join(root, 'artifact');
+  const skill = path.join(selected, 'skills/write-asd-ste100');
+  fs.mkdirSync(path.join(skill, 'scripts'), { recursive: true });
+  fs.copyFileSync(helper, path.join(skill, 'scripts/extract-js-comments.js'));
+  for (const name of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(path.dirname(helper), '..', name), path.join(skill, name));
+  const version = JSON.parse(fs.readFileSync(path.join(skill, 'package.json'), 'utf8')).dependencies['@babel/parser'];
+  const parser = (directory, { packageVersion = version, body = 'exports.parse = () => ({ comments: [] });' } = {}) =>
+  {
+    const location = path.join(directory, 'node_modules/@babel/parser');
+    fs.mkdirSync(location, { recursive: true });
+    fs.writeFileSync(path.join(location, 'package.json'), JSON.stringify({ name: '@babel/parser', version: packageVersion, main: 'index.js' }));
+    fs.writeFileSync(path.join(location, 'index.js'), body);
+  };
+  const home = (name, prepare) =>
+  {
+    const directory = path.join(root, 'homes', name);
+    const dependencyRoot = path.join(directory, '.harness-plugin/write-asd-ste100');
+    fs.mkdirSync(dependencyRoot, { recursive: true });
+    prepare(dependencyRoot);
+    return directory;
+  };
+  const copyManifests = dependencyRoot =>
+  {
+    for (const name of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(skill, name), path.join(dependencyRoot, name));
+  };
+  const { steParserProblem } = require('../../scripts/setup-tests');
+  assert.match(steParserProblem(path.join(root, 'absent')), /helper is missing from the selected artifact/);
+  // A parser beside the skill or in a parent directory does not count.
+  parser(skill);
+  parser(path.join(root, 'homes'));
+  assert.match(steParserProblem(selected, home('absent', () => {})), /is not installed in/);
+  assert.match(steParserProblem(selected, home('unlocked', dependencyRoot => parser(dependencyRoot))), /was not made from this skill's package\.json/);
+  assert.match(steParserProblem(selected, home('stale', dependencyRoot =>
+  {
+    copyManifests(dependencyRoot);
+    fs.writeFileSync(path.join(dependencyRoot, 'package-lock.json'), '{"lockfileVersion":3,"stale":true}');
+    parser(dependencyRoot);
+  })), /was not made from this skill's package-lock\.json/);
+  assert.match(steParserProblem(selected, home('version', dependencyRoot =>
+  {
+    copyManifests(dependencyRoot);
+    parser(dependencyRoot, { packageVersion: '7.0.0' });
+  })), /7\.0\.0 is installed/);
+  assert.match(steParserProblem(selected, home('broken', dependencyRoot =>
+  {
+    copyManifests(dependencyRoot);
+    parser(dependencyRoot, { body: 'throw new Error("damaged install");' });
+  })), /could not load: damaged install/);
+  assert.equal(steParserProblem(selected, home('ready', dependencyRoot =>
+  {
+    copyManifests(dependencyRoot);
+    parser(dependencyRoot);
+  })), null);
+});

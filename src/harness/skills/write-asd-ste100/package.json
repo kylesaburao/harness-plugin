@@ -1,0 +1,19 @@
+{
+  "name": "write-asd-ste100",
+  "version": "1.0.0",
+  "description": "Comment extraction runtime for the write-asd-ste100 Agent Skill.",
+  "homepage": "https://github.com/kylesaburao/harness-plugin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kylesaburao/harness-plugin.git"
+  },
+  "license": "MIT",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "@babel/parser": "7.29.11"
+  }
+}

@@ -37,6 +37,11 @@ from ste_data import (
 )
 
 
+# Production modules and package files a synthetic installation needs beside the public scripts.
+RUNTIME_MODULES = ("ste_data.py", "ste_cli.py", "ste_source.py", "extract-js-comments.js")
+SKILL_PACKAGE_FILES = ("package.json", "package-lock.json")
+
+
 def run_result(stdout: str | bytes) -> dict:
     """Return the payload of one {"result": {...}} stdout line, the --json run envelope."""
     text = stdout.decode() if isinstance(stdout, bytes) else stdout
@@ -116,6 +121,16 @@ class SkillInstructionTests(unittest.TestCase):
         self.assertIn("plugin version", instructions)
 
 
+    def test_skill_documents_comment_only_source_checking(self):
+        instructions = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("--input-format prose|python|javascript|typescript|jsx|tsx", instructions)
+        self.assertIn("It checks only the comments of Python, JavaScript, and TypeScript source files", instructions)
+        self.assertIn("Python docstrings are string literals, so the checker does not check them.", instructions)
+        self.assertIn("`analysis`", instructions)
+        self.assertIn("do not check it as prose instead", instructions)
+
+
 class InstallGuideTests(unittest.TestCase):
     def test_install_guide_documents_reference_initialization(self):
         guide = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
@@ -124,6 +139,13 @@ class InstallGuideTests(unittest.TestCase):
         self.assertIn("validate_references.py", guide)
         self.assertIn("--import-from", guide)
         self.assertIn("~/.harness-plugin/write-asd-ste100/bundles/", guide)
+
+    def test_install_guide_documents_the_comment_parser(self):
+        guide = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
+
+        self.assertIn('npm ci --omit=dev --prefix "$HOME/.harness-plugin/write-asd-ste100"', guide)
+        self.assertIn('node "<SKILL_DIR>/scripts/extract-js-comments.js" --preflight --json', guide)
+        self.assertIn("Python 3.12 or newer", guide)
 
 
 class ExtractDictionaryTests(unittest.TestCase):
@@ -673,8 +695,10 @@ class RuntimeEntryPointTests(unittest.TestCase):
         self.addCleanup(restore_home)
         scripts = root / "scripts"
         scripts.mkdir()
-        for name in (*self.public_scripts, "ste_data.py", "ste_cli.py"):
+        for name in (*self.public_scripts, *RUNTIME_MODULES):
             shutil.copy2(SCRIPTS / name, scripts / name)
+        for name in SKILL_PACKAGE_FILES:
+            shutil.copy2(ROOT / name, root / name)
         config, generated, _ = make_bundle(root)
         shared_generated = generated_bundle_path(config, home)
         shared_generated.parent.mkdir(parents=True)
@@ -884,7 +908,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
     def test_stdin_is_strict_utf8_independent_of_inherited_encoding(self):
         with tempfile.TemporaryDirectory() as directory:
             scripts, document = self.make_runtime(Path(directory), valid=True)
-            command = [sys.executable, str(scripts / "ste_check.py"), "-", "--mode", "procedural"]
+            command = [sys.executable, str(scripts / "ste_check.py"), "-", "--input-format", "prose", "--mode", "procedural"]
             for json_output in (False, True):
                 result = subprocess.run(command + (["--json"] if json_output else []), input=b"\xff", capture_output=True)
                 self.assertEqual(result.returncode, 2)

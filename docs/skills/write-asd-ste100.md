@@ -6,7 +6,8 @@
 ASD-STE100 Issue 9 writing rules and a locally generated dictionary. Use it for procedures,
 descriptions, documentation, comments, docstrings, release notes, and user-facing technical text.
 It leaves code, identifiers, commands, paths, quotations, diagnostics, and established project
-terminology unchanged.
+terminology unchanged. When it checks Python, JavaScript, or TypeScript source files, it checks
+only their comments.
 
 The skill runs only when you invoke it. Its [behavioral contract](../../dist/harness/skills/write-asd-ste100/SKILL.md)
 is what the assistant follows.
@@ -17,6 +18,10 @@ After [installing the plugin](../../README.md#install), initialize the local ref
 by following the [skill setup](../../dist/harness/skills/write-asd-ste100/INSTALL.md). Git does not
 contain the extracted dictionary or its validation metadata. If you skip this step, the first
 lookup or check reports the initialization command, and the assistant asks before it runs it.
+
+Checking comments in JavaScript-family files also needs Node.js 24.0.0 or newer and a one-time
+`@babel/parser` install under `~/.harness-plugin/write-asd-ste100/`, described in the same skill
+setup. Checking Python source needs Python 3.12 or newer. Prose checks need neither.
 
 ## Data layout
 
@@ -35,15 +40,19 @@ the bundle, and a plugin version bump reuses it.
 
 ## Direct CLI use
 
-Set `<SKILL_DIR>` to the installed skill directory shown by your harness. Lookup and checking use
-only the Python 3 standard library and never touch the network.
+Set `<SKILL_DIR>` to the installed skill directory shown by your harness. Lookup and checking
+never touch the network. Lookup and prose checking use only the Python 3 standard library.
 
 ```sh
 python3 "<SKILL_DIR>/scripts/ste_lookup.py" WRITE
 python3 "<SKILL_DIR>/scripts/ste_lookup.py" clean --part-of-speech v --json
 python3 "<SKILL_DIR>/scripts/ste_check.py" document.md --mode descriptive
 python3 "<SKILL_DIR>/scripts/ste_check.py" a.md b.md --mode procedural --terms STE_TERMS.jsonl
-printf 'Use the tool.\n' | python3 "<SKILL_DIR>/scripts/ste_check.py" - --mode procedural
+python3 "<SKILL_DIR>/scripts/ste_check.py" worker.py server.js model.ts --mode descriptive --json
+python3 "<SKILL_DIR>/scripts/ste_check.py" README.md worker.py --mode mixed --json
+python3 "<SKILL_DIR>/scripts/ste_check.py" - --input-format typescript --mode descriptive --json < model.ts
+printf 'Use the tool.\n' | python3 "<SKILL_DIR>/scripts/ste_check.py" - --input-format prose --mode procedural
+python3 "<SKILL_DIR>/scripts/ste_check.py" --preflight --input-format typescript --json
 ```
 
 Every command validates the bundle before it reads it. A missing, incomplete, stale, or modified
@@ -57,6 +66,44 @@ fails the whole batch with status 2. `fail` (status 1) means a file has a determ
 `review` and `pass` exit with status 0. `--layers` selects vocabulary layers from `asd`,
 `software`, and `project` (default: all three). Software-layer findings are `review` suggestions
 and never cause a `fail`.
+
+## Input formats
+
+`ste_check.py` picks each input's format from its file name. `--input-format` sets one format for
+every input in the run; split a batch whose inputs need different formats.
+
+| File name | Format | What is checked |
+| --- | --- | --- |
+| `.md`, `.markdown`, `.txt` | `prose` | The whole document, as before |
+| `.py`, `.pyi` | `python` | Comments only |
+| `.js`, `.mjs`, `.cjs` | `javascript` | Comments only |
+| `.jsx` | `jsx` | Comments only |
+| `.ts`, `.mts`, `.cts`, `.d.ts`, `.d.mts`, `.d.cts` | `typescript` | Comments only |
+| `.tsx` | `tsx` | Comments only |
+| Standard input (`-`), no suffix, or another suffix | none | Fails with `input_format_required` until you pass `--input-format` |
+
+Standard input and unknown file names used to be read as prose. They now need an explicit
+`--input-format`, so update scripts that pipe text into the checker. `--input-format prose` is
+rejected for a recognized source file, which prevents an accidental whole-file check of code.
+
+For source files, a real parser (the Python standard library, or the pinned `@babel/parser`)
+decides where comments are, and only comment prose reaches the rules. Code, identifiers, strings,
+regular expressions, template text, and JSX text are never checked. Python docstrings are strings,
+so they are not checked either; check docstring text as prose through standard input if you want
+it reviewed. Comments separated by code are checked separately, and consecutive standalone line
+comments are checked as one wrapped paragraph. Machine directives (`noqa`, `type:`, `@ts-ignore`,
+`eslint-disable`, coverage and bundler markers, source-map lines), license text, `@example`
+sections, and unsupported documentation tags are skipped and listed in each file's `analysis`
+object together with the number of comments and prose regions checked. Finding positions refer to
+the original file after line-ending normalization: offsets and columns count characters, and lines
+count line feeds.
+
+A file that does not parse fails the whole batch with `source_parse_failed`; it is never checked as
+prose instead. Parsing is strict and offline: no proposal syntax, decorators, Flow, or embedded
+Vue, Svelte, or HTML grammars, and no project Babel or TypeScript configuration. Python syntax
+follows the running interpreter. Comment text can still need judgment: commented-out code is
+checked like any other comment, and a passing file with zero checked regions only means nothing
+was checked.
 
 ## Scope and claims
 

@@ -28,6 +28,19 @@ from ste_data import (
 )
 
 from ste_cli import InvocationError, Parser, report_invocation_error
+from ste_source import (
+    INPUT_FORMATS,
+    JS_FORMATS,
+    PYTHON,
+    SOURCE_FORMATS,
+    SourceAnalysis,
+    canonical_source,
+    check_js_readiness,
+    check_python_runtime,
+    js_paths,
+    prepare_sources,
+    resolve_inputs,
+)
 
 WORD = re.compile(r"[A-Za-z]+(?:-[A-Za-z]+)*(?:'[A-Za-z]+)?")
 SENTENCE = re.compile(r"[^.!?]+[.!?]?")
@@ -249,6 +262,20 @@ def check_file(
     terms: dict,
     report_unknown_terms: bool = True,
 ) -> dict:
+    return finalize(mode, collect_findings(
+        text, mode, by_headword, approved_forms, unapproved, terms, report_unknown_terms,
+    ))
+
+
+def collect_findings(
+    text: str,
+    mode: str,
+    by_headword: dict,
+    approved_forms: dict,
+    unapproved: dict,
+    terms: dict,
+    report_unknown_terms: bool = True,
+) -> list[Finding]:
     newline_offsets = [-1] + [i for i, character in enumerate(text) if character == "\n"]
     masked = protect_markdown(text)
     contraction_matches = list(CONTRACTION.finditer(masked))
@@ -426,7 +453,11 @@ def check_file(
                 instruction="Shorten this possible multi-word noun.", candidates=[],
                 evidence={"word_count": len(words), "limit": 3},
             ))
+    return findings
 
+
+def finalize(mode: str, findings: list[Finding]) -> dict:
+    """Order findings, assign file-local IDs, and derive the counts and outcome."""
     severity_order = {"error": 0, "warning": 1, "review": 2}
     findings.sort(key=lambda item: (item["source"]["start"]["offset"], severity_order[item["severity"]]))
     for number, item in enumerate(findings, 1):
@@ -453,6 +484,55 @@ def check_file(
         },
         "findings": findings,
     }
+
+
+def check_source(
+    text: str,
+    analysis: SourceAnalysis,
+    mode: str,
+    by_headword: dict,
+    approved_forms: dict,
+    unapproved: dict,
+    terms: dict,
+    report_unknown_terms: bool = True,
+) -> dict:
+    """Check each comment region on its own, then report in canonical-source positions.
+
+    Regions are same-length masks, so region-local offsets shift by the region
+    start. No region contains code, so no finding can span code.
+    """
+    newline_offsets = [-1] + [i for i, character in enumerate(text) if character == "\n"]
+    findings: list[Finding] = []
+    for region in analysis.regions:
+        for item in collect_findings(
+            region.masked_text, mode, by_headword, approved_forms, unapproved, terms, report_unknown_terms,
+        ):
+            start = item["source"]["start"]["offset"] + region.start
+            end = item["source"]["end"]["offset"] + region.start
+            item["source"] = {
+                "text": text[start:end],
+                "start": position(newline_offsets, start),
+                "end": position(newline_offsets, end),
+            }
+            findings.append(item)
+    result = finalize(mode, findings)
+    result["analysis"] = {
+        "inputFormat": analysis.input_format,
+        "scope": "comments",
+        "commentCount": analysis.comment_count,
+        "regionCount": len(analysis.regions),
+        "skipped": [
+            {
+                "reason": item.reason,
+                "source": {
+                    "start": position(newline_offsets, item.start),
+                    "end": position(newline_offsets, item.end),
+                },
+            }
+            for item in analysis.skipped
+        ],
+    }
+    return result
 
 
 def plain_message(item: Finding) -> str:
@@ -538,15 +618,18 @@ def read_inputs(paths: list[str]) -> list[tuple[str, str]]:
 
 
 def make_batch(mode: str, results: list[tuple[str, dict]]) -> dict:
-    files = [
-        {
+    files = []
+    for path, result in results:
+        file_result = {
             "path": path,
             "outcome": result["outcome"],
             "summary": result["summary"],
             "findings": result["findings"],
         }
-        for path, result in results
-    ]
+        # Only source files carry analysis metadata; prose results keep their shape.
+        if "analysis" in result:
+            file_result["analysis"] = result["analysis"]
+        files.append(file_result)
     summaries = [result["summary"] for _, result in results]
     errors = sum(summary["errors"] for summary in summaries)
     warnings = sum(summary["warnings"] for summary in summaries)
@@ -584,6 +667,12 @@ def print_plain(result: dict) -> None:
         if number:
             print()
         print(f"File: {file_result['path']}")
+        analysis = file_result.get("analysis")
+        if analysis:
+            print(
+                f"  Scope: {analysis['inputFormat']} comments only; {analysis['commentCount']} comments, "
+                f"{analysis['regionCount']} prose regions checked, {len(analysis['skipped'])} sections skipped"
+            )
         for item in file_result["findings"]:
             start = item["source"]["start"]
             print(
@@ -614,6 +703,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = Parser(prog="ste_check.py")
     parser.add_argument("files", nargs="*", help="Files to check, or - as the sole standard-input path")
     parser.add_argument("--mode", choices=("procedural", "descriptive", "mixed"))
+    parser.add_argument(
+        "--input-format", choices=INPUT_FORMATS, default="auto",
+        help="How every input is read. auto (default) selects by file suffix: .md, .markdown, and .txt "
+        "are prose, and Python, JavaScript, and TypeScript sources are checked by their comments only. "
+        "Standard input and other names need an explicit format.",
+    )
     parser.add_argument("--terms", type=Path)
     parser.add_argument(
         "--layers", type=layer_list, default=list(LAYERS),
@@ -628,9 +723,13 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("files and --mode are required unless --preflight is supplied")
         if "-" in args.files and args.files != ["-"]:
             parser.error("- is valid only as the sole input")
+        specs = resolve_inputs(args.files, args.input_format)
     except InvocationError as error:
         report_invocation_error(error, json_output)
-        return 2
+        return error.status
+    routes = {spec.input_format for spec in specs}
+    if args.input_format in SOURCE_FORMATS:
+        routes.add(args.input_format)
     try:
         _, dictionary_rows = ensure_references_loaded()
     except ReferencesError as error:
@@ -665,16 +764,33 @@ def main(argv: list[str] | None = None) -> int:
             report_invocation_error(InvocationError("software_terms_invalid", str(error)), args.json)
             return 2
     merged = merge_layers(dictionary, software_entries, layers)
+    inputs = [
+        (path, canonical_source(text, path) if spec.is_source else text)
+        for spec, (path, text) in zip(specs, inputs)
+    ]
+    try:
+        # Each source route checks only its own runtime, so prose and Python
+        # inputs never need Node.js.
+        if PYTHON in routes:
+            check_python_runtime()
+        if routes & set(JS_FORMATS) and args.preflight:
+            check_js_readiness(js_paths(specs))
+        analyses = [] if args.preflight else prepare_sources(
+            [(spec, text) for spec, (_, text) in zip(specs, inputs)]
+        )
+    except InvocationError as error:
+        report_invocation_error(error, args.json)
+        return error.status
     if args.preflight:
         print(json.dumps({"status": "ready"}) if args.json else "READY: references and terminology validated")
         return 0
     report_unknown_terms = "asd" in layers
+    vocabulary = (merged.by_headword, merged.approved_forms, merged.unapproved, terms)
     results = [
-        (path, check_file(
-            text, args.mode, merged.by_headword, merged.approved_forms, merged.unapproved, terms,
-            report_unknown_terms=report_unknown_terms,
-        ))
-        for path, text in inputs
+        (path, check_file(text, args.mode, *vocabulary, report_unknown_terms=report_unknown_terms)
+         if analysis is None else
+         check_source(text, analysis, args.mode, *vocabulary, report_unknown_terms=report_unknown_terms))
+        for (path, text), analysis in zip(inputs, analyses)
     ]
     result = make_batch(args.mode, results)
     if args.json:
