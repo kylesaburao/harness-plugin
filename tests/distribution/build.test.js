@@ -35,6 +35,20 @@ function fixture(t)
   return root;
 }
 
+function caseSensitiveTemporaryStorage()
+{
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-case-'));
+  try
+  {
+    fs.writeFileSync(path.join(probe, 'a'), '');
+    return !fs.existsSync(path.join(probe, 'A'));
+  }
+  finally
+  {
+    fs.rmSync(probe, { recursive: true, force: true });
+  }
+}
+
 function write(root, name, value, mode = 0o644)
 {
   const file = path.join(root, name);
@@ -227,11 +241,6 @@ test('assembly failures and unsafe ancestors retain the prior selected artifact'
   assert.deepEqual(snapshot(root, 'development'), before);
   fs.rmSync(collision, { recursive: true });
 
-  write(root, 'src/harness/shared/node/MEDIA-RESULT.ts', 'export const duplicate = true;\n');
-  assert.throws(() => build(root), /Case-colliding paths/);
-  assert.deepEqual(snapshot(root, 'development'), before);
-  fs.unlinkSync(path.join(root, 'src/harness/shared/node/MEDIA-RESULT.ts'));
-
   fs.symlinkSync('/etc/passwd', bad);
   assert.throws(() => build(root), /Symlink/);
   assert.deepEqual(snapshot(root, 'development'), before);
@@ -243,6 +252,18 @@ test('assembly failures and unsafe ancestors retain the prior selected artifact'
   fs.symlinkSync(external, path.join(root, '.build'));
   assert.throws(() => build(root), /Expected a real directory/);
   assert.deepEqual(fs.readdirSync(external), []);
+});
+
+// Case-colliding sources can exist only on case-sensitive storage; elsewhere
+// the second write replaces the first file instead of colliding with it.
+test('case-colliding sources retain the prior selected artifact', { skip: !caseSensitiveTemporaryStorage() && 'temporary storage is case-insensitive' }, t =>
+{
+  const root = fixture(t);
+  build(root);
+  const before = snapshot(root, 'development');
+  write(root, 'src/harness/shared/node/MEDIA-RESULT.ts', 'export const duplicate = true;\n');
+  assert.throws(() => build(root), /Case-colliding paths/);
+  assert.deepEqual(snapshot(root, 'development'), before);
 });
 
 test('writers use independent locks and clean only invocation-owned staging', t =>

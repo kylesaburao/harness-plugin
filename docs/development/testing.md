@@ -75,6 +75,8 @@ In a Codex sandbox, the three native HEIC tests can fail with `heic_encode_faile
 node --test --test-name-pattern='native .*HEIC10' tests/extract-video-frames/lifecycle.test.js
 ```
 
+The case-colliding source test in `tests/distribution/build.test.js` needs case-sensitive temporary storage and is skipped elsewhere, including default macOS APFS. To cover it locally, point `TMPDIR` at a case-sensitive volume.
+
 ## Focused checks
 
 Build the candidate first, then use the relevant subset while editing:
