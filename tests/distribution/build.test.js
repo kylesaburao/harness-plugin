@@ -86,7 +86,7 @@ test('type errors, output collisions and escaping links cannot publish', t => {
   const bad = path.join(root, 'src/harness/shared/node/bad.ts');
   fs.writeFileSync(bad, 'export const value: number = "bad";');
   assert.throws(() => build(root), /Compilation failed/); assert.deepEqual(snapshot(root), before); fs.unlinkSync(bad);
-  const collision = path.join(root, 'src/harness/skills/back-up-directories/scripts/backup.ts');
+  const collision = path.join(root, 'src/harness/skills/extract-video-frames/scripts/extract-video-frames.ts');
   fs.writeFileSync(collision, 'export const value = 1;');
   assert.throws(() => build(root), /Output collision/); assert.deepEqual(snapshot(root), before); fs.unlinkSync(collision);
   fs.symlinkSync('/etc/passwd', bad);

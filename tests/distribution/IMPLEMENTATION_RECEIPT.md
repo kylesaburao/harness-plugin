@@ -102,3 +102,19 @@ Executed verification:
 - `git diff --check`: passed. Tests used simulated networking and isolated configuration, without real wake traffic.
 
 Local logs: `tmp/ts-stage3-focused.log`, `tmp/ts-stage3-host-setup.log`, `tmp/ts-stage3-container-setup.log`, `tmp/ts-stage3-host-gate.log`, and `tmp/ts-stage3-container-gate.log`. Stages 4 through 7 remain.
+
+## Stage 4: backup
+
+Starting checkpoint: `b736cd0`. Converted backup to TypeScript and extracted the cohesive `backup-plan.ts` module for validated configuration, canonical directory identities, output-directory creation, archive naming, and replication planning. The entrypoint retains archive/copy lifecycle, locking, interruption, progress, and cleanup. It uses a narrow typed adapter around the lazily loaded named `ZipArchive` export. Runtime package metadata and lockfile remain unchanged. Eight transitional modules remain, and the distribution now contains 81 files.
+
+Executed verification:
+
+- `npm run typecheck`, `npm run build`, and `npm run build:check`: passed.
+- `node --test tests/back-up-directories/*.test.js tests/distribution/*.test.js`: **77 passed, zero failed, zero skipped**.
+- Downloaded the official Node 22.12.0 macOS ARM64 runtime under ignored `tmp/node-runtimes/`. `tmp/node-runtimes/node-v22.12.0-darwin-arm64/bin/node tests/distribution/runtime-floor.js --backup`: passed. It exercises an isolated copied backup skill beneath an ESM parent, missing-dependency diagnostics, its own lockfile installation, preflight output-directory creation, a real archive and replication, extracted file contents, byte reporting, and staging cleanup.
+- The existing default runtime-floor qualification also still passed on actual Node 22.0.0 after extending the script.
+- Native setup followed by `node scripts/run-tests.js` with host access: **657 passed, zero failed, zero skipped**.
+- Container setup followed by `./scripts/dev exec node scripts/run-tests.js`: **597 passed, zero failed, 60 platform skips**.
+- `git diff --check`: passed.
+
+Local evidence: `tmp/ts-stage4-focused.log`, `tmp/ts-stage4-node2212.log`, `tmp/ts-stage4-host-setup.log`, `tmp/ts-stage4-container-setup.log`, `tmp/ts-stage4-host-gate.log`, and `tmp/ts-stage4-container-gate.log`. Stages 5 through 7 remain.

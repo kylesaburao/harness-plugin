@@ -1,13 +1,73 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const readline = require('node:readline/promises');
-const { pipeline } = require('node:stream/promises');
+import fs = require('node:fs');
+import fsp = require('node:fs/promises');
+import os = require('node:os');
+import path = require('node:path');
+import crypto = require('node:crypto');
+import readline = require('node:readline/promises');
+import streamPromises = require('node:stream/promises');
+const { pipeline } = streamPromises;
+import { assertDirectoryUnchanged, backupFilename, readAndValidate } from './backup-plan.js';
+import type { BackupPlan, BackupTarget, ValidatedDirectory } from './backup-plan.js';
+
+
+export interface BackupCliOptions { configPath: string | null; preflightOnly: boolean; json: boolean; help: boolean }
+interface Failure { code?: unknown; condition?: unknown; remedy?: unknown; message?: unknown; exitCode?: number | undefined }
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+function failureDetails(error: unknown): Failure {
+  const fields = isObject(error) ? error : {};
+  return { code: fields.code, condition: fields.condition, remedy: fields.remedy, message: fields.message,
+    exitCode: typeof fields.exitCode === 'number' ? fields.exitCode : undefined };
+}
+function mutableFailure(error: unknown): Failure {
+  // Native filesystem/stream failures and injected lifecycle errors are objects.
+  // Keep that object, including its identity, while adding lifecycle context.
+  if (!isObject(error)) throw error;
+  if (error.exitCode !== undefined && typeof error.exitCode !== 'number') throw error;
+  return error;
+}
+interface CleanupFailure { path: string; error: unknown }
+interface ArchiveOptions { zlib: { level: number } }
+interface ArchiveProgress { entries: number; processedBytes: number; outputBytes: number }
+interface ArchiveProgressEvent { entries: { processed: number }; fs: { processedBytes: number } }
+interface ArchiveHandle {
+  once(event: 'error', listener: (error: unknown) => void): unknown;
+  on(event: 'warning', listener: (error: unknown) => void): unknown;
+  on(event: 'progress', listener: (details: ArchiveProgressEvent) => void): unknown;
+  pointer?(): number;
+  abort(): unknown;
+  pipe(output: fs.WriteStream): unknown;
+  directory(source: string, destination: false): unknown;
+  finalize(): unknown;
+}
+type ArchiveFactory = (options: ArchiveOptions) => ArchiveHandle;
+interface ArchiveDependencies {
+  archiveFactory?: ArchiveFactory;
+  outputFactory?: (file: string) => fs.WriteStream;
+  onProgress?: (progress: ArchiveProgress) => void;
+  progressIntervalMs?: number;
+}
+interface CopyDependencies { createReadStream?: typeof fs.createReadStream; createWriteStream?: typeof fs.createWriteStream }
+type BackupStage = { phase: 'archive-start' | 'archive-complete' }
+  | { phase: 'copy-start'; destination: string; index: number; total: number };
+interface ExecutionDependencies {
+  archive?: ArchiveDependencies;
+  copy?: CopyDependencies;
+  removeFile?: typeof fsp.rm;
+  onStage?: (status: BackupStage) => void;
+}
+export interface ArchiveResult { source: string; archive: string | null; stagingRemoved: boolean; copies: string[]; bytes: number }
+type ReadyPlan = { source: string; output: string; targets: string[]; filename: string; runLock: string; outputDirectoryCreated: boolean }
+  | { source?: never; output?: never; targets?: never; filename?: never };
+function hasZipArchive(value: unknown): value is { ZipArchive: new (options: ArchiveOptions) => ArchiveHandle } {
+  // The locked archiver package supplies the stream contract. Preserve the
+  // existing lazy boundary check, without constructing an archive in preflight.
+  return value !== null && typeof value === 'object' && 'ZipArchive' in value && typeof value.ZipArchive === 'function';
+}
 
 // Exit status contract, shared with the other scripts in this plugin. Status 0
 // is success and 2 or 3 both mean the backup never started, so nothing was
@@ -20,7 +80,6 @@ const EXIT = Object.freeze({
   INTERRUPTED: 130,
 });
 const MINIMUM_NODE = [22, 12, 0];
-const MAX_FILENAME_BYTES = 255;
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
 const RUN_LOCK_FILENAME = '.backup-tool.lock';
@@ -28,6 +87,8 @@ const INDENT_PREFIX = '  ';
 const LIST_DETAIL_PREFIX = '   ';
 
 class InterruptedError extends Error {
+  declare signal: string;
+  declare exitCode: number;
   constructor(signal = 'SIGINT') {
     super(`Interrupted by ${signal}; temporary-file cleanup was requested.`);
     this.name = 'InterruptedError';
@@ -37,7 +98,11 @@ class InterruptedError extends Error {
 }
 
 class StartupError extends Error {
-  constructor(code, condition, remedy, exitCode = EXIT.USAGE) {
+  declare code: string;
+  declare condition: string;
+  declare remedy: string;
+  declare exitCode: number;
+  constructor(code: string, condition: string, remedy: string, exitCode: number = EXIT.USAGE) {
     super(condition);
     this.name = 'StartupError';
     this.code = code;
@@ -57,20 +122,20 @@ class StartupError extends Error {
 // wrapper: a resolvable archiver that no longer carries ZipArchive would
 // otherwise pass this preflight and fail much later, mid-run, as a bare
 // "ZipArchive is not a constructor".
-function loadArchiver() {
+function loadArchiver(): ArchiveFactory {
   const remedy = `npm install --omit=dev --prefix ${path.resolve(__dirname, '..')}`;
-  let archiver;
+  let archiver: unknown;
   try {
     archiver = require('archiver');
   } catch (error) {
-    if (error.code !== 'MODULE_NOT_FOUND') throw error;
+    if (failureDetails(error).code !== 'MODULE_NOT_FOUND') throw error;
     throw new StartupError(
       'dependency_missing',
       'the archiver package is not installed, so no ZIP can be written',
       remedy,
     );
   }
-  if (typeof archiver.ZipArchive !== 'function') {
+  if (!hasZipArchive(archiver)) {
     throw new StartupError(
       'dependency_missing',
       'the installed archiver package does not export ZipArchive, so no ZIP can be written',
@@ -80,12 +145,12 @@ function loadArchiver() {
   return (options) => new archiver.ZipArchive(options);
 }
 
-function nodeVersionAtLeast(version, minimum) {
+function nodeVersionAtLeast(version: string, minimum: readonly number[]) {
   const parts = version.replace(/^v/, '').split('.').map(Number);
   for (let index = 0; index < minimum.length; index += 1) {
     const part = parts[index] || 0;
-    if (part > minimum[index]) return true;
-    if (part < minimum[index]) return false;
+    if (part > minimum[index]!) return true;
+    if (part < minimum[index]!) return false;
   }
   return true;
 }
@@ -107,7 +172,7 @@ let jsonOutput = false;
 // The caller knows which failure this is, so it names the code and the remedy.
 // Deriving them from exitCode reported archive, copy, and interruption failures
 // as usage_error.
-function fail(message, exitCode, code = 'run_failed', remedy = 'correct the reported failure and run the same command again') {
+function fail(message: unknown, exitCode: number, code = 'run_failed', remedy = 'correct the reported failure and run the same command again') {
   if (jsonOutput) {
     console.error(JSON.stringify({ error: { code, condition: message, remedy } }));
   } else {
@@ -116,7 +181,8 @@ function fail(message, exitCode, code = 'run_failed', remedy = 'correct the repo
   process.exitCode = exitCode;
 }
 
-function failStartup(error) {
+function failStartup(caught: unknown) {
+  const error = failureDetails(caught);
   if (jsonOutput) {
     console.error(JSON.stringify({
       error: { code: error.code, condition: error.condition, remedy: error.remedy },
@@ -144,7 +210,7 @@ which creates the output directory if it is missing.`);
 
 // checkEnvironment has already passed by the time this runs, so the environment
 // half of the report is the same every time and only the plan varies.
-function reportReady(plan = {}) {
+function reportReady(plan: ReadyPlan = {}) {
   const details = { status: 'ready', node: process.version, archiver: true, ...plan };
   if (jsonOutput) {
     console.log(JSON.stringify(details));
@@ -159,8 +225,8 @@ function reportReady(plan = {}) {
   }
 }
 
-function parseArguments(argv) {
-  const options = { configPath: null, preflightOnly: false, json: false, help: false };
+function parseArguments(argv: string[]): BackupCliOptions {
+  const options: BackupCliOptions = { configPath: null, preflightOnly: false, json: false, help: false };
   const positional = [];
 
   for (const argument of argv) {
@@ -198,167 +264,7 @@ function parseArguments(argv) {
   return options;
 }
 
-function resolveConfigPath(value, configDirectory) {
-  return path.isAbsolute(value) ? path.normalize(value) : path.resolve(configDirectory, value);
-}
-
-function comparablePath(value) {
-  const normalized = path.normalize(value);
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
-}
-
-function isWithin(parent, child) {
-  const relative = path.relative(comparablePath(parent), comparablePath(child));
-  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
-}
-
-function identityOf(details) {
-  return `${details.dev}:${details.ino}`;
-}
-
-async function validateDirectory(configuredPath, label, accessMode) {
-  let canonicalPath;
-  let details;
-  try {
-    canonicalPath = await fsp.realpath(configuredPath);
-    details = await fsp.stat(canonicalPath, { bigint: true });
-  } catch (error) {
-    throw new Error(`${label} does not exist or cannot be accessed: ${configuredPath} (${error.code || error.message})`);
-  }
-  if (!details.isDirectory()) {
-    throw new Error(`${label} must be a directory: ${configuredPath}`);
-  }
-  try {
-    await fsp.access(canonicalPath, accessMode);
-  } catch (error) {
-    const requirement = accessMode & fs.constants.W_OK && accessMode & fs.constants.R_OK
-      ? 'readable, writable, and searchable so stale temporary files can be removed and files can be created and renamed'
-      : accessMode & fs.constants.W_OK
-        ? 'writable and searchable so files can be created and renamed'
-      : 'readable and searchable so its contents can be enumerated';
-    throw new Error(`${label} must be ${requirement}: ${configuredPath} (${error.code || error.message})`);
-  }
-  return {
-    label,
-    configuredPath,
-    canonicalPath,
-    identity: identityOf(details),
-  };
-}
-
-async function inspectProspectiveDirectory(configuredPath, label) {
-  try {
-    return { exists: true, canonicalPath: await fsp.realpath(configuredPath) };
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      throw new Error(`${label} cannot be created or accessed: ${configuredPath} (${error.code || error.message})`);
-    }
-  }
-
-  const missingComponents = [];
-  let ancestor = configuredPath;
-  while (true) {
-    missingComponents.unshift(path.basename(ancestor));
-    ancestor = path.dirname(ancestor);
-    try {
-      const canonicalAncestor = await fsp.realpath(ancestor);
-      return {
-        exists: false,
-        canonicalPath: path.join(canonicalAncestor, ...missingComponents),
-      };
-    } catch (error) {
-      if (error.code !== 'ENOENT') {
-        throw new Error(`${label} cannot be created or accessed: ${configuredPath} (${error.code || error.message})`);
-      }
-    }
-  }
-}
-
-function assertOutputOutsideSource(source, outputPath, configuredPath) {
-  if (isWithin(source.canonicalPath, outputPath)) {
-    throw new Error(`outputDirectory must not resolve to sourceDirectory or one of its subdirectories: ${configuredPath} -> ${outputPath}`);
-  }
-}
-
-async function validateOutputDirectory(configuredPath, source) {
-  const prospective = await inspectProspectiveDirectory(configuredPath, 'outputDirectory');
-  assertOutputOutsideSource(source, prospective.canonicalPath, configuredPath);
-
-  if (prospective.exists) {
-    let details;
-    try {
-      details = await fsp.stat(prospective.canonicalPath);
-    } catch (error) {
-      throw new Error(`outputDirectory cannot be accessed: ${configuredPath} (${error.code || error.message})`);
-    }
-    if (!details.isDirectory()) {
-      throw new Error(`outputDirectory conflicts with an existing non-directory: ${configuredPath} (EEXIST)`);
-    }
-  } else {
-    try {
-      await fsp.mkdir(configuredPath, { recursive: true, mode: 0o700 });
-    } catch (error) {
-      throw new Error(`Cannot create outputDirectory: ${configuredPath} (${error.code || error.message})`);
-    }
-  }
-
-  const output = await validateDirectory(
-    configuredPath,
-    'outputDirectory',
-    fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK,
-  );
-  assertOutputOutsideSource(source, output.canonicalPath, configuredPath);
-  return { ...output, createdDuringPreflight: !prospective.exists };
-}
-
-async function assertDirectoryUnchanged(directory) {
-  let canonicalPath;
-  let details;
-  try {
-    canonicalPath = await fsp.realpath(directory.configuredPath);
-    details = await fsp.stat(canonicalPath, { bigint: true });
-  } catch (error) {
-    throw new Error(`${directory.label} changed or became inaccessible after validation: ${directory.configuredPath} (${error.code || error.message})`);
-  }
-  if (!details.isDirectory() || comparablePath(canonicalPath) !== comparablePath(directory.canonicalPath) ||
-      identityOf(details) !== directory.identity) {
-    throw new Error(`${directory.label} no longer identifies the directory validated earlier: ${directory.configuredPath}`);
-  }
-}
-
-function safeFolderName(folderName) {
-  const safe = folderName.replaceAll(' ', '-').replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-').replace(/[. ]+$/g, '');
-  return safe || 'Backup';
-}
-
-function truncateUtf8(value, maximumBytes) {
-  let result = '';
-  let bytes = 0;
-  for (const character of value) {
-    const characterBytes = Buffer.byteLength(character);
-    if (bytes + characterBytes > maximumBytes) break;
-    result += character;
-    bytes += characterBytes;
-  }
-  return result;
-}
-
-function backupFilename(sourceDirectory, now = new Date()) {
-  const month = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(now);
-  const day = String(now.getDate()).padStart(2, '0');
-  const year = String(now.getFullYear());
-  const name = safeFolderName(path.basename(sourceDirectory));
-  const suffix = `_Backup_${month}${day}${year}.zip`;
-  const candidate = `${name}${suffix}`;
-  if (Buffer.byteLength(candidate) <= MAX_FILENAME_BYTES) return candidate;
-
-  const digest = crypto.createHash('sha256').update(name).digest('hex').slice(0, 12);
-  const marker = `-${digest}`;
-  const prefixBudget = MAX_FILENAME_BYTES - Buffer.byteLength(marker) - Buffer.byteLength(suffix);
-  return `${truncateUtf8(name, prefixBudget)}${marker}${suffix}`;
-}
-
-function direntTypeIsUnknown(entry) {
+function direntTypeIsUnknown(entry: fs.Dirent) {
   return !entry.isFile() &&
     !entry.isDirectory() &&
     !entry.isSymbolicLink() &&
@@ -368,7 +274,7 @@ function direntTypeIsUnknown(entry) {
     !entry.isSocket();
 }
 
-function formatBytes(bytes) {
+function formatBytes(bytes: bigint) {
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
   let divisor = 1n;
   let unitIndex = 0;
@@ -381,95 +287,15 @@ function formatBytes(bytes) {
   return `${hundredths / 100n}.${String(hundredths % 100n).padStart(2, '0')} ${units[unitIndex]}`;
 }
 
-async function pathKind(destination, label) {
-  try {
-    const details = await fsp.stat(destination);
-    if (details.isDirectory()) throw new Error(`${label} exists but is a directory: ${destination}`);
-    return true;
-  } catch (error) {
-    if (error.code === 'ENOENT') return false;
-    throw error;
-  }
-}
-
-async function readAndValidate(configPath, now = new Date()) {
-  let contents;
-  try {
-    contents = await fsp.readFile(configPath, 'utf8');
-  } catch (error) {
-    throw new Error(`Cannot read configuration file ${configPath}: ${error.code || error.message}`);
-  }
-
-  let config;
-  try {
-    config = JSON.parse(contents);
-  } catch (error) {
-    throw new Error(`Configuration file contains invalid JSON: ${error.message}`);
-  }
-  if (!config || Array.isArray(config) || typeof config !== 'object') {
-    throw new Error('Configuration must be a JSON object.');
-  }
-  if (typeof config.sourceDirectory !== 'string' || !config.sourceDirectory.trim()) {
-    throw new Error('"sourceDirectory" is required and must be a non-empty string.');
-  }
-  if (!Array.isArray(config.targetDirectories) || config.targetDirectories.length === 0 ||
-      config.targetDirectories.some((directory) => typeof directory !== 'string' || !directory.trim())) {
-    throw new Error('"targetDirectories" is required and must be a non-empty array of non-empty strings.');
-  }
-  if (config.outputDirectory !== undefined && (typeof config.outputDirectory !== 'string' || !config.outputDirectory.trim())) {
-    throw new Error('"outputDirectory", when provided, must be a non-empty string.');
-  }
-
-  const configDirectory = path.dirname(configPath);
-  const sourceConfigured = resolveConfigPath(config.sourceDirectory, configDirectory);
-  const outputConfigured = config.outputDirectory
-    ? resolveConfigPath(config.outputDirectory, configDirectory)
-    : os.tmpdir();
-  const targetConfigured = config.targetDirectories.map((directory) => resolveConfigPath(directory, configDirectory));
-  const source = await validateDirectory(sourceConfigured, 'sourceDirectory', fs.constants.R_OK | fs.constants.X_OK);
-  const output = await validateOutputDirectory(outputConfigured, source);
-  const targets = await Promise.all(targetConfigured.map((directory, index) =>
-    validateDirectory(directory, `targetDirectories[${index}]`, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK)));
-
-  for (const target of targets) {
-    if (isWithin(source.canonicalPath, target.canonicalPath)) {
-      throw new Error(`${target.label} must not resolve to sourceDirectory or one of its subdirectories: ${target.configuredPath} -> ${target.canonicalPath}`);
-    }
-  }
-
-  const filename = backupFilename(source.canonicalPath, now);
-  const archivePath = path.join(output.canonicalPath, filename);
-  const retainArchive = targets.some((target) => target.identity === output.identity);
-  const archiveExists = retainArchive ? await pathKind(archivePath, 'Archive output path') : false;
-  const seen = new Map([[output.identity, 'outputDirectory']]);
-  const previewTargets = [];
-  const copyTargets = [];
-  for (const target of targets) {
-    const destination = path.join(target.canonicalPath, filename);
-    const sharedWith = seen.get(target.identity);
-    if (sharedWith) {
-      previewTargets.push({ directory: target, destination, action: `shared with ${sharedWith}; no additional copy` });
-      continue;
-    }
-    seen.set(target.identity, target.label);
-    const exists = await pathKind(destination, 'Destination');
-    const item = { directory: target, destination, action: exists ? 'will be overwritten' : 'will be created' };
-    previewTargets.push(item);
-    copyTargets.push(item);
-  }
-
-  return { source, output, targets, filename, archivePath, archiveExists, retainArchive, previewTargets, copyTargets };
-}
-
-function shortTempPath(directory, kind = 'work') {
+function shortTempPath(directory: string, kind = 'work') {
   return path.join(directory, `.backup-${kind}-${crypto.randomUUID()}.tmp`);
 }
 
-function humanLog(...values) {
+function humanLog(...values: unknown[]) {
   (jsonOutput ? console.error : console.log)(...values);
 }
 
-function printPreview(plan) {
+function printPreview(plan: BackupPlan) {
   humanLog('Backup preview');
   humanLog('==============');
   humanLog('');
@@ -496,7 +322,7 @@ function printPreview(plan) {
   });
 }
 
-async function confirmExecution(context) {
+async function confirmExecution(context: OperationContext) {
   const prompt = readline.createInterface({ input: process.stdin, output: jsonOutput ? process.stderr : process.stdout });
   const unregister = context.onAbort(() => prompt.close());
   try {
@@ -514,22 +340,26 @@ async function confirmExecution(context) {
   }
 }
 
+type AbortHandler = (error: InterruptedError) => unknown;
 class OperationContext {
+  declare temporaryPaths: Set<string>;
+  declare abortHandlers: Set<AbortHandler>;
+  declare interruption: InterruptedError | null;
   constructor() {
     this.temporaryPaths = new Set();
     this.abortHandlers = new Set();
     this.interruption = null;
   }
 
-  track(temporaryPath) {
+  track(temporaryPath: string) {
     this.temporaryPaths.add(temporaryPath);
   }
 
-  untrack(temporaryPath) {
+  untrack(temporaryPath: string) {
     this.temporaryPaths.delete(temporaryPath);
   }
 
-  onAbort(handler) {
+  onAbort(handler: AbortHandler) {
     if (this.interruption) {
       try {
         Promise.resolve(handler(this.interruption)).catch(() => {});
@@ -544,10 +374,10 @@ class OperationContext {
     if (this.interruption) throw this.interruption;
   }
 
-  async interrupt(signal) {
+  async interrupt(signal: string) {
     if (this.interruption) return;
     this.interruption = new InterruptedError(signal);
-    const handlers = [...this.abortHandlers].map(async (handler) => handler(this.interruption));
+    const handlers = [...this.abortHandlers].map(async (handler) => handler(this.interruption!));
     await Promise.allSettled(handlers);
   }
 
@@ -568,21 +398,26 @@ class OperationContext {
 }
 
 class RunLock {
-  constructor(lockPath, token) {
+  declare lockPath: string;
+  declare token: string;
+  declare held: boolean;
+  constructor(lockPath: string, token: string) {
     this.lockPath = lockPath;
     this.token = token;
     this.held = true;
   }
 
-  releaseSync() {
+  releaseSync(): CleanupFailure[] {
     if (!this.held) return [];
     try {
-      const owner = JSON.parse(fs.readFileSync(this.lockPath, 'utf8'));
-      if (owner.token === this.token) fs.unlinkSync(this.lockPath);
+      const owner: unknown = JSON.parse(fs.readFileSync(this.lockPath, 'utf8'));
+      // Preserve the legacy diagnostic for a null lock envelope.
+      if (owner === null) throw new TypeError("Cannot read properties of null (reading 'token')");
+      if (typeof owner === 'object' && 'token' in owner && owner.token === this.token) fs.unlinkSync(this.lockPath);
       this.held = false;
       return [];
     } catch (error) {
-      if (error.code === 'ENOENT') {
+      if (failureDetails(error).code === 'ENOENT') {
         this.held = false;
         return [];
       }
@@ -608,7 +443,7 @@ async function acquireRunLock(lockPath = resolveRunLockPath()) {
     await fsp.writeFile(lockPath, JSON.stringify(owner), { flag: 'wx' });
     return new RunLock(lockPath, token);
   } catch (error) {
-    if (error.code !== 'EEXIST') throw error;
+    if (failureDetails(error).code !== 'EEXIST') throw error;
     throw new Error(
       `Another backup run may already be active (lock: ${lockPath}). ` +
       'If no backup is running, inspect and remove this stale lock manually.',
@@ -616,8 +451,8 @@ async function acquireRunLock(lockPath = resolveRunLockPath()) {
   }
 }
 
-async function cleanupStartupArtifacts(plan) {
-  const directories = new Map();
+async function cleanupStartupArtifacts(plan: BackupPlan) {
+  const directories = new Map<string, ValidatedDirectory>();
   for (const directory of [plan.output, ...plan.targets]) directories.set(directory.identity, directory);
 
   for (const directory of directories.values()) {
@@ -638,27 +473,29 @@ async function cleanupStartupArtifacts(plan) {
   }
 }
 
-function archiveWarningMessage(error) {
-  const entry = error.path || error.file || error.entry;
-  const reason = error.message || error.code || 'source content was omitted';
+function archiveWarningMessage(error: unknown) {
+  const details = isObject(error) ? error : {};
+  const fields = failureDetails(error);
+  const entry = details.path || details.file || details.entry;
+  const reason = fields.message || fields.code || 'source content was omitted';
   return `Archiver warning${entry ? ` for ${entry}` : ''}: ${reason}`;
 }
 
-function createArchive(sourceDirectory, archivePath, context, dependencies = {}) {
+function createArchive(sourceDirectory: string, archivePath: string, context: OperationContext, dependencies: ArchiveDependencies = {}): Promise<void> {
   const archiveFactory = dependencies.archiveFactory || loadArchiver();
   const outputFactory = dependencies.outputFactory || ((file) => fs.createWriteStream(file, { flags: 'wx', mode: 0o600 }));
   const onProgress = dependencies.onProgress;
   const progressIntervalMs = dependencies.progressIntervalMs || 5_000;
   context.track(archivePath);
-  return new Promise((resolve, reject) => {
-    let output;
+  return new Promise<void>((resolve, reject) => {
+    let output: fs.WriteStream;
     try {
       output = outputFactory(archivePath);
     } catch (error) {
       reject(error);
       return;
     }
-    let archive;
+    let archive: ArchiveHandle;
     try {
       archive = archiveFactory({ zlib: { level: 6 } });
     } catch (error) {
@@ -667,13 +504,13 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
       output.destroy();
       return;
     }
-    let failure = null;
+    let failure: unknown = null;
     let settled = false;
     let finalizationSucceeded = false;
     let outputFinished = output.writableFinished;
     let outputClosed = output.closed;
     let unregister = () => {};
-    let progressTimer;
+    let progressTimer: NodeJS.Timeout | undefined;
     let progress = { entries: 0, processedBytes: 0, outputBytes: 0 };
 
     const reportProgress = () => {
@@ -682,7 +519,7 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
         onProgress(progress);
       } catch {}
     };
-    const updateProgress = (details) => {
+    const updateProgress = (details: ArchiveProgressEvent) => {
       progress = {
         entries: details.entries.processed,
         processedBytes: details.fs.processedBytes,
@@ -699,7 +536,7 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
       unregister();
       failure ? reject(failure) : resolve();
     };
-    const abort = (error) => {
+    const abort = (error: unknown) => {
       if (!failure) failure = error;
       try { archive.abort(); } catch {}
       if (!output.destroyed) output.destroy();
@@ -717,7 +554,7 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
       }
       settle();
     };
-    const closed = new Promise((resolveClosed) => output.once('close', resolveClosed));
+    const closed = new Promise<void>((resolveClosed) => output.once('close', resolveClosed));
     output.once('finish', onOutputFinish);
     output.once('close', onOutputClose);
     output.once('error', abort);
@@ -750,7 +587,7 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
   });
 }
 
-async function copyAtomically(source, target, context, dependencies = {}) {
+async function copyAtomically(source: string, target: BackupTarget, context: OperationContext, dependencies: CopyDependencies = {}) {
   const temporary = shortTempPath(target.directory.canonicalPath, 'copy');
   const controller = new AbortController();
   const unregister = context.onAbort(() => controller.abort());
@@ -774,7 +611,7 @@ async function copyAtomically(source, target, context, dependencies = {}) {
   }
 }
 
-async function execute(plan, context, dependencies = {}) {
+async function execute(plan: BackupPlan, context: OperationContext, dependencies: ExecutionDependencies = {}): Promise<string[]> {
   const temporaryArchive = shortTempPath(plan.output.canonicalPath, 'archive');
   const removeFile = dependencies.removeFile || fsp.rm;
   const onStage = dependencies.onStage || (() => {});
@@ -795,8 +632,9 @@ async function execute(plan, context, dependencies = {}) {
       context.untrack(temporaryArchive);
       replicationSource = plan.archivePath;
     }
-  } catch (error) {
+  } catch (caught) {
     context.throwIfInterrupted();
+    const error = mutableFailure(caught);
     const archiveLocation = plan.retainArchive ? plan.archivePath : plan.output.canonicalPath;
     error.message = `Failed to create archive in ${archiveLocation}: ${error.message}`;
     error.exitCode = EXIT.ARCHIVE;
@@ -804,7 +642,7 @@ async function execute(plan, context, dependencies = {}) {
   }
 
   const copied = [];
-  let replicationFailure = null;
+  let replicationFailure: Failure | null = null;
   try {
     for (const [index, target] of plan.copyTargets.entries()) {
       context.throwIfInterrupted();
@@ -812,8 +650,9 @@ async function execute(plan, context, dependencies = {}) {
       try {
         await copyAtomically(replicationSource, target, context, dependencies.copy);
         copied.push(target.destination);
-      } catch (error) {
+      } catch (caught) {
         context.throwIfInterrupted();
+        const error = mutableFailure(caught);
         error.message = `Failed to copy archive to ${target.destination}: ${error.message}`;
         error.exitCode = EXIT.COPY;
         replicationFailure = error;
@@ -822,14 +661,15 @@ async function execute(plan, context, dependencies = {}) {
     }
     return copied;
   } catch (error) {
-    if (!replicationFailure) replicationFailure = error;
+    if (!replicationFailure) replicationFailure = mutableFailure(error);
     throw error;
   } finally {
     if (!plan.retainArchive) {
       try {
         await removeFile(temporaryArchive, { force: true });
         context.untrack(temporaryArchive);
-      } catch (cleanupError) {
+      } catch (caught) {
+        const cleanupError = mutableFailure(caught);
         if (replicationFailure) {
           replicationFailure.message += ` Cleanup also failed for ${temporaryArchive}: ${cleanupError.message}`;
         } else {
@@ -843,9 +683,9 @@ async function execute(plan, context, dependencies = {}) {
   }
 }
 
-function reportCleanupFailures(failures) {
+function reportCleanupFailures(failures: CleanupFailure[]) {
   for (const failure of failures) {
-    console.error(`Error: Failed to remove temporary artifact ${failure.path}: ${failure.error.code || failure.error.message}`);
+    console.error(`Error: Failed to remove temporary artifact ${failure.path}: ${failureDetails(failure.error).code || failureDetails(failure.error).message}`);
   }
   if (failures.length && !process.exitCode) process.exitCode = EXIT.ARCHIVE;
 }
@@ -897,7 +737,7 @@ async function main() {
     if (!options.preflightOnly || !jsonOutput) printPreview(plan);
   } catch (error) {
     fail(
-      error.message,
+      failureDetails(error).message,
       EXIT.VALIDATION,
       'config_invalid',
       'correct the configuration file, then run --preflight again',
@@ -918,7 +758,7 @@ async function main() {
   }
 
   const context = new OperationContext();
-  let runLock;
+  let runLock: RunLock | undefined;
   const onSigint = () => { void context.interrupt('SIGINT'); };
   const onSigterm = () => { void context.interrupt('SIGTERM'); };
   const onExit = () => {
@@ -944,7 +784,8 @@ async function main() {
       context.throwIfInterrupted();
       await cleanupStartupArtifacts(plan);
       context.throwIfInterrupted();
-    } catch (error) {
+    } catch (caught) {
+      const error = mutableFailure(caught);
       if (!error.exitCode) error.exitCode = EXIT.VALIDATION;
       throw error;
     }
@@ -969,13 +810,14 @@ async function main() {
     });
     context.throwIfInterrupted();
     if (jsonOutput) {
-      console.log(JSON.stringify({ result: {
+      const result: ArchiveResult = {
         source: plan.source.canonicalPath,
         archive: plan.retainArchive ? plan.archivePath : null,
         stagingRemoved: !plan.retainArchive,
         copies: copied,
-        bytes: fs.statSync(plan.retainArchive ? plan.archivePath : copied[0]).size,
-      } }));
+        bytes: fs.statSync(plan.retainArchive ? plan.archivePath : copied[0]!).size,
+      };
+      console.log(JSON.stringify({ result }));
     } else {
       humanLog('\nBackup complete');
       humanLog('===============');
@@ -993,7 +835,7 @@ async function main() {
       copied.forEach((destination, index) => humanLog(`${INDENT_PREFIX}${index + 1}. ${destination}`));
     }
   } catch (error) {
-    fail(error.message, error.exitCode || EXIT.ARCHIVE);
+    fail(failureDetails(error).message, failureDetails(error).exitCode || EXIT.ARCHIVE);
   } finally {
     process.removeListener('SIGINT', onSigint);
     process.removeListener('SIGTERM', onSigterm);
@@ -1005,13 +847,13 @@ async function main() {
 
 if (require.main === module) {
   main().catch((error) => fail(
-    `Unexpected failure: ${error.message}`,
-    error.exitCode || EXIT.ARCHIVE,
+    `Unexpected failure: ${failureDetails(error).message}`,
+    failureDetails(error).exitCode || EXIT.ARCHIVE,
     'internal_error',
   ));
 }
 
-module.exports = {
+export {
   EXIT,
   InterruptedError,
   OperationContext,

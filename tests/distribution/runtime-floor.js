@@ -19,7 +19,55 @@ function success(relative, args, input) {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 }
+function qualifyBackup() {
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  assert.ok(major > 22 || (major === 22 && minor >= 12), 'Backup requires Node >=22.12.0');
+  fs.writeFileSync(path.join(home, 'package.json'), '{"type":"module"}\n');
+  const skill = path.join(home, 'backup installé');
+  fs.cpSync(path.join(plugin, 'skills/back-up-directories'), skill, {
+    recursive: true,
+    filter: source => path.basename(source) !== 'node_modules',
+  });
+  const backup = path.join(skill, 'scripts/backup.js');
+  const execute = (args, input = '') => {
+    const result = spawnSync(process.execPath, [backup, ...args], { cwd: home, env, input, encoding: 'utf8', timeout: 15000 });
+    assert.ifError(result.error);
+    return result;
+  };
+  const missing = execute(['--preflight', '--json']);
+  assert.equal(missing.status, 2, missing.stderr);
+  // Node 22.12 may emit its require(esm) warning separately from the JSON error.
+  const diagnostic = JSON.parse(missing.stderr.split('\n').find(line => line.startsWith('{')));
+  assert.equal(diagnostic.error.code, 'dependency_missing');
+  assert.ok(diagnostic.error.remedy.includes(skill));
+  const npmEnv = { ...env, PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`,
+    npm_config_cache: path.join(home, 'npm-cache') };
+  const installed = spawnSync('npm', ['ci', '--omit=dev', '--prefix', skill], { cwd: home, env: npmEnv, encoding: 'utf8', timeout: 120000 });
+  assert.ifError(installed.error);
+  assert.equal(installed.status, 0, installed.stderr);
+  for (const name of ['source', 'target']) fs.mkdirSync(path.join(home, name));
+  fs.writeFileSync(path.join(home, 'source/hello.txt'), 'runtime floor backup\n');
+  const config = path.join(home, 'backup.json');
+  fs.writeFileSync(config, JSON.stringify({ sourceDirectory: './source', outputDirectory: './output', targetDirectories: ['./target'] }));
+  const preflight = execute(['--preflight', '--json', config]);
+  assert.equal(preflight.status, 0, preflight.stderr);
+  assert.equal(JSON.parse(preflight.stdout).outputDirectoryCreated, true);
+  const completed = execute(['--json', config], 'y\n');
+  assert.equal(completed.status, 0, completed.stderr);
+  const result = JSON.parse(completed.stdout).result;
+  assert.equal(result.archive, null);
+  assert.equal(result.stagingRemoved, true);
+  assert.equal(result.copies.length, 1);
+  assert.equal(fs.statSync(result.copies[0]).size, result.bytes);
+  const contents = spawnSync('unzip', ['-p', result.copies[0], 'hello.txt'], { encoding: 'utf8' });
+  assert.equal(contents.status, 0, contents.stderr);
+  assert.equal(contents.stdout, 'runtime floor backup\n');
+  assert.deepEqual(fs.readdirSync(path.join(home, 'output')), []);
+  process.stdout.write(`Backup runtime floor passed on Node ${process.versions.node}: isolated generated plan, missing dependency, lockfile install, preflight output creation, real archive and replication.\n`);
+}
 try {
+  if (process.argv.includes('--backup')) qualifyBackup();
+  else {
   assert.ok(Number(process.versions.node.split('.')[0]) >= 22, 'This Stage 2 qualification requires Node >=22');
   const sampler = 'skills/random-sampler/scripts/sample.mjs';
   success(sampler, ['--help']);
@@ -49,4 +97,5 @@ try {
   assert.equal(preflight.status, 'preflight_passed'); assert.equal(preflight.runtime_controls, 'unverified');
   assert.ok(preflight.checks.includes('advisor_contract_readable_nonempty'));
   process.stdout.write(`Stage 2 runtime floor passed on Node ${process.versions.node}: native ESM, preserved numeric tokens, routing mutations, and bundled-contract preflight.\n`);
+  }
 } finally { fs.rmSync(home, { recursive: true, force: true }); }
