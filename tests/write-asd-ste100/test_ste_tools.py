@@ -572,6 +572,29 @@ class ReadinessValidationTests(unittest.TestCase):
             self.assertEqual(rows, list(read_jsonl(dictionary_path)))
             self.assertEqual(load_dictionary(rows=rows), load_dictionary(dictionary_path))
 
+    def test_ste_lookup_reads_the_dictionary_once(self):
+        import ste_lookup
+
+        with tempfile.TemporaryDirectory() as directory:
+            config, generated, _ = make_bundle(Path(directory))
+            reads = []
+            real_read_jsonl = ste_data.read_jsonl
+
+            def counting_read_jsonl(path):
+                if Path(path).name == "dictionary.jsonl":
+                    reads.append(Path(path).resolve())
+                return real_read_jsonl(path)
+
+            loaded = mock.patch.object(
+                ste_lookup, "ensure_references_loaded", side_effect=lambda: validate_bundle_rows(generated, config)
+            )
+            with mock.patch.object(ste_data, "read_jsonl", side_effect=counting_read_jsonl), loaded, mock.patch(
+                "sys.stdout", new_callable=io.StringIO
+            ):
+                status = ste_lookup.main(["use", "--json"])
+            self.assertIn(status, (0, 1))
+            self.assertEqual(reads, [(generated / "dictionary.jsonl").resolve()])
+
     def test_load_dictionary_with_rows_does_not_read_the_path(self):
         rows = [entry("use", "USE", "approved", "v", ["USE", "USES", "USED"], 1, "2-1-A1")]
         with tempfile.TemporaryDirectory() as directory:
@@ -733,6 +756,11 @@ class RuntimeEntryPointTests(unittest.TestCase):
                     self.assertIn("Online download required: yes", result.stderr)
                     self.assertIn("ASD-STE100", result.stderr)
                     self.assertNotIn("Traceback", result.stderr)
+                    lines = result.stderr.splitlines()
+                    self.assertTrue(lines[0].startswith("ERROR [references_missing]: "), result.stderr)
+                    self.assertTrue(lines[1].startswith("Remedy: python3 "), result.stderr)
+                    self.assertTrue(lines[1].endswith("initialize_references.py"), result.stderr)
+                    self.assertNotIn("Initialization command", result.stderr)
 
     def test_every_entry_point_accepts_a_valid_bundle(self):
         with tempfile.TemporaryDirectory() as directory:

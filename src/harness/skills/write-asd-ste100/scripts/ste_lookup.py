@@ -10,7 +10,7 @@ from ste_data import (
     SOURCE_ASD,
     ReferencesError,
     VALID_PARTS,
-    ensure_references_ready,
+    ensure_references_loaded,
     load_dictionary,
     load_software_terms,
     merge_layers,
@@ -34,7 +34,7 @@ def main(argv=None) -> int:
         return 2
 
     try:
-        ensure_references_ready()
+        _, dictionary_rows = ensure_references_loaded()
     except ReferencesError as error:
         report_reference_error(error, args.json)
         return 2
@@ -46,7 +46,14 @@ def main(argv=None) -> int:
             args.json,
         )
         return 2
-    dictionary = merge_layers(load_dictionary(), software_entries, ("asd", "software"))
+    try:
+        dictionary = load_dictionary(rows=dictionary_rows)
+    except (OSError, UnicodeError, ValueError) as error:
+        report_reference_error(
+            ReferencesError("references_invalid", f"dictionary loading could not complete: {error}"), args.json
+        )
+        return 2
+    dictionary = merge_layers(dictionary, software_entries, ("asd", "software"))
     if args.preflight:
         print(json.dumps({"status": "ready"}) if args.json else "READY: references and terminology validated")
         return 0

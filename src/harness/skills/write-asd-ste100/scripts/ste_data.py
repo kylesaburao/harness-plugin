@@ -310,8 +310,8 @@ def report_reference_error(error: ReferencesError, json_output: bool = False) ->
         print(json.dumps({"error": details}, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return
     print(f"ERROR [{details['code']}]: {details['condition']}", file=sys.stderr)
+    print(f"Remedy: {details['remedy']}", file=sys.stderr)
     print(f"Generated data: {details['generatedDataLocation']}", file=sys.stderr)
-    print(f"Initialization command: {details['remedy']}", file=sys.stderr)
     print("Online download required: yes", file=sys.stderr)
     print(f"Pinned source: {details['sourceUrl']}", file=sys.stderr)
     print(f"Source identity: {details['issueIdentity']}", file=sys.stderr)
