@@ -5,15 +5,19 @@ const assert = require('node:assert/strict');
 
 const {
   deriveBumpLevel,
-  deriveFromLog,
+  deriveFromRange,
   isRelevantPath,
-  parseLog,
+  readReleaseRange,
 } = require('../../scripts/derive-bump-level.js');
 
 // Most cases here are about subjects, not paths, so give them a relevant path by default and let
 // the path-gate cases pass one explicitly.
 function commit(subject, paths = ['plugins/harness/skills/foo/SKILL.md']) {
   return { hash: subject.slice(0, 7), subject, paths };
+}
+
+function range(entries) {
+  return { subjects: entries.map(entry => entry.subject), paths: entries.flatMap(entry => entry.paths) };
 }
 
 test('deriveBumpLevel: all-patch subjects default to patch', () => {
@@ -36,66 +40,66 @@ test('deriveBumpLevel: the tag matches wherever it sits in the subject', () => {
   assert.equal(deriveBumpLevel(['add foo [bump:minor] skill']), 'minor');
 });
 
-test('deriveFromLog: scans the complete selected range', () => {
+test('deriveFromRange: scans the complete selected range', () => {
   const entries = [
     commit('add foo skill'),
     commit('chore: bump version to 99.0.0', []),
     commit('add bar skill [bump:minor]'),
   ];
-  assert.equal(deriveFromLog(entries), 'minor');
+  assert.equal(deriveFromRange(range(entries)), 'minor');
 });
 
-test('deriveFromLog: a batched push spanning several commits still finds the deepest tag', () => {
+test('deriveFromRange: a batched push spanning several commits still finds the deepest tag', () => {
   // Simulates one `git push` landing three commits at once, oldest tag buried under two others.
   const entries = [
     commit('fix typo'),
     commit('add foo [bump:major]'),
     commit('add bar skill'),
   ];
-  assert.equal(deriveFromLog(entries), 'major');
+  assert.equal(deriveFromRange(range(entries)), 'major');
 });
 
-test('deriveFromLog: nothing since the last bump is "none"', () => {
+test('deriveFromRange: nothing since the last bump is "none"', () => {
   const entries = [];
-  assert.equal(deriveFromLog(entries), 'none');
+  assert.equal(deriveFromRange(range(entries)), 'none');
 });
 
-test('deriveFromLog: an empty log is "none"', () => {
-  assert.equal(deriveFromLog([]), 'none');
+test('deriveFromRange: an empty log is "none"', () => {
+  assert.equal(deriveFromRange(range([])), 'none');
 });
 
-test('deriveFromLog: no prior bump commit at all scans the whole history', () => {
+test('deriveFromRange: no prior bump commit at all scans the whole history', () => {
   const entries = [
     commit('add foo skill'),
     commit('add bar skill [bump:minor]'),
     commit('initial commit'),
   ];
-  assert.equal(deriveFromLog(entries), 'minor');
+  assert.equal(deriveFromRange(range(entries)), 'minor');
 });
 
-test('deriveFromLog: bump-looking prose does not affect the selected range', () => {
+test('deriveFromRange: bump-looking prose does not affect the selected range', () => {
   const entries = [
     commit('document the chore: bump version to X.Y.Z convention'),
   ];
-  assert.equal(deriveFromLog(entries), 'patch');
+  assert.equal(deriveFromRange(range(entries)), 'patch');
 });
 
-test('deriveFromLog: a docs-only range is "none"', () => {
+test('deriveFromRange: a docs-only range is "none"', () => {
   const entries = [
     commit('clarify the install steps', ['README.md']),
     commit('document the preflight contract', ['AGENTS.md', 'CLAUDE.md']),
   ];
-  assert.equal(deriveFromLog(entries), 'none');
+  assert.equal(deriveFromRange(range(entries)), 'none');
 });
 
-test('deriveFromLog: a tests-only range is "none"', () => {
+test('deriveFromRange: a tests-only range is "none"', () => {
   const entries = [
     commit('cover the GIF CLI contract', ['tests/create-discord-emoji-gif/cli-contract.test.js']),
   ];
-  assert.equal(deriveFromLog(entries), 'none');
+  assert.equal(deriveFromRange(range(entries)), 'none');
 });
 
-test('deriveFromLog: changes to this repo\'s own tooling are "none"', () => {
+test('deriveFromRange: changes to this repo\'s own tooling are "none"', () => {
   // scripts/ and .github/ never reach an install, so touching the bump machinery itself must not
   // mint a version - the case most likely to surprise, since it self-triggers.
   const entries = [
@@ -105,57 +109,57 @@ test('deriveFromLog: changes to this repo\'s own tooling are "none"', () => {
       '.githooks/post-commit',
     ]),
   ];
-  assert.equal(deriveFromLog(entries), 'none');
+  assert.equal(deriveFromRange(range(entries)), 'none');
 });
 
-test('deriveFromLog: one relevant commit among docs commits still bumps', () => {
+test('deriveFromRange: one relevant commit among docs commits still bumps', () => {
   const entries = [
     commit('fix a README typo', ['README.md']),
     commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
     commit('rework the test layout', ['tests/bump-version/derive-bump-level.test.js']),
   ];
-  assert.equal(deriveFromLog(entries), 'patch');
+  assert.equal(deriveFromRange(range(entries)), 'patch');
 });
 
-test('deriveFromLog: a tag on an irrelevant commit is honored when the range is relevant', () => {
+test('deriveFromRange: a tag on an irrelevant commit is honored when the range is relevant', () => {
   // Paths decide whether to bump, subjects decide how much. The [bump:minor] here sits on a docs
   // commit, but the range contains a real plugin change, so the human signal stands.
   const entries = [
     commit('note the new skill in the readme [bump:minor]', ['README.md']),
     commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
   ];
-  assert.equal(deriveFromLog(entries), 'minor');
+  assert.equal(deriveFromRange(range(entries)), 'minor');
 });
 
-test('deriveFromLog: a tag cannot force a bump when nothing relevant changed', () => {
+test('deriveFromRange: a tag cannot force a bump when nothing relevant changed', () => {
   const entries = [
     commit('rewrite the docs [bump:major]', ['README.md', 'AGENTS.md']),
   ];
-  assert.equal(deriveFromLog(entries), 'none');
+  assert.equal(deriveFromRange(range(entries)), 'none');
 });
 
-test('deriveFromLog: touching the root claude marketplace manifest bumps', () => {
+test('deriveFromRange: touching the root claude marketplace manifest bumps', () => {
   const entries = [
     commit('rename the marketplace owner', ['.claude-plugin/marketplace.json']),
   ];
-  assert.equal(deriveFromLog(entries), 'patch');
+  assert.equal(deriveFromRange(range(entries)), 'patch');
 });
 
-test('deriveFromLog: touching the codex marketplace manifest bumps', () => {
+test('deriveFromRange: touching the codex marketplace manifest bumps', () => {
   const entries = [
     commit('tighten the codex install policy', ['.agents/plugins/marketplace.json']),
   ];
-  assert.equal(deriveFromLog(entries), 'patch');
+  assert.equal(deriveFromRange(range(entries)), 'patch');
 });
 
-test('deriveFromLog: an empty merge diff relies on the merged commits', () => {
+test('deriveFromRange: an empty merge diff relies on the merged commits', () => {
   // A merge with an empty diff is irrelevant by itself. Merged commits still count.
-  assert.equal(deriveFromLog([commit('Merge pull request #7 from foo/bar', [])]), 'none');
+  assert.equal(deriveFromRange(range([commit('Merge pull request #7 from foo/bar', [])])), 'none');
   const withMergedCommits = [
     commit('Merge pull request #7 from foo/bar', []),
     commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
   ];
-  assert.equal(deriveFromLog(withMergedCommits), 'patch');
+  assert.equal(deriveFromRange(range(withMergedCommits)), 'patch');
 });
 
 test('isRelevantPath: everything shipped inside the plugin tree counts', () => {
@@ -184,58 +188,6 @@ test('isRelevantPath: development-only trees and root docs do not count', () => 
   ]) {
     assert.equal(isRelevantPath(path), false, `${path} should not be relevant`);
   }
-});
-
-test('parseLog: reads the sentinel format git is asked to produce', () => {
-  const text = [
-    'commit\tabc123\tadd the natural-style skill',
-    '',
-    'plugins/harness/skills/natural-style/SKILL.md',
-    'README.md',
-    'commit\tdef456\tchore: bump version to 1.0.1',
-    '',
-    'plugins/harness/.claude-plugin/plugin.json',
-    '',
-  ].join('\n');
-  assert.deepEqual(parseLog(text), [
-    {
-      hash: 'abc123',
-      subject: 'add the natural-style skill',
-      paths: ['plugins/harness/skills/natural-style/SKILL.md', 'README.md'],
-    },
-    {
-      hash: 'def456',
-      subject: 'chore: bump version to 1.0.1',
-      paths: ['plugins/harness/.claude-plugin/plugin.json'],
-    },
-  ]);
-});
-
-test('parseLog: a commit with no files parses with an empty path list', () => {
-  const text = [
-    'commit\tabc123\tMerge pull request #7 from foo/bar',
-    '',
-    'commit\tdef456\tadd foo skill',
-    '',
-    'plugins/harness/skills/foo/SKILL.md',
-  ].join('\n');
-  const entries = parseLog(text);
-  assert.equal(entries.length, 2);
-  assert.deepEqual(entries[0].paths, []);
-  assert.deepEqual(entries[1].paths, ['plugins/harness/skills/foo/SKILL.md']);
-});
-
-test('parseLog: a subject containing a tab is not truncated', () => {
-  // Only the first tab after the sentinel separates hash from subject; the rest is subject.
-  const entries = parseLog('commit\tabc123\tadd foo\tand bar\nplugins/harness/skills/foo/SKILL.md');
-  assert.deepEqual(entries, [
-    { hash: 'abc123', subject: 'add foo\tand bar', paths: ['plugins/harness/skills/foo/SKILL.md'] },
-  ]);
-});
-
-test('parseLog: empty input yields no entries, which derives as "none"', () => {
-  assert.deepEqual(parseLog(''), []);
-  assert.equal(deriveFromLog(parseLog('')), 'none');
 });
 
 const fs = require('node:fs');
@@ -313,4 +265,57 @@ test('CLI Git failures emit diagnostics and never a release level', t => {
   assert.equal(result.status,1);
   assert.equal(result.stdout,'');
   assert.match(result.stderr,/not a git repository/);
+});
+
+for (const quotePath of ['true', 'false']) {
+  for (const name of ['plain.md', 'café.md', 'tab\tname.md', 'line\nname.md', 'quote"name.md']) {
+    test(`native paths survive add/delete/rename-out: ${JSON.stringify(name)}, quotePath=${quotePath}`, t => {
+      const { cwd, git, commitFile, level } = repository(t);
+      git('config', 'core.quotePath', quotePath);
+      commitFile('README.md', 'initial', 'initial');
+      git('commit', '--allow-empty', '-m', 'chore: bump version to 1.0.0');
+      const shipped = `plugins/${name}`;
+      commitFile(shipped, 'content', 'add [bump:minor]');
+      assert.deepEqual(readReleaseRange(cwd), { subjects: ['add [bump:minor]'], paths: [shipped] });
+      assert.equal(level(), 'minor');
+      git('commit', '--allow-empty', '-m', 'chore: bump version to 1.1.0');
+      git('rm', '--', shipped);
+      git('commit', '-m', 'delete [bump:minor]');
+      assert.deepEqual(readReleaseRange(cwd).paths, [shipped]);
+      assert.equal(level(), 'minor');
+      commitFile(shipped, 'content', 'restore');
+      git('commit', '--allow-empty', '-m', 'chore: bump version to 1.2.0');
+      git('mv', '--', shipped, name);
+      git('commit', '-m', 'move out [bump:minor]');
+      assert.deepEqual(new Set(readReleaseRange(cwd).paths), new Set([shipped, name]));
+      assert.equal(level(), 'minor');
+    });
+  }
+}
+
+test('native paths preserve whitespace and cannot inject subjects or shipped prefixes', t => {
+  const { cwd, git, commitFile, level } = repository(t);
+  commitFile('README.md', 'initial', 'initial');
+  git('commit', '--allow-empty', '-m', 'chore: bump version to 1.0.0');
+  const unrelated = 'docs/\nplugins/fake\ncommit\tabc\t[bump:major]\n';
+  commitFile(unrelated, 'content', 'docs');
+  assert.deepEqual(readReleaseRange(cwd), { subjects: ['docs'], paths: [unrelated] });
+  assert.equal(level(), 'none');
+  const shipped = 'plugins/ spaced\t\n';
+  commitFile(shipped, 'content', 'ship\t[bump:minor]');
+  const selected = readReleaseRange(cwd);
+  assert.ok(selected.paths.includes(shipped));
+  assert.deepEqual(selected.subjects, ['ship\t[bump:minor]', 'docs']);
+  assert.equal(level(), 'minor');
+});
+
+test('native mixed range derives severity from every subject independently of paths', t => {
+  const { cwd, git, commitFile, level } = repository(t);
+  commitFile('plugins/file', 'initial', 'initial [bump:major]');
+  git('commit', '--allow-empty', '-m', 'chore: bump version to 1.0.0');
+  commitFile('README.md', 'major', 'docs [bump:major]');
+  commitFile('plugins/file', 'changed', 'shipping [bump:minor]');
+  git('commit', '--allow-empty', '-m', 'empty subject commit');
+  assert.deepEqual(readReleaseRange(cwd).subjects, ['empty subject commit', 'shipping [bump:minor]', 'docs [bump:major]']);
+  assert.equal(level(), 'major');
 });

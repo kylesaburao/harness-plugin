@@ -44,48 +44,20 @@ function deriveBumpLevel(subjects) {
   return sawMinor ? 'minor' : 'patch';
 }
 
-const COMMIT_SENTINEL = 'commit\t';
-
-// Parses `git log --format='commit%x09%H%x09%s' --name-only` into
-// [{ hash, subject, paths }], newest commit first (i.e. `git log` order).
-//
-// The sentinel is what makes this unambiguous: --name-only prints a commit's files as bare lines
-// after a blank line, with nothing marking the header line apart from them, so the format string
-// prefixes every header with a literal "commit<TAB>". Path lines cannot collide with that - git
-// quotes a path containing a tab (core.quotePath) rather than emitting it raw.
-function parseLog(text) {
-  const entries = [];
-  for (const line of text.split('\n')) {
-    if (line.length === 0) {
-      continue;
-    }
-    if (line.startsWith(COMMIT_SENTINEL)) {
-      const rest = line.slice(COMMIT_SENTINEL.length);
-      const tabIndex = rest.indexOf('\t');
-      // Split on the *first* tab only: a commit subject may itself contain one.
-      const hash = tabIndex === -1 ? rest : rest.slice(0, tabIndex);
-      const subject = tabIndex === -1 ? '' : rest.slice(tabIndex + 1);
-      entries.push({ hash, subject, paths: [] });
-      continue;
-    }
-    if (entries.length > 0) {
-      entries[entries.length - 1].paths.push(line);
-    }
-  }
-  return entries;
+// Subjects and paths are separate streams so filenames cannot impersonate headers.
+function deriveFromRange({ subjects, paths }) {
+  if (!paths.some(isRelevantPath)) return 'none';
+  return deriveBumpLevel(subjects);
 }
 
-// Entries are an already selected release range, including merge diffs.
-function deriveFromLog(entries) {
-  if (!entries.some(entry => entry.paths.some(isRelevantPath))) return 'none';
-  return deriveBumpLevel(entries.map(entry => entry.subject));
-}
-
-function readReleaseLog(cwd) {
+function readReleaseRange(cwd) {
   const git = args => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  const firstParent = parseLog(git(['log', '--first-parent', '--format=commit%x09%H%x09%s', 'HEAD']));
-  const anchor = firstParent.find(entry => BUMP_COMMIT_PATTERN.test(entry.subject));
-  return parseLog(git(['log', '--format=commit%x09%H%x09%s', '--name-only', '--no-renames', '--diff-merges=first-parent', anchor ? `${anchor.hash}..HEAD` : 'HEAD']));
+  const firstParent = git(['log', '--first-parent', '--format=%H%x09%s', 'HEAD']);
+  const anchor = firstParent.split('\n').find(line => BUMP_COMMIT_PATTERN.test(line.slice(line.indexOf('\t') + 1)));
+  const revision = anchor ? `${anchor.slice(0, anchor.indexOf('\t'))}..HEAD` : 'HEAD';
+  const subjects = git(['log', '--format=%s', '-z', revision]).split('\0').filter(Boolean);
+  const paths = git(['log', '--format=', '--name-only', '-z', '--no-renames', '--diff-merges=first-parent', revision]).split('\0').filter(Boolean);
+  return { subjects, paths };
 }
 
 function main() {
@@ -95,7 +67,7 @@ function main() {
     return;
   }
   try {
-    process.stdout.write(`${deriveFromLog(readReleaseLog(process.cwd()))}\n`);
+    process.stdout.write(`${deriveFromRange(readReleaseRange(process.cwd()))}\n`);
   } catch (error) {
     process.stderr.write(error.stderr || `${error.message}\n`);
     process.exitCode = 1;
@@ -103,4 +75,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { deriveBumpLevel, deriveFromLog, isRelevantPath, parseLog, readReleaseLog };
+module.exports = { deriveBumpLevel, deriveFromRange, isRelevantPath, readReleaseRange };
