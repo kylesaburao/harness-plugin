@@ -2,8 +2,7 @@
 import fs = require('node:fs');
 import os = require('node:os');
 import path = require('node:path');
-import crypto = require('node:crypto');
-const { randomUUID } = crypto;
+import { acquireDirectoryLock, writeJsonAtomic } from '../../../shared/node/config-store.js';
 
 export interface WakeTarget extends Record<string, unknown> { ip: string; mac: string }
 export interface RawWakeRegistry extends Record<string, unknown> { schema_version: 1; targets: Record<string, unknown> }
@@ -145,61 +144,18 @@ export function loadTarget(name: string): WakeTarget {
 // The management CLI owns the transaction, including the read before mutation.
 export function acquireConfigLock(): (saved: boolean, operationFailure?: unknown) => void {
   const lock = `${configPath()}.lock`;
-  const recovery = `confirm no target configuration mutation is running, then run rmdir -- '${lock.replaceAll("'", "'\\''")}'`;
-  let identity: fs.Stats;
-  try { fs.mkdirSync(path.dirname(lock), { recursive: true }); }
-  catch (error) {
-    throw new StartupError('target_config_lock_failed',
-      `${lock}: cannot prepare configuration directory: ${errorDetails(error).message}`, recovery);
-  }
-  try {
-    fs.mkdirSync(lock);
-  } catch (error) {
-    const busy = errorDetails(error).code === 'EEXIST';
-    throw new StartupError(busy ? 'target_config_busy' : 'target_config_lock_failed',
-      `${lock}: ${busy ? 'another mutation holds the configuration lock' : `cannot acquire configuration lock: ${errorDetails(error).message}`}`, recovery);
-  }
-  try { identity = fs.lstatSync(lock); }
-  catch (error) {
-    // Without an identity it is unsafe to remove this directory.
-    throw new StartupError('target_config_lock_cleanup_failed',
-      `${lock}: cannot establish acquired lock ownership: ${errorDetails(error).message}`, recovery);
-  }
-  return (saved, operationFailure) => {
-    try {
-      const current = fs.lstatSync(lock);
-      if (!current.isDirectory() || current.dev !== identity.dev || current.ino !== identity.ino) {
-        throw new Error('configuration lock ownership changed');
-      }
-      fs.rmdirSync(lock);
-    } catch (error) {
-      const previous = operationFailure === undefined ? ''
-        : `; operation also failed: ${errorDetails(operationFailure).code || 'internal_error'}: ${errorDetails(operationFailure).condition || errorDetails(operationFailure).message || String(operationFailure)}`;
-      throw new StartupError('target_config_lock_cleanup_failed',
-        `${lock}: ${saved ? 'configuration was saved; ' : ''}cannot release configuration lock: ${errorDetails(error).message}${previous}`, recovery);
-    }
-  };
+  return acquireDirectoryLock(lock, { busyCode: 'target_config_busy', failedCode: 'target_config_lock_failed',
+    cleanupCode: 'target_config_lock_cleanup_failed',
+    recovery: `confirm no target configuration mutation is running, then run rmdir -- '${lock.replaceAll("'", "'\\''")}'`,
+    error: (code, condition, remedy) => new StartupError(code, condition, remedy) });
 }
 
 export function saveConfig(config: unknown) {
   validateRegistry(config);
   const destination = configPath();
-  const temporary = `${destination}.${randomUUID()}.tmp`;
-  let staged = false;
-  try {
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    const fd = fs.openSync(temporary, 'wx');
-    staged = true;
-    try { fs.writeFileSync(fd, `${JSON.stringify(config, null, 2)}\n`); }
-    finally { fs.closeSync(fd); }
-    fs.renameSync(temporary, destination);
-  } catch (error) {
-    let cleanup = '';
-    if (staged) {
-      try { fs.unlinkSync(temporary); }
-      catch (failure) { cleanup = `; temporary cleanup failed at ${temporary}: ${errorDetails(failure).message}`; }
-    }
-    throw configError('target_config_write_failed', `cannot publish configuration: ${errorDetails(error).message}${cleanup}`,
+  try { writeJsonAtomic(destination, `${JSON.stringify(config, null, 2)}\n`); }
+  catch (error) {
+    throw configError('target_config_write_failed', `cannot publish configuration: ${errorDetails(error).message}`,
       `restore write access to ${path.dirname(destination)} and retry the command`);
   }
 }

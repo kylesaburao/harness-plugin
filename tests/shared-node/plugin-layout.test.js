@@ -28,3 +28,23 @@ test('copied plugin layout resolves shared imports for every media entrypoint', 
     assert.match(result.stdout, /--preflight/);
   }
 });
+
+test('copied plugin layout resolves the shared config store for every configuration entrypoint', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-config-layout-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const source = require('../helpers/plugin-paths').artifactPath('');
+  for (const directory of ['skills/harness-advisor', 'skills/wake-desktop', 'shared/node']) {
+    fs.cpSync(path.join(source, directory), path.join(root, directory), { recursive: true });
+  }
+  for (const entrypoint of [
+    'skills/harness-advisor/scripts/advisor-config.js',
+    'skills/wake-desktop/scripts/manage-targets.js',
+  ]) {
+    const result = spawnSync(process.execPath, [path.join(root, entrypoint), '--help'], {
+      cwd: root, encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `${entrypoint}: ${result.stderr}`);
+    assert.equal(result.stderr, '', entrypoint);
+    assert.ok(result.stdout.startsWith(`Usage: ${path.basename(entrypoint)} `), result.stdout);
+  }
+});

@@ -4,6 +4,7 @@
 import fs = require('node:fs');
 import os = require('node:os');
 import path = require('node:path');
+import { withDirectoryLock, writeJsonAtomic } from '../../../shared/node/config-store.js';
 export const FAMILIES = ['luna', 'terra', 'sol', 'astra', 'haiku', 'sonnet', 'opus', 'fable'] as const;
 export type ModelFamily = typeof FAMILIES[number];
 export type AdvisorHost = 'codex' | 'claude';
@@ -178,34 +179,13 @@ export function serialize(config: AdvisorConfig): string {
 }
 function saveConfig(file: string, config: AdvisorConfig) {
   validateConfig(config);
-  let stage: string | undefined;
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    stage = fs.mkdtempSync(path.join(path.dirname(file), '.config-stage-'));
-    const temporary = path.join(stage, 'config.json');
-    fs.writeFileSync(temporary, serialize(config), { mode: 0o600 });
-    fs.renameSync(temporary, file);
-  } finally { if (stage) fs.rmSync(stage, { recursive: true, force: true }); }
+  writeJsonAtomic(file, serialize(config), { mode: 0o600 });
 }
-function withMutationLock<T>(file: string, mutate: () => T): T | undefined {
+function withMutationLock<T>(file: string, mutate: () => T): T {
   const lock = `${file}.lock`;
-  const recovery = `After confirming no advisor-config mutation is running, run: rmdir ${quote(lock)}`;
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.mkdirSync(lock);
-  }
-  catch (error) {
-    if (details(error).code === 'EEXIST') fail('config_busy', `Advisor mutation lock exists at ${lock}. Retry after the writer finishes. Interrupted writers require manual recovery.`, recovery);
-    fail('config_lock_failed', `Cannot acquire ${lock}: ${details(error).message}`);
-  }
-  let result: T | undefined, failure: unknown;
-  try { result = mutate(); } catch (error) { failure = error; }
-  try { fs.rmdirSync(lock); }
-  catch (error) {
-    fail('config_lock_cleanup_failed', `Cannot remove ${lock}: ${details(error).message}. ${failure ? `Operation failed: ${details(failure).message}` : 'Operation completed and configuration may already be published.'}`, recovery);
-  }
-  if (failure) throw failure;
-  return result;
+  return withDirectoryLock(lock, { busyCode: 'config_busy', failedCode: 'config_lock_failed', cleanupCode: 'config_lock_cleanup_failed',
+    recovery: `After confirming no advisor-config mutation is running, run: rmdir ${quote(lock)}`,
+    error: (code, condition, remedy) => Object.assign(new Error(condition), { code, condition, remedy }) }, mutate);
 }
 export function main(argv: string[]) {
   const json = argv.includes('--json');
