@@ -50,10 +50,15 @@ function snapshot(root, target)
 
 function runBuildCli(root, args, env = {})
 {
+  const inherited = { ...process.env };
+  for (const key of ['GITHUB_ACTIONS', 'GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_EVENT_NAME', 'HARNESS_RELEASE_WRITE'])
+  {
+    delete inherited[key];
+  }
   return spawnSync(process.execPath, [path.join(root, 'scripts/build.js'), ...args], {
     cwd: path.join(root, 'src'),
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...inherited, ...env },
   });
 }
 
@@ -283,7 +288,21 @@ test('distribution-writing CLI requires every explicit release-intent condition 
 {
   const root = fixture(t);
   const before = fs.readFileSync(path.join(root, 'src/harness/package.json'));
-  for (const env of [{}, { CI: 'true' }, { GITHUB_ACTIONS: 'true', HARNESS_RELEASE_WRITE: '1' }])
+  const releaseEnvironment = {
+    GITHUB_ACTIONS: 'true',
+    GITHUB_REPOSITORY: 'kylesaburao/harness-plugin',
+    GITHUB_REF: 'refs/heads/main',
+    GITHUB_EVENT_NAME: 'push',
+    HARNESS_RELEASE_WRITE: '1',
+  };
+  const incomplete = [{}, { CI: 'true' }, { GITHUB_ACTIONS: 'true', HARNESS_RELEASE_WRITE: '1' }];
+  for (const key of Object.keys(releaseEnvironment))
+  {
+    const env = { ...releaseEnvironment };
+    delete env[key];
+    incomplete.push(env);
+  }
+  for (const env of incomplete)
   {
     const result = runBuildCli(root, ['--target', 'distribution'], env);
     assert.equal(result.status, 2, result.stderr);
@@ -292,17 +311,14 @@ test('distribution-writing CLI requires every explicit release-intent condition 
     assert.deepEqual(fs.readFileSync(path.join(root, 'src/harness/package.json')), before);
   }
 
-  const releaseEnvironment = {
-    GITHUB_ACTIONS: 'true',
-    GITHUB_REPOSITORY: 'kylesaburao/harness-plugin',
-    GITHUB_REF: 'refs/heads/main',
-    GITHUB_EVENT_NAME: 'push',
-    HARNESS_RELEASE_WRITE: '1',
-  };
-  assert.doesNotThrow(() => assertReleaseWriteIntent(releaseEnvironment));
-  const result = runBuildCli(root, ['--target', 'distribution'], releaseEnvironment);
-  assert.equal(result.status, 0, result.stderr);
-  assert.ok(snapshot(root, 'distribution').length > 0);
+  for (const event of ['push', 'workflow_dispatch'])
+  {
+    const env = { ...releaseEnvironment, GITHUB_EVENT_NAME: event };
+    assert.doesNotThrow(() => assertReleaseWriteIntent(env));
+    const result = runBuildCli(root, ['--target', 'distribution'], env);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(snapshot(root, 'distribution').length > 0);
+  }
 });
 
 test('build CLI rejects malformed targets and arguments before changing either artifact', t =>
