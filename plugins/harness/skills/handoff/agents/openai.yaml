@@ -1,0 +1,6 @@
+interface:
+  display_name: "Session Handoff"
+  short_description: "Write a file that brings a zero-context session up to speed"
+  default_prompt: "Use $handoff to write up the current state for the next session."
+policy:
+  allow_implicit_invocation: true
