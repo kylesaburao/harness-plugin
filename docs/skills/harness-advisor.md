@@ -11,8 +11,8 @@ advice, and delivers the result. The Advisor makes no tool calls.
 
 After [installing the plugin](../../README.md#install), ask the agent to use
 `install-harness-plugin-capabilities` for Codex, Claude Code, or both. The installer
-updates the effective user instructions and companion guidance for final plans
-and skill discovery. Unrelated instructions, settings, and routing are preserved.
+updates the effective user instructions for Advisor, the planning-skill trigger,
+and Skill discovery. Unrelated instructions, settings, and routing are preserved.
 Start a new session afterward. Invoke the installer again to update integration;
 a plugin update does not itself rewrite your global instruction files. See the
 [installer contract](../../dist/harness/skills/install-harness-plugin-capabilities/SKILL.md).

@@ -34,12 +34,13 @@ Some skills retain configuration or generated data under `~/.harness-plugin/`, s
 | [diagnose-environment](dist/harness/skills/diagnose-environment/SKILL.md) | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. |
 | [extract-video-frames](dist/harness/skills/extract-video-frames/SKILL.md) | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. |
 | [inspect-development-environment](dist/harness/skills/inspect-development-environment/SKILL.md) | Produce an evidence-backed inventory of the current dev environment. |
-| [install-harness-plugin-capabilities](dist/harness/skills/install-harness-plugin-capabilities/SKILL.md) | Install or repair Advisor integration, Final plans guidance, and Skill discovery for Codex and Claude Code through agent file edits. |
+| [install-harness-plugin-capabilities](dist/harness/skills/install-harness-plugin-capabilities/SKILL.md) | Install or repair Advisor integration, implementation-planning activation, and Skill discovery for Codex and Claude Code through agent file edits. |
 | [record-decision](dist/harness/skills/record-decision/SKILL.md) | Capture a consequential technical decision, its constraints, and its reversibility. |
 | [demonstrate-workflow](dist/harness/skills/demonstrate-workflow/SKILL.md) | Turn completed session work or a new demonstration into a reusable skill through explicit invocation. |
 | [research-precedent](dist/harness/skills/research-precedent/SKILL.md) | Research whether a proposed approach has precedent, internally or in the wider industry. |
 | [random-sampler](dist/harness/skills/random-sampler/SKILL.md) | Make cryptographic random choices, integers, samples, shuffles, dice rolls, and coin flips. |
 | [wake-desktop](dist/harness/skills/wake-desktop/SKILL.md) | Manage named LAN wake targets and send a magic packet, optionally waiting for a ping response. [Guide](docs/skills/wake-desktop.md). |
+| [write-implementation-plan](dist/harness/skills/write-implementation-plan/SKILL.md) | Apply self-contained planning and on-demand pause/handoff/resume ground rules to coding implementation plans. |
 | [write-asd-ste100](dist/harness/skills/write-asd-ste100/SKILL.md) | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. |
 
 ### Output styles

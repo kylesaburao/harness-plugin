@@ -1,10 +1,9 @@
 # Activation instruction templates
 
-Copy the selected host's capabilities block exactly, including its markers.
-Install the Final plans trigger independently for either host, replacing
-`<absolute-companion-path>` with the absolute path to the installed
-`final-plan-context.md` in that host's user directory. Install the shared Skill
-discovery template independently for both hosts, directly as active instructions.
+Copy the selected host's Advisor capabilities block exactly, including its markers.
+Install the shared implementation-planning trigger and Skill discovery template
+independently for both hosts, directly as active instructions. Check replacement
+skill availability as required by the installer before changing planning integration.
 
 ## Codex capabilities
 
@@ -54,17 +53,20 @@ Do not use both native Advisor and Harness Advisor to obtain additional review.
 <!-- harness-plugin:capabilities:end -->
 ```
 
-## Final plans (both hosts)
+## Implementation planning (both hosts)
 
 ```markdown
-# Final plans
+<!-- harness-plugin:implementation-planning:start -->
+# Implementation planning
 
-Before drafting or revising a final implementation plan, read
-`<absolute-companion-path>` and apply its context-transfer
-rules and fresh-context audit. Assume the planning conversation will
-be erased. The executor must need only the final plan, repository/worktree
-state, and explicitly identified artifacts. If the guidance cannot be
-read, report the blocker rather than presenting an unaudited final plan.
+When drafting or revising a coding implementation plan, including in the
+current host's native plan mode, find and use the Harness
+`write-implementation-plan` Skill through the active skill catalogue.
+Apply it alongside the host's native planning process and audit the plan
+under its contract before presenting the final plan. If the Skill cannot
+be resolved or loaded, report that blocker instead of presenting an
+unaudited final implementation plan.
+<!-- harness-plugin:implementation-planning:end -->
 ```
 
 ## Skill discovery (both hosts)
