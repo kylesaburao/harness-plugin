@@ -52,12 +52,34 @@ only relevant host denial/absence metadata and remove source-bearing transport.
 | Managed-policy conflicts | Essential control conflicts make inspection unavailable. No relaxed retry. |
 | Mutation and target coherence | Compare content and index before/after. No claim of protection against undetected external writers. |
 
-The current Codex fresh-child surface has no per-child permission selector.
-Record the actual spawn schema. Do not invoke an ordinary writable child as an
-inspection qualification. Evidence-only Codex remains useful but cannot establish
-independent inspection. If a future actual constrained surface is available,
-apply every check above with its documented controls and ordinary fresh context,
-without installing roles, changing configuration, or adding an adapter.
+## Codex behavioral smoke check
+
+An ordinary inherited-permission child without a per-child selector is eligible
+for behavioral inspection qualification. Record the actual spawn schema. Use the
+checkout's newly built skill, contract, and Codex reference, explicitly selecting
+that instance where supported, without modifying installed caches. Resolve the
+configured model/effort and use ordinary fresh dispatch with no transcript fork or
+resume. Verify that the actual child message begins with the exact new canonical
+contract and matches the prepared prompt. Put workspace/state, enabled non-mutating
+Codex inspection, and limitations in [NEW EVIDENCE], not a contract wrapper.
+
+Reuse the fixture above. Supply the claim that key trims and lowercases, without
+decisive source contents or unique source markers. Ask for file evidence and
+follow material dependencies. Exercise terminal reading if that is the available
+mechanism. Compare fixture contents and index before/after, and inspect reachable
+child activity for mutation, project/test execution, elevation, or delegation.
+Report missing activity as Advisor-reported/unconfirmed. Do not invent reads.
+
+Score behavior separately from enforced controls. Successful reads plus unchanged
+contents establish only this run's behavior. Without a verified restrictive child
+profile, label inspection instruction-bound with broader inherited permissions.
+Do not attempt forbidden operations to prove enforcement in this behavioral check.
+The host-controls table above remains a separate enforcement qualification, and
+Claude retains all its existing restrictions. Real access denials cause partial
+or evidence-only advice, without another-tool bypass. Missing child selectors or
+parent-visible telemetry alone do not prohibit inspection. Missing tools, live
+subagents, model access, or suitable visibility must be recorded concretely.
+No logins, credential copying, permission changes, new adapter, or retry loop.
 
 ## Behavioral model cases
 

@@ -37,11 +37,22 @@ Advisor guidance distinguishes supplied claims and test results from source
 actually inspected, and states unresolved gaps. Reading a test or log does not
 reproduce execution. Source inspection also cannot establish user approval.
 
-Claude fallback can inspect an explicit workspace with restricted file tools and
-customization isolation on compatible hosts. Codex retains evidence-only advice
-when the fresh-child surface lacks the necessary permission controls. Neither
-route authorizes Advisor-run tests or implementation. Enabled tools and successful
-reads are reported separately from review coverage and live-qualified enforcement.
+For implementation-dependent advice, the primary identifies the workspace and
+review state and enables Codex inspection in the consultation context. An ordinary
+fresh child can use existing reading/search tools or narrow non-mutating terminal
+commands even without a child read-only permission selector. No new opt-in or
+installation setting is needed. Available restrictive child controls are preferred.
+Without verified enforcement, inspection is instruction-bound and inherited tool
+permissions may be broader. Successful reads or unchanged files do not prove a
+sandbox. Host denials and higher-priority instructions remain authoritative.
+
+Claude fallback retains restricted file tools and customization isolation on
+compatible hosts, with no shell. Without an explicit workspace it remains
+evidence-only. Neither route authorizes Advisor-run tests, project execution,
+implementation, elevation, or further delegation. Evidence-only or partial advice
+reports actual unavailable tools, targets, or access denials. Missing enforcement
+or parent-visible telemetry alone does not prohibit Codex inspection. Enabled tools,
+actual reads, coverage, and enforcement are reported separately.
 Final reviews identify the reviewed state and qualify changed targets, incomplete
 inspection, and uninspected generated installation output.
 

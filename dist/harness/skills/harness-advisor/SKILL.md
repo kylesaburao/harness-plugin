@@ -247,9 +247,12 @@ non-Git workspaces. Finish relevant edits/builds and coordinate a pause of all
 primary/executor-owned writers before recording the target and consulting. Resume
 after evaluating the result. Obtain a repository-wide changed-path inventory
 before narrowing content by relevance, including staged, unstaged, and relevant
-untracked paths. Use constrained host Git observation if separately available,
-otherwise provide captured Git output labeled supplied, with independent inventory
-unavailable. Never enable shell just to obtain Git output.
+untracked paths. For Codex, explicitly enable non-mutating workspace inspection in
+[NEW EVIDENCE] and use the existing tools under host-codex.md, including permitted
+terminal Git observation. Missing child read-only controls alone does not block
+inspection. For Claude, retain the selected restricted file tools and supply Git
+output from the primary. Never enable shell in Claude's restricted branch.
+When independent inventory is unavailable, label captured Git output supplied.
 
 Check lightweight state before and after consultation. HEAD, a dirty flag, or
 unchanged status filenames do not prove content stability. Use a cheap relevant
@@ -277,7 +280,7 @@ requirements, unnecessary complexity, and validation gaps.
 
 Caching is opportunistic, not memory. Keep model, effort, instructions, tools,
 baseline, and serialization stable where practical. Cache identity is host,
-exact Advisor model, reasoning configuration, selected tool policy, policy version (2), and epoch.
+exact Advisor model, reasoning configuration, selected tool policy, policy version (3), and epoch.
 A model or effort change changes the cache profile, not the semantic epoch:
 retain constraints, verified evidence, accepted decisions, and useful failures.
 One-off model choices share those facts but have a different provider cache. Use an epoch-scoped cache
