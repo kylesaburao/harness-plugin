@@ -29,6 +29,16 @@ The candidate was the integration before the post-review wording change to two i
 - **Confirmation.** The same file fails the same 6 of 41 tests on a clean baseline worktree. It passes 41 of 41 when `TMPDIR` is set to its resolved path.
 - **Status.** This is a pre-existing environment-sensitivity issue in that test, not a regression from this change. Every other suite passed, including inventory (8 of 8).
 
+## Follow-up gate (2026-09-30)
+
+- **Candidate.** Release `59d3085` (3.1.18) plus these follow-up changes:
+  - `tests/harness-advisor/claude-adapter.test.js` now resolves its fixture root with `fs.realpathSync`, fixing the 6 failures above.
+  - Whitespace-only rewraps of the installer's step 7 and the Advisor guide.
+  - The `AGENTS.md` conceptual-first paragraph unwrapped.
+  - Corrections to the installer qualification record.
+- **Commands.** `npm run build`, `npm run build:check`, `npm run validate:build`, `npm run test:setup`, then `npm test`, on native macOS with the default `TMPDIR` (`/var/folders/...`).
+- **Result: passed.** 804 passed, 0 failed, 1 skipped (the existing `distribution` skip). `harness-advisor` passed 60 of 60.
+
 ## Live loading and installer behavior
 
 Claude Code 2.1.286 loaded the candidate with `harness:conceptual-first` among 15 skills. The installer component passed fresh-install, repeat no-op, missing-skill block, and Advisor-only scope runs. Evidence and limits are in the [installer qualification](../install-harness-plugin-capabilities/QUALIFICATION.md#conceptual-first-component-claude-live-qualification-2026-09-30).

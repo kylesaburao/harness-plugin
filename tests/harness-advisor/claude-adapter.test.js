@@ -8,7 +8,7 @@ const { spawnSync } = require('node:child_process');
 const script = require('../helpers/plugin-paths').artifactPath('skills/harness-advisor/scripts/claude-advisor.js');
 const contract = fs.readFileSync(path.resolve(path.dirname(script), '../references/contract.md'), 'utf8');
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claude advisor's test-"));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "claude advisor's test-")));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'claude');

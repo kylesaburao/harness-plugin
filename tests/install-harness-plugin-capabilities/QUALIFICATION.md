@@ -150,13 +150,15 @@ The installer contract does not define whether files imported with `@path` belon
 This covers the fourth installer component, `conceptual-first` activation, added in the same change as the `conceptual-first` skill.
 
 **Environment.**
-- Host: Claude Code 2.1.286, macOS, personal claude.ai login.
+- Host: Claude Code 2.1.286, macOS, personal claude.ai login, model `claude-opus-5-5` (from each run's init event).
 - Candidate: a fresh `npm run build` of HEAD `7179c53ed83fbeb82d30441547e1f1ca3e9fcffb` plus the uncommitted conceptual-first integration. It was copied from `.build/harness` to `/private/tmp/claude-qual-20260930205429/harness`, excluding `node_modules`. Tree SHA-256 over sorted per-file hashes: `3db47de1981c0e12f5e1cfde76d4933ff30a58082181f3224f3bf8e2196319dc`. A second copy, `harness-missing`, omits `skills/conceptual-first/`.
-- Isolation and flags match the 2026-09-25 runs above:
+- Isolation flags match the 2026-09-25 runs above. The allowed tools are narrower: `Bash(cp *)` and `Bash(mkdir *)` were not allowed.
   - `--plugin-dir` and `--add-dir` for the candidate and the fixture
   - `--setting-sources '' --no-session-persistence --permission-mode dontAsk`
   - allowed tools `Read Edit Write Glob Grep 'Bash(cat *)' 'Bash(ls *)' 'Bash(shasum *)'`
   - each prompt named the fixture file as the target
+- Prompt for runs A–C: "Use /harness:install-harness-plugin-capabilities to install or repair Harness capabilities for Claude Code. The target Claude instruction file for this run is <absolute fixture CLAUDE.md>. Do not touch any other instruction file."
+- Prompt for run D: "Use /harness:install-harness-plugin-capabilities to install only the Harness Advisor integration for Claude Code. Do not install or change any other component. The target Claude instruction file for this run is <absolute fixture CLAUDE.md>. Do not touch any other instruction file."
 - Personal instruction files, settings, and plugin installations were not modified.
 
 **Fixtures.** The base `CLAUDE.md` was built from the candidate's own templates. It contains:
@@ -187,4 +189,4 @@ Fixture D omits the Advisor block. Snapshots recorded the SHA-256, mode, and nan
 - These runs establish installer file behavior with this candidate. They do not establish adherence to the conceptual-first policy.
 - After these runs, a code review changed two installer sentences. Step 2 now reads "Inspect all authorized components" instead of "all four components". Step 7 now also accepts an ambiguous or out-of-scope conceptual-first outcome, and requires one active trigger rather than one marked active trigger. The runs above used the earlier wording and were not repeated.
 
-Cost: $0.74 across the four model runs (A $0.214, B $0.139, C $0.175, D $0.207). Raw evidence remains under the disposable root and was not archived.
+Cost: $0.74 at API-equivalent prices across the four model runs (A $0.214, B $0.139, C $0.175, D $0.207), summed from each run's `total_cost_usd`. Claude Code computes that figure from token usage at API list prices. These runs used the subscription login, so they counted against plan usage limits and were not billed per dollar. Raw evidence remains under the disposable root and was not archived.

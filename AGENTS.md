@@ -29,14 +29,7 @@ Claude-only component kinds with no Codex equivalent (e.g. `src/harness/output-s
 
 ## Conceptual-first implementation
 
-For changes involving shared behavior, related implementations, cross-cutting
-policy, state lifetimes, or public contracts, read and apply
-`src/harness/skills/conceptual-first/SKILL.md` from the repository root before
-implementation, substantive implementation planning, or structural review,
-unless its current contents are already in context. Use this authored source
-for repository development, not a potentially older installed release.
-Preserve task authorization, valid existing decisions, and the policy's
-lightweight path for trivial local edits and verbatim plan export.
+For changes involving shared behavior, related implementations, cross-cutting policy, state lifetimes, or public contracts, read and apply `src/harness/skills/conceptual-first/SKILL.md` from the repository root before implementation, substantive implementation planning, or structural review, unless its current contents are already in context. Use this authored source for repository development, not a potentially older installed release. Preserve task authorization, valid existing decisions, and the policy's lightweight path for trivial local edits and verbatim plan export.
 
 ## Skills that run scripts
 

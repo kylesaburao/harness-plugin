@@ -204,12 +204,12 @@ is removed. Do not claim removal of arbitrary user-authored references. For
 conceptual-first, verify that exactly one active trigger remains outside the
 Advisor capabilities markers, or that the component was reported blocked,
 ambiguous, or outside the requested component scope with its prior content
-preserved. Confirm unrelated content is preserved; do not
-inspect or modify the legacy companion for verification.
+preserved. Confirm unrelated content is preserved; do not inspect or modify the
+legacy companion for verification.
 
 For each selected host report changed paths, unchanged components, blocked
 components, failures, and partial completion honestly, including a separate
 conceptual-first status. Mention an untouched legacy companion only when its
-presence is known. Remind the user to start a new host
-session. Installation does not establish account model access, effective runtime
-permissions, runtime compliance, or guaranteed skill invocation.
+presence is known. Remind the user to start a new host session. Installation
+does not establish account model access, effective runtime permissions, runtime
+compliance, or guaranteed skill invocation.
