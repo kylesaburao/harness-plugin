@@ -5,8 +5,8 @@
 Starting HEAD: `415e9485eabb5777ad0a7c7d5a9e8c595c8278e2` on `main`, with clean
 index and worktree. Advisor source/tests/docs matched the plan's pinned
 `1de5562` baseline; the intervening commit added only the implementation plan.
-The authoritative specification is `harness-advisor-tool-free-implementation-plan.md`.
-The task handoff is `HANDOFF-advisor-tool-free.md`.
+The temporary implementation specification and execution handoff are retained
+in Git history at commit `8fabc77`.
 
 Implemented policy **4**, retaining routing schema **1**, configuration/locks,
 family/effort routing and consultation accounting. Advisor now reasons only over
