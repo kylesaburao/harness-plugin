@@ -8,6 +8,8 @@ const { spawn } = require('node:child_process');
 const MINIMUM_NODE = Object.freeze([20, 6, 0]);
 const MINIMUM_MACOS = Object.freeze([26, 0, 0]);
 const NS_PER_SECOND = 1000000000n;
+const STDERR_TAIL_BYTES = 64 * 1024;
+const MACOS_PUBLISH_SCRIPT = 'ObjC.import("Foundation"); function run(argv) { const manager = $.NSFileManager.defaultManager; const ok = manager.moveItemAtPathToPathError(argv[0], argv[1], null); if (ok) return "published"; return manager.fileExistsAtPath(argv[1]) ? "collision" : "failed"; }';
 const SIGNAL_EXIT = Object.freeze({ SIGHUP: 129, SIGINT: 130, SIGTERM: 143 });
 const EXIT = Object.freeze({ OK: 0, FAILED: 1, CANNOT_START: 2 });
 
@@ -102,6 +104,10 @@ function pathExists(pathname) {
   }
 }
 
+function errorText(error) {
+  return error && error.message ? error.message : String(error);
+}
+
 function validateInputAndOutput(input) {
   const paths = derivePaths(input);
   let source;
@@ -125,6 +131,14 @@ function sameIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino && left.size === right.size && left.mtimeMs === right.mtimeMs;
 }
 
+function assertSourceUnchanged(paths) {
+  let current;
+  try { current = identity(fs.statSync(paths.supplied)); } catch {
+    throw new DraftError('source_changed', 'input became inaccessible during extraction', 'restore a stable source file, then run again', EXIT.FAILED);
+  }
+  if (!sameIdentity(paths.sourceIdentity, current)) throw new DraftError('source_changed', 'input identity, size, or modification time changed during extraction', 'wait until the source file is stable, then run again', EXIT.FAILED);
+}
+
 function resolveCommand(name, env = process.env) {
   for (const directory of (env.PATH || '').split(path.delimiter)) {
     const candidate = path.join(directory || '.', name);
@@ -134,7 +148,7 @@ function resolveCommand(name, env = process.env) {
 }
 
 function commandRemedy(platform) {
-  return platform === 'darwin' ? 'brew install ffmpeg' : 'install ffmpeg and ffprobe from your package manager, with libzimg/zscale enabled';
+  return platform === 'darwin' ? 'brew install ffmpeg-full && export PATH="$(brew --prefix ffmpeg-full)/bin:$PATH"' : 'install ffmpeg and ffprobe from your package manager, with libzimg/zscale enabled';
 }
 
 function parseListing(text) {
@@ -146,19 +160,33 @@ class ProcessManager {
 
   async run(command, args, options = {}) {
     return new Promise((resolve, reject) => {
-      const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let child;
+      try {
+        child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (error) {
+        reject(error);
+        return;
+      }
       this.active = child;
       const stdout = [];
-      const stderr = [];
+      let stderr = Buffer.alloc(0);
+      let settled = false;
       child.stdout.on('data', chunk => stdout.push(chunk));
       child.stderr.on('data', chunk => {
-        stderr.push(chunk);
+        stderr = boundedTail(stderr, chunk, options.stderrTailBytes || STDERR_TAIL_BYTES);
         if (options.progress) options.progress(chunk.toString());
       });
-      child.once('error', reject);
-      child.once('close', code => {
+      child.once('error', error => {
+        if (settled) return;
+        settled = true;
         this.active = null;
-        resolve({ code, stdout: Buffer.concat(stdout).toString(), stderr: Buffer.concat(stderr).toString() });
+        reject(error);
+      });
+      child.once('close', code => {
+        if (settled) return;
+        settled = true;
+        this.active = null;
+        resolve({ code, stdout: Buffer.concat(stdout).toString(), stderr: stderr.toString() });
       });
     });
   }
@@ -167,6 +195,11 @@ class ProcessManager {
     this.signal = signal;
     if (this.active) this.active.kill(signal);
   }
+}
+
+function boundedTail(previous, chunk, limit = STDERR_TAIL_BYTES) {
+  const combined = Buffer.concat([previous, Buffer.from(chunk)]);
+  return combined.length <= limit ? combined : combined.subarray(combined.length - limit);
 }
 
 async function platformPreflight(manager) {
@@ -184,12 +217,14 @@ async function platformPreflight(manager) {
 }
 
 async function toolchainPreflight(manager, platform) {
-  const commands = { ffmpeg: resolveCommand('ffmpeg'), ffprobe: resolveCommand('ffprobe') };
+  const publisherName = process.platform === 'darwin' ? 'osascript' : 'mv';
+  const commands = { ffmpeg: resolveCommand('ffmpeg'), ffprobe: resolveCommand('ffprobe'), publisher: resolveCommand(publisherName) };
   const failures = [];
   for (const name of ['ffmpeg', 'ffprobe']) if (!commands[name]) failures.push({ code: 'command_missing', condition: `required command not found: ${name}`, remedy: commandRemedy(process.platform) });
+  if (!commands.publisher) failures.push({ code: 'publication_unsupported', condition: `required publication command not found: ${publisherName}`, remedy: process.platform === 'darwin' ? 'restore /usr/bin/osascript, which ships with macOS' : 'install GNU coreutils and put its mv command in PATH' });
   if (commands.ffmpeg) {
     for (const [flag, wanted] of [
-      ['-filters', ['zscale', 'select', 'setpts', 'format']],
+      ['-filters', ['zscale', 'select', 'setpts', 'format', 'transpose', 'hflip', 'vflip']],
       ['-encoders', ['png', 'exr']],
       ['-muxers', ['image2']],
       ['-pix_fmts', ['rgb24', 'rgb48le', 'rgba', 'rgba64le', 'gbrpf32le', 'gbrapf32le']],
@@ -201,10 +236,16 @@ async function toolchainPreflight(manager, platform) {
         for (const capability of wanted) if (!listing.has(capability)) failures.push({ code: 'ffmpeg_capability_missing', condition: `ffmpeg is missing required capability: ${capability}`, remedy: commandRemedy(process.platform) });
       }
     }
+    const exrHelp = await manager.run(commands.ffmpeg, ['-hide_banner', '-h', 'encoder=exr']);
+    if (exrHelp.code !== 0 || !/-compression\s/.test(exrHelp.stdout) || !/zip16/.test(exrHelp.stdout) || !/-format\s/.test(exrHelp.stdout) || !/float/.test(exrHelp.stdout)) failures.push({ code: 'ffmpeg_capability_missing', condition: 'ffmpeg OpenEXR encoder is missing ZIP16 float32 options', remedy: commandRemedy(process.platform) });
   }
   if (commands.ffprobe) {
     const result = await manager.run(commands.ffprobe, ['-v', 'error', '-show_program_version', '-of', 'json']);
     if (result.code !== 0 || !result.stdout.trim()) failures.push({ code: 'ffprobe_probe_failed', condition: 'ffprobe could not report its version', remedy: commandRemedy(process.platform) });
+  }
+  if (commands.publisher && process.platform === 'linux') {
+    const result = await manager.run(commands.publisher, ['--version']);
+    if (result.code !== 0 || !/GNU coreutils/.test(result.stdout)) failures.push({ code: 'publication_unsupported', condition: 'Linux publication requires GNU coreutils mv', remedy: 'install GNU coreutils and put its mv command in PATH' });
   }
   if (failures.length) throw new DraftError('preflight_failed', `${failures.length} toolchain preflight check(s) failed`, commandRemedy(process.platform), EXIT.CANNOT_START, { failures });
   return { platform, commands };
@@ -227,14 +268,59 @@ function hasAlpha(stream) {
   return /(?:^|[^a-z])(?:rgba|bgra|argb|abgr|yuva|gbrap|gray[a-z]*a)/.test(String(stream.pix_fmt || '')) || stream.alpha_mode === 1;
 }
 
-function displayRotation(stream) {
-  const side = (stream.side_data_list || []).find(entry => entry.rotation !== undefined || /display matrix/i.test(entry.side_data_type || ''));
-  const raw = side && side.rotation !== undefined ? Number(side.rotation) : Number(stream.tags && stream.tags.rotate || 0);
-  if (!Number.isFinite(raw)) throw new DraftError('display_transform_unsupported', 'display rotation is not numeric', 'remove or repair the input display matrix');
-  const normalized = ((raw % 360) + 360) % 360;
+const DISPLAY_TRANSFORMS = new Map([
+  ['1,0,0,1', { rotationDegrees: 0, flips: [], filters: [] }],
+  ['-1,0,0,1', { rotationDegrees: 0, flips: ['horizontal'], filters: ['hflip'] }],
+  ['1,0,0,-1', { rotationDegrees: 0, flips: ['vertical'], filters: ['vflip'] }],
+  ['-1,0,0,-1', { rotationDegrees: 180, flips: [], filters: ['hflip', 'vflip'] }],
+  ['0,-1,1,0', { rotationDegrees: 270, flips: [], filters: ['transpose=clock'] }],
+  ['0,1,-1,0', { rotationDegrees: 90, flips: [], filters: ['transpose=cclock'] }],
+  ['0,-1,-1,0', { rotationDegrees: 270, flips: ['horizontal'], filters: ['hflip', 'transpose=clock'] }],
+  ['0,1,1,0', { rotationDegrees: 270, flips: ['vertical'], filters: ['vflip', 'transpose=clock'] }],
+]);
+
+function displayMatrixValues(text) {
+  const rows = String(text).split(/\r?\n/).map(line => {
+    const match = /:\s*(-?\d+)\s+(-?\d+)\s+(-?\d+)\s*$/.exec(line.trim());
+    return match ? match.slice(1).map(Number) : null;
+  }).filter(Boolean);
+  return rows.length === 3 ? rows.flat() : null;
+}
+
+function normalizedMatrixComponent(value) {
+  const normalized = Math.round(value / 65536);
+  return Math.abs(value - normalized * 65536) <= 1 ? normalized : null;
+}
+
+function transformFromMatrix(values) {
+  if (!values || values.length !== 9 || values.some(value => !Number.isFinite(value))) return null;
+  const [a, b, translateX, c, d, translateY, perspectiveX, perspectiveY, scale] = values;
+  const normalized = [a, b, c, d].map(normalizedMatrixComponent);
+  if (normalized.includes(null) || perspectiveX !== 0 || perspectiveY !== 0 || scale !== 1073741824 || !Number.isInteger(translateX) || !Number.isInteger(translateY)) return null;
+  const supported = DISPLAY_TRANSFORMS.get(normalized.join(','));
+  return supported ? { ...supported, matrix: values, swapsDimensions: normalized[1] !== 0 } : null;
+}
+
+function transformFromRotation(raw) {
+  const rotation = Number(raw || 0);
+  if (!Number.isFinite(rotation)) return null;
+  const normalized = ((rotation % 360) + 360) % 360;
   const nearest = Math.round(normalized / 90) * 90 % 360;
-  if (Math.abs(normalized - nearest) > 0.001) throw new DraftError('display_transform_unsupported', `non-orthogonal display rotation is unsupported: ${raw} degrees`, 're-encode the video with an exact 0, 90, 180, or 270 degree display transform');
-  return nearest;
+  if (Math.abs(normalized - nearest) > 0.001) return null;
+  const key = new Map([[0, '1,0,0,1'], [90, '0,1,-1,0'], [180, '-1,0,0,-1'], [270, '0,-1,1,0']]).get(nearest);
+  return { ...DISPLAY_TRANSFORMS.get(key), matrix: null, swapsDimensions: nearest === 90 || nearest === 270 };
+}
+
+function displayTransform(stream) {
+  const side = (stream.side_data_list || []).find(entry => entry.rotation !== undefined || /display matrix/i.test(entry.side_data_type || ''));
+  const matrixText = side && (side.displaymatrix || side.display_matrix);
+  const transform = matrixText ? transformFromMatrix(displayMatrixValues(matrixText)) : transformFromRotation(side && side.rotation !== undefined ? side.rotation : stream.tags && stream.tags.rotate);
+  if (!transform) throw new DraftError('display_transform_unsupported', 'display matrix contains scale, shear, perspective, or a non-orthogonal rotation', 're-encode the video with only exact 90-degree rotations or axis flips');
+  return transform;
+}
+
+function displayRotation(stream) {
+  return displayTransform(stream).rotationDegrees;
 }
 
 const SDR_PRIMARIES = new Set(['bt709', 'bt470m', 'bt470bg', 'smpte170m', 'smpte240m']);
@@ -263,71 +349,123 @@ function classifyStream(stream) {
   return { dynamicRange: 'sdr', primaries, transfer, matrix, range, bitDepth, alpha, extension: 'png', codec: 'png', outputPixelFormat: alpha ? (highDepth ? 'rgba64le' : 'rgba') : (highDepth ? 'rgb48le' : 'rgb24'), outputDepth: highDepth ? '16' : '8', outputColor: 'srgb' };
 }
 
-async function inspectInput(manager, state, options) {
-  const metadata = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', state.paths.supplied], 'input_unusable', `ffprobe could not inspect input video: ${state.paths.supplied}`, 'confirm the file is a complete video ffmpeg can decode');
-  const stream = (metadata.streams || []).find(candidate => candidate.codec_type === 'video' && !(candidate.disposition && candidate.disposition.attached_pic));
+function selectVideoStream(streams) {
+  const stream = (streams || []).find(candidate => candidate.codec_type === 'video' && !(candidate.disposition && candidate.disposition.attached_pic));
   if (!stream) throw new DraftError('stream_unsupported', 'input contains no non-attached-picture video stream', 'pass a file containing a real video stream');
-  if (!stream.width || !stream.height) throw new DraftError('stream_unsupported', 'selected video stream has no valid dimensions', 're-export the source with a decodable video stream');
-  const color = classifyStream(stream);
-  const rotation = displayRotation(stream);
-  const frameData = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-select_streams', String(stream.index), '-show_frames', '-show_entries', 'frame=best_effort_timestamp_time,pkt_duration_time,color_range,color_space,color_primaries,color_transfer,pix_fmt', '-of', 'json', state.paths.supplied], 'input_unusable', 'ffprobe could not enumerate frame timestamps', 'repair or re-export the video with valid presentation timestamps');
+  return stream;
+}
+
+function analyzePresentedFrames(frameData, color, options) {
   for (const frame of frameData.frames || []) {
     for (const [field, expected] of [['color_primaries', color.primaries], ['color_transfer', color.transfer], ['color_space', color.matrix], ['color_range', color.range]]) {
       if (frame[field] && frame[field] !== expected) throw new DraftError('color_metadata_ambiguous', `frame-level ${field} changes from ${expected} to ${frame[field]}`, 're-export the video with one consistent color description for the selected stream');
     }
   }
-  const frames = (frameData.frames || []).map(frame => ({ pts: decimalSecondsToNs(frame.best_effort_timestamp_time), duration: decimalSecondsToNs(frame.pkt_duration_time || '0') })).filter(frame => frame.pts !== null);
+  const timeBase = parseTimeBase(options.timeBase);
+  const frames = (frameData.frames || []).map(frame => ({ pts: integerTimestamp(frame.best_effort_timestamp), duration: integerTimestamp(frame.duration ?? frame.pkt_duration ?? '0') })).filter(frame => frame.pts !== null);
   if (!frames.length) throw new DraftError('input_unusable', 'selected video stream has no timestamped frames', 'repair or re-export the source with valid presentation timestamps');
   const origin = frames[0].pts;
   const normalized = frames.map(frame => ({ pts: frame.pts - origin, duration: frame.duration || 0n }));
   const last = normalized.at(-1);
-  const duration = last.pts + last.duration;
+  const durationTicks = last.pts + last.duration;
+  const duration = ticksToNanoseconds(durationTicks, timeBase, true);
   const start = options.start === null ? 0n : options.start;
   const end = options.end === null ? duration : options.end;
-  if (start < 0n || end < 0n || start > duration || end > duration) throw new DraftError('window_out_of_range', `requested window ${formatTime(start)}..${formatTime(end)} is outside 0..${formatTime(duration)}`, `pass bounds between 0 and ${formatTime(duration)} seconds`);
-  const selected = normalized.filter(frame => frame.pts >= start && frame.pts <= end);
+  if (start < 0n || end < 0n || compareNanosecondsToTicks(start, durationTicks, timeBase) > 0 || compareNanosecondsToTicks(end, durationTicks, timeBase) > 0) throw new DraftError('window_out_of_range', `requested window ${formatTime(start)}..${formatTime(end)} is outside 0..${formatTime(duration)}`, `pass bounds between 0 and ${formatTime(duration)} seconds`);
+  const startTick = ceilDivide(start * timeBase.denominator, timeBase.numerator * NS_PER_SECOND);
+  const endTick = end * timeBase.denominator / (timeBase.numerator * NS_PER_SECOND);
+  const selected = normalized.filter(frame => frame.pts >= startTick && frame.pts <= endTick);
   if (!selected.length) throw new DraftError('window_empty', `inclusive window ${formatTime(start)}..${formatTime(end)} contains no presented frame`, 'widen the window or choose a timestamp matching a presented frame');
-  const orientedWidth = rotation === 90 || rotation === 270 ? stream.height : stream.width;
-  const orientedHeight = rotation === 90 || rotation === 270 ? stream.width : stream.height;
+  return { start, end, duration, startTick, endTick, expectedFrames: selected.length, firstTick: selected[0].pts, lastTick: selected.at(-1).pts, firstPts: ticksToNanoseconds(selected[0].pts, timeBase), lastPts: ticksToNanoseconds(selected.at(-1).pts, timeBase), timeBase };
+}
+
+async function inspectInput(manager, state, options) {
+  const metadata = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', state.paths.supplied], 'input_unusable', `ffprobe could not inspect input video: ${state.paths.supplied}`, 'confirm the file is a complete video ffmpeg can decode');
+  const stream = selectVideoStream(metadata.streams);
+  if (!stream.width || !stream.height) throw new DraftError('stream_unsupported', 'selected video stream has no valid dimensions', 're-export the source with a decodable video stream');
+  const color = classifyStream(stream);
+  const transform = displayTransform(stream);
+  const frameData = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-select_streams', String(stream.index), '-show_frames', '-show_entries', 'frame=best_effort_timestamp,duration,pkt_duration,color_range,color_space,color_primaries,color_transfer,pix_fmt', '-of', 'json', state.paths.supplied], 'input_unusable', 'ffprobe could not enumerate frame timestamps', 'repair or re-export the video with valid presentation timestamps');
+  const timing = analyzePresentedFrames(frameData, color, { ...options, timeBase: stream.time_base });
+  const orientedWidth = transform.swapsDimensions ? stream.height : stream.width;
+  const orientedHeight = transform.swapsDimensions ? stream.width : stream.height;
   return {
     stream,
     color,
-    rotation,
+    transform,
     width: orientedWidth,
     height: orientedHeight,
     sampleAspectRatio: stream.sample_aspect_ratio || '1:1',
     displayAspectRatio: stream.display_aspect_ratio || null,
     fieldOrder: stream.field_order || 'unknown',
-    start,
-    end,
-    duration,
-    expectedFrames: selected.length,
-    firstPts: selected[0].pts,
-    lastPts: selected.at(-1).pts,
+    ...timing,
   };
 }
 
-function decimalSecondsToNs(value) {
-  if (value === undefined || value === null || value === 'N/A') return null;
-  const match = /^(-?)([0-9]+)(?:\.([0-9]+))?$/.exec(String(value));
-  if (!match) return null;
-  const magnitude = BigInt(match[2]) * NS_PER_SECOND + BigInt(((match[3] || '') + '000000000').slice(0, 9));
-  return match[1] ? -magnitude : magnitude;
+function integerTimestamp(value) {
+  return /^-?[0-9]+$/.test(String(value)) ? BigInt(value) : null;
+}
+
+function parseTimeBase(value) {
+  const match = /^([1-9][0-9]*)\/([1-9][0-9]*)$/.exec(String(value || ''));
+  if (!match) throw new DraftError('stream_unsupported', `selected video stream has an invalid time base: ${value || 'missing'}`, 're-export the source with a valid video time base');
+  return { numerator: BigInt(match[1]), denominator: BigInt(match[2]), text: value };
+}
+
+function ceilDivide(numerator, denominator) {
+  return (numerator + denominator - 1n) / denominator;
+}
+
+function ticksToNanoseconds(ticks, timeBase, roundUp = false) {
+  const numerator = ticks * timeBase.numerator * NS_PER_SECOND;
+  return roundUp ? ceilDivide(numerator, timeBase.denominator) : numerator / timeBase.denominator;
+}
+
+function compareNanosecondsToTicks(nanoseconds, ticks, timeBase) {
+  const left = nanoseconds * timeBase.denominator;
+  const right = ticks * timeBase.numerator * NS_PER_SECOND;
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function ffmpegArguments(state, temporary) {
   const media = state.media;
   const color = media.color;
-  const inputRange = color.range === 'pc' || color.range === 'jpeg' ? 'full' : 'limited';
-  const select = `setpts=PTS-STARTPTS,select=between(t\\,${formatTime(media.start)}\\,${formatTime(media.end)})`;
-  const conversion = color.dynamicRange === 'sdr'
-    ? `zscale=primariesin=${color.primaries}:transferin=${color.transfer}:matrixin=${color.matrix}:rangein=${inputRange}:primaries=bt709:transfer=iec61966-2-1:matrix=gbr:range=full,format=${color.outputPixelFormat}`
-    : `zscale=primariesin=bt2020:transferin=${color.transfer}:matrixin=${color.matrix}:rangein=${inputRange}:primaries=bt2020:transfer=linear:matrix=gbr:range=full,format=${color.outputPixelFormat}`;
+  const filters = filterGraph(media);
+  const conversion = colorConversionFilter(color);
   const output = path.join(temporary, `frame-%06d.${color.extension}`);
-  const codec = color.codec === 'png'
+  const codec = codecArguments(color);
+  return ['-hide_banner', '-v', 'error', '-nostdin', '-noautorotate', '-progress', 'pipe:2', '-nostats', '-i', state.paths.supplied, '-map', `0:${media.stream.index}`, '-an', '-sn', '-dn', '-vf', `${filters},${conversion}`, '-fps_mode', 'passthrough', '-start_number', '1', ...codec, '-f', 'image2', '-n', output];
+}
+
+function codecArguments(color) {
+  return color.codec === 'png'
     ? ['-c:v', 'png', '-compression_level', '9']
-    : ['-c:v', 'exr', '-compression', 'zip16', '-pixel_type', 'float'];
-  return ['-hide_banner', '-v', 'error', '-nostdin', '-progress', 'pipe:2', '-nostats', '-i', state.paths.supplied, '-map', `0:${media.stream.index}`, '-an', '-sn', '-dn', '-vf', `${select},${conversion}`, '-fps_mode', 'passthrough', '-start_number', '1', ...codec, '-f', 'image2', '-n', output];
+    : ['-c:v', 'exr', '-compression', 'zip16', '-format', 'float'];
+}
+
+function filterGraph(media, startTick = media.startTick, endTick = media.endTick) {
+  return [`setpts=PTS-STARTPTS`, `select=between(pts\\,${startTick}\\,${endTick})`, ...media.transform.filters].join(',');
+}
+
+function colorConversionFilter(color) {
+  const inputRange = color.range === 'pc' || color.range === 'jpeg' ? 'full' : 'limited';
+  if (color.dynamicRange !== 'sdr') return `zscale=primariesin=bt2020:transferin=${color.transfer}:matrixin=${color.matrix}:rangein=${inputRange}:primaries=bt2020:transfer=linear:matrix=gbr:range=full,format=${color.outputPixelFormat}`;
+  const planar = color.alpha
+    ? (color.bitDepth > 8 ? 'gbrap16le' : 'gbrap')
+    : (color.bitDepth > 8 ? 'gbrp16le' : 'gbrp');
+  return `zscale=primariesin=${color.primaries}:transferin=${color.transfer}:matrixin=${color.matrix}:rangein=${inputRange}:primaries=bt709:transfer=iec61966-2-1:matrix=gbr:range=full,format=${planar},format=${color.outputPixelFormat}`;
+}
+
+function decodeProbeArguments(state) {
+  const media = state.media;
+  const conversion = colorConversionFilter(media.color);
+  return ['-hide_banner', '-v', 'error', '-nostdin', '-noautorotate', '-progress', 'pipe:1', '-nostats', '-i', state.paths.supplied, '-map', `0:${media.stream.index}`, '-an', '-sn', '-dn', '-vf', `${filterGraph(media, media.firstTick, media.firstTick)},${conversion}`, '-frames:v', '1', ...codecArguments(media.color), '-f', 'null', '-'];
+}
+
+async function representativeDecodePreflight(manager, state) {
+  const result = await manager.run(state.commands.ffmpeg, decodeProbeArguments(state));
+  if (result.code !== 0) throw new DraftError('input_decode_failed', `ffmpeg could not decode and convert a representative selected frame${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair or re-export the input with a supported video codec and color description');
+  if (!/(?:^|\n)frame=1(?:\r?\n|$)/.test(result.stdout)) throw new DraftError('input_decode_failed', 'ffmpeg completed the representative decode probe without producing the selected frame', 'repair or re-export the input with valid presentation timestamps');
 }
 
 function progressReporter(json) {
@@ -365,7 +503,7 @@ async function structuralChecks(manager, state, temporary) {
 }
 
 function preflightPayload(state) {
-  const payload = { status: 'ready', draftStatus: 'untested-working-draft', platform: state.platform, commands: state.commands };
+  const payload = { status: 'ready', platform: state.platform, commands: state.commands };
   if (!state.media) return payload;
   return { ...payload, input: state.paths.supplied, resolvedInput: state.paths.resolved, outputDirectory: state.paths.output, streamIndex: state.media.stream.index, dynamicRange: state.media.color.dynamicRange, outputFormat: state.media.color.codec, outputDepth: state.media.color.outputDepth, dimensions: `${state.media.width}x${state.media.height}`, expectedFrames: state.media.expectedFrames, requestedWindow: { startSeconds: formatTime(state.media.start), endSeconds: formatTime(state.media.end) }, firstPtsSeconds: formatTime(state.media.firstPts), lastPtsSeconds: formatTime(state.media.lastPts) };
 }
@@ -374,7 +512,6 @@ function resultPayload(state, checks) {
   const media = state.media;
   return {
     status: 'complete',
-    draftStatus: 'untested-working-draft',
     input: state.paths.supplied,
     resolvedInput: state.paths.resolved,
     outputDirectory: state.paths.output,
@@ -383,7 +520,7 @@ function resultPayload(state, checks) {
     sourceColor: { primaries: media.color.primaries, transfer: media.color.transfer, matrix: media.color.matrix, range: media.color.range, bitDepth: media.color.bitDepth },
     output: { format: media.color.codec === 'exr' ? 'openexr' : 'png', extension: media.color.extension, pixelFormat: media.color.outputPixelFormat, depth: media.color.outputDepth, colorSpace: media.color.outputColor, alpha: media.color.alpha, compression: media.color.codec === 'exr' ? 'zip16-lossless' : 'png-lossless' },
     dimensions: { width: media.width, height: media.height },
-    orientation: { rotationDegrees: media.rotation, applied: media.rotation !== 0 },
+    orientation: { rotationDegrees: media.transform.rotationDegrees, flips: media.transform.flips, filters: media.transform.filters, applied: media.transform.filters.length > 0 },
     aspect: { sample: media.sampleAspectRatio, display: media.displayAspectRatio },
     fieldOrder: media.fieldOrder,
     window: { startSeconds: formatTime(media.start), endSeconds: formatTime(media.end), firstPtsSeconds: formatTime(media.firstPts), lastPtsSeconds: formatTime(media.lastPts), inclusive: true },
@@ -412,7 +549,7 @@ function emit(payload, json, kind = 'result') {
     `Dimensions: ${payload.dimensions.width}x${payload.dimensions.height}`,
     `Window: ${payload.window.startSeconds}..${payload.window.endSeconds} inclusive`,
     `Actual PTS: ${payload.window.firstPtsSeconds}..${payload.window.lastPtsSeconds}`,
-    'Status: complete structural checks; untested working draft implementation',
+    'Status: complete structural checks',
   ].join('\n') + '\n');
 }
 
@@ -432,22 +569,43 @@ function usage(basename = 'extract-video-frames.js') {
 }
 
 async function prepare(manager, options) {
-  const paths = options.input ? validateInputAndOutput(options.input) : null;
-  const platform = await platformPreflight(manager);
-  const toolchain = await toolchainPreflight(manager, platform);
-  const state = { ...toolchain };
-  if (paths) {
-    state.paths = paths;
-    state.media = await inspectInput(manager, state, options);
+  try {
+    const paths = options.input ? validateInputAndOutput(options.input) : null;
+    const platform = await platformPreflight(manager);
+    const toolchain = await toolchainPreflight(manager, platform);
+    const state = { ...toolchain };
+    if (paths) {
+      state.paths = paths;
+      state.media = await inspectInput(manager, state, options);
+      await representativeDecodePreflight(manager, state);
+    }
+    return state;
+  } catch (error) {
+    if (error instanceof DraftError) throw error;
+    throw new DraftError('preflight_failed', `preflight could not complete: ${errorText(error)}`, 'fix the reported filesystem or process-launch failure, then run the same command again');
   }
-  return state;
+}
+
+async function publishDirectoryNoReplace(manager, state, temporary) {
+  const output = state.paths.output;
+  const macos = state.platform.os === 'macos';
+  const args = macos
+    ? ['-l', 'JavaScript', '-e', MACOS_PUBLISH_SCRIPT, '--', temporary, output]
+    : ['--no-clobber', '--no-target-directory', temporary, output];
+  let result;
+  try { result = await manager.run(state.commands.publisher, args); } catch (error) {
+    throw new DraftError('publication_failed', `atomic publication command could not start: ${errorText(error)}`, 'restore the required system publication command, then run again', EXIT.FAILED);
+  }
+  const published = macos ? result.code === 0 && result.stdout.trim() === 'published' : result.code === 0 && !pathExists(temporary);
+  if (published) return;
+  const detail = result.stderr.trim() || (macos ? result.stdout.trim() : `publisher exited ${result.code}`);
+  throw new DraftError('publication_failed', `output was not published without replacement: ${output}${detail ? `: ${detail}` : ''}`, 'move or remove any competing output, fix destination permissions, then run again', EXIT.FAILED);
 }
 
 async function main(argv) {
   let options;
-  let manager = new ProcessManager();
+  const manager = new ProcessManager();
   let temporary = null;
-  let lock = null;
   const signalHandler = signal => manager.interrupt(signal);
   for (const signal of Object.keys(SIGNAL_EXIT)) process.once(signal, signalHandler);
   try {
@@ -456,19 +614,15 @@ async function main(argv) {
     const state = await prepare(manager, options);
     if (manager.signal) return SIGNAL_EXIT[manager.signal];
     if (options.preflight) { emit(preflightPayload(state), options.json, 'preflight'); return EXIT.OK; }
-    const lockPath = `${state.paths.output}.lock`;
-    try { lock = fs.openSync(lockPath, 'wx'); } catch { throw new DraftError('output_collision', `output reservation already exists: ${lockPath}`, 'wait for the other extraction to finish, or remove a stale lock after confirming no extraction is active'); }
     if (pathExists(state.paths.output)) throw new DraftError('output_collision', `output appeared during preflight: ${state.paths.output}`, 'move or remove the existing path, then run again');
     temporary = fs.mkdtempSync(path.join(path.dirname(state.paths.output), `.${path.basename(state.paths.output)}.partial-`));
     const extraction = await manager.run(state.commands.ffmpeg, ffmpegArguments(state, temporary), { progress: progressReporter(options.json) });
     if (manager.signal) return SIGNAL_EXIT[manager.signal];
     if (extraction.code !== 0) throw new DraftError('extraction_failed', `ffmpeg extraction failed${extraction.stderr.trim() ? `: ${extraction.stderr.trim()}` : ''}`, 'fix the reported decode, color-conversion, or image-encoder error and run again', EXIT.FAILED);
     const checks = await structuralChecks(manager, state, temporary);
-    let currentIdentity;
-    try { currentIdentity = identity(fs.statSync(state.paths.supplied)); } catch { throw new DraftError('source_changed', 'input became inaccessible during extraction', 'restore a stable source file, then run again', EXIT.FAILED); }
-    if (!sameIdentity(state.paths.sourceIdentity, currentIdentity)) throw new DraftError('source_changed', 'input identity, size, or modification time changed during extraction', 'wait until the source file is stable, then run again', EXIT.FAILED);
-    if (pathExists(state.paths.output)) throw new DraftError('publication_failed', `output appeared before publication: ${state.paths.output}`, 'move or remove the competing output, then run again', EXIT.FAILED);
-    try { fs.renameSync(temporary, state.paths.output); temporary = null; } catch (error) { throw new DraftError('publication_failed', `could not publish output directory: ${error.message}`, 'make the input directory writable with sufficient free space, then run again', EXIT.FAILED); }
+    assertSourceUnchanged(state.paths);
+    await publishDirectoryNoReplace(manager, state, temporary);
+    temporary = null;
     emit(resultPayload(state, checks), options.json);
     return EXIT.OK;
   } catch (error) {
@@ -477,15 +631,10 @@ async function main(argv) {
     return error.exitCode || EXIT.FAILED;
   } finally {
     if (temporary) { try { fs.rmSync(temporary, { recursive: true, force: true }); } catch {} }
-    if (lock !== null) {
-      const lockPath = options && options.input ? `${derivePaths(options.input).output}.lock` : null;
-      try { fs.closeSync(lock); } catch {}
-      if (lockPath) { try { fs.rmSync(lockPath, { force: true }); } catch {} }
-    }
     for (const signal of Object.keys(SIGNAL_EXIT)) process.removeListener(signal, signalHandler);
   }
 }
 
 if (require.main === module) main(process.argv.slice(2)).then(code => { process.exitCode = code; }, error => { emitError(error, process.argv.includes('--json')); process.exitCode = EXIT.FAILED; });
 
-module.exports = { DraftError, EXIT, classifyStream, decimalSecondsToNs, derivePaths, displayRotation, ffmpegArguments, formatTime, parseArguments, parseTime, sameIdentity, sourceBitDepth, versionAtLeast };
+module.exports = { ProcessManager, analyzePresentedFrames, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };

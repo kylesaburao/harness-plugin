@@ -35,10 +35,10 @@ test('missing input is diagnosed before toolchain discovery', () => {
   assert.equal(JSON.parse(result.stderr).error.code, 'input_unusable');
 });
 
-test('skill documentation labels the implementation as an untested working draft', () => {
+test('skill documentation defines the entrypoint and forbids redundant reinspection', () => {
   const fs = require('node:fs');
   const skill = fs.readFileSync(path.resolve(__dirname, '../../plugins/harness/skills/extract-video-frames/SKILL.md'), 'utf8');
-  assert.match(skill, /untested working draft/i);
+  assert.doesNotMatch(skill, /untested working draft/i);
   assert.match(skill, /Do not recreate or modify its FFmpeg commands/);
-  assert.match(skill, /Do not run ffprobe, ffmpeg/);
+  assert.match(skill, /Do\s+not run ffprobe, ffmpeg/);
 });

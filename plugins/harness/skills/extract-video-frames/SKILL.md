@@ -1,13 +1,10 @@
 ---
 name: extract-video-frames
 description: Extract every presented frame from a video as lossless full-resolution images, preserving HDR as linear float OpenEXR and SDR as PNG. Use when the user wants all video frames, or all frames inside an inclusive time window, without frame-rate conversion, resizing, deinterlacing, or tone mapping.
-compatibility: Untested working draft. Requires Node.js 20.6.0 or newer, macOS 26.0 or newer or Linux/WSL2, plus ffmpeg and ffprobe with zscale, PNG, and OpenEXR support.
+compatibility: Requires Node.js 20.6.0 or newer, macOS 26.0 or newer or Linux/WSL2, plus ffmpeg and ffprobe with zscale, PNG, and OpenEXR support.
 ---
 
 # Extract full-quality video frames
-
-> **Status: untested working draft.** The deterministic entrypoint and its tests have
-> been authored but not executed. Do not describe this skill as verified.
 
 Extract each presented frame once at its coded resolution. SDR becomes lossless sRGB
 PNG, using 8-bit channels for an 8-bit source and 16-bit channels for a higher-depth
@@ -25,12 +22,14 @@ Do not recreate or modify its FFmpeg commands.
   no output override. A symlink input therefore publishes beside the symlink, not its
   resolved target.
 - Existing output is never replaced. Move or remove an existing output only when the
-  user explicitly asks.
+  user explicitly asks. Publication reserves the destination atomically and fails if a
+  file, directory, or symlink appears there first.
 - Frames are named `frame-000001.png` or `frame-000001.exr`. There is no manifest and
   no per-frame timestamp map. The result reports only the first and last included PTS.
 - Every decoded presentation frame in the selected interval is emitted once. Sample
-  aspect ratio and interlacing are preserved. Exact right-angle display transforms are
-  applied by FFmpeg; other rotations are rejected.
+  aspect ratio and interlacing are preserved. Exact right-angle rotations and axis
+  flips are applied explicitly by FFmpeg. Scale, shear, perspective, and arbitrary
+  rotations are rejected.
 - Color metadata must be complete and internally consistent. Ambiguous SDR or HDR,
   unsupported HDR conversion, and Dolby Vision without a usable PQ or HLG base layer
   are rejected instead of guessed, tone-mapped, or degraded.
@@ -54,6 +53,10 @@ Resolve the script relative to this skill directory, not the caller's working di
    ```sh
    node scripts/extract-video-frames.js --preflight --json [--start TIME] [--end TIME] INPUT_VIDEO
    ```
+
+   This checks metadata, timestamps, the requested window, the complete display matrix,
+   and a representative decode through the selected color-conversion path to a null
+   sink. It creates no output artifact.
 
 2. If preflight succeeds, dispatch the same request without `--preflight`:
 
@@ -98,8 +101,8 @@ complete image decoding.
 
 ## Platform status
 
-- macOS 26.0 or newer: supported by design; this draft has not been executed there.
-- Linux and WSL2: supported by design; this draft has not been executed there.
+- macOS 26.0 or newer: supported.
+- Linux and WSL2: supported by design.
 - Older macOS and native Windows: rejected.
 
 Node.js 20.6.0 is the supported runtime floor. The script has no npm dependencies.
