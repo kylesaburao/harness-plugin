@@ -14,12 +14,16 @@ discovery template independently for both hosts, directly as active instructions
 
 ### Harness Advisor
 
-Use the `harness-advisor` Skill for selective read-only reasoning escalation and
-independent review. For substantial or difficult work, consider the Skill at
-high-leverage decision points rather than during routine execution.
+Use the `harness-advisor` Skill for selective reasoning escalation and a separate
+review of executor-supplied evidence. For substantial or difficult work, consider
+it at consequential decision points rather than during routine execution.
 If the user explicitly asks for an advisor, second opinion, named Advisor model
 family, or independent review, invoke the Skill. It defines routing, invocation
 limits, context handling, cache-aware carryover, and Advisor execution.
+The executor gathers evidence and owns implementation, verification, and delivery.
+The Advisor makes no tool calls. A second reasoning pass is not independent
+repository inspection or reproduced verification. The Skill defines host
+restriction limits; do not invent permissions or an alternate execution adapter.
 <!-- harness-plugin:capabilities:end -->
 ```
 
@@ -39,9 +43,12 @@ If native Advisor is available, use it and do not load, invoke, or otherwise use
 the Harness `harness-advisor` Skill. Native Advisor owns the session's Advisor behavior,
 including generic user requests. Native errors do not enable Harness fallback.
 Only when native Advisor is unavailable, use the Harness `harness-advisor` Skill for
-selective read-only reasoning escalation and independent review. Consider it at
-consequential decisions, and invoke it for explicit advisor, second opinion,
-named Advisor family, or independent review requests.
+selective reasoning escalation and a separate review of executor-supplied evidence.
+Consider it at consequential decisions, and invoke it for explicit advisor,
+second opinion, named Advisor family, or independent review requests.
+For Harness fallback, the executor gathers evidence and owns implementation,
+verification, and delivery. The Advisor makes no tool calls. A separate reasoning
+pass is not independent repository inspection or reproduced verification.
 An explicit native-only request when native is absent must report unavailable.
 Do not use both native Advisor and Harness Advisor to obtain additional review.
 <!-- harness-plugin:capabilities:end -->
