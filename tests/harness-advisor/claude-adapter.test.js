@@ -8,7 +8,7 @@ const { spawnSync } = require('node:child_process');
 const script = require('../helpers/plugin-paths').artifactPath('skills/harness-advisor/scripts/claude-advisor.js');
 const contract = fs.readFileSync(path.resolve(path.dirname(script), '../references/contract.md'), 'utf8');
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-advisor-test-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claude advisor's test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const bin = path.join(root, 'bin');
   const home = path.join(root, 'claude');
@@ -24,9 +24,13 @@ const fs = require('node:fs');
 const supported = {'-p': 0, '--system-prompt': 1, '--setting-sources': 1, '--model': 1, '--effort': 1, '--tools': 1,
  '--disallowedTools': 1, '--strict-mcp-config': 0, '--mcp-config': 1,
  '--permission-mode': 1, '--settings': 1, '--disable-slash-commands': 0,
- '--no-session-persistence': 0, '--output-format': 1, '--restricted': 0, '--safe-mode': 0, '--verbose': 0, '--no-chrome': 0};
+ '--no-session-persistence': 0, '--output-format': 1};
 if (process.argv[2] === '--help') { process.stdout.write(Object.keys(supported).filter(k => k !== '--no-session-persistence').join(' ')); }
-else if (process.argv[2] === '--version') { process.stdout.write(process.env.ADVISOR_TEST_VERSION || '2.1.270 (Claude Code)'); }
+else if (process.argv[2] === '--version') {
+ fs.appendFileSync(process.env.ADVISOR_TEST_LOG + '.probes', 'probe\\n');
+ if (process.env.ADVISOR_TEST_PROBE_FAILURE) { process.stderr.write('fixture version failure'); process.exit(3); }
+ process.stdout.write(process.env.ADVISOR_TEST_VERSION || '2.1.270 (Claude Code)');
+}
 else {
  fs.appendFileSync(process.env.ADVISOR_TEST_LOG + '.calls', 'call\\n');
  fs.writeFileSync(process.env.ADVISOR_TEST_LOG, JSON.stringify({ args: process.argv.slice(2), input: fs.readFileSync(0,'utf8'), native: process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL, parent: process.env.CLAUDECODE, cwd: process.cwd(), entries: fs.readdirSync(process.cwd()) }));
@@ -41,14 +45,16 @@ else {
  if (process.env.ADVISOR_TEST_AUTH_FAILURE) { process.stderr.write('Not logged in. Please run /login'); process.exit(1); }
  if (process.env.ADVISOR_TEST_FAILURE) { process.stderr.write('fixture unavailable model'); process.exitCode = 1; }
  else if (process.env.ADVISOR_TEST_NULL_RESPONSE) process.stdout.write('null');
- else if (process.env.ADVISOR_TEST_STREAM) process.stdout.write(fs.readFileSync(process.env.ADVISOR_TEST_STREAM, 'utf8'));
+ else if (process.env.ADVISOR_TEST_RESPONSE !== undefined) process.stdout.write(process.env.ADVISOR_TEST_RESPONSE);
  else process.stdout.write(JSON.stringify({ result: 'Use pendingFiles.', is_error: false, modelUsage: {'claude-opus-fixture': {inputTokens: 100,cacheReadInputTokens: 0}} }));
 }
 `, { mode: 0o755 });
-  const invoke = (args = [], extra = {}) => spawnSync(process.execPath, [script, '--model', 'opus', '--reasoning-effort', 'high', '--prompt', prompt, '--json', ...args], {
+  const run = (args, extra = {}, executable = script, nodeArgs = []) => spawnSync(process.execPath, [...nodeArgs, executable, ...args], {
     encoding: 'utf8', env: { ...process.env, PATH: bin, CLAUDE_CONFIG_DIR: home, CLAUDECODE: '1', ADVISOR_TEST_LOG: log, ...extra },
   });
-  return { root, bin, home, prompt, log, invoke };
+  const valid = ['--native-absent', '--model', 'opus', '--reasoning-effort', 'high', '--prompt', prompt];
+  const invoke = (args = [], extra = {}) => run([...valid.slice(1), '--json', ...args], extra);
+  return { root, bin, home, prompt, log, invoke, run, valid };
 }
 
 test('CLI requires parent native-absence attestation before dispatch', t => {
@@ -171,141 +177,279 @@ test('null response keeps the existing failure diagnosis after dispatch', t => {
   assert.equal(error.condition, "Cannot read properties of null (reading 'is_error')");
 });
 
-function streamFile(f, events) {
-  const file = path.join(f.root, 'events.jsonl');
-  fs.writeFileSync(file, events.map(event => JSON.stringify(event)).join('\n') + '\n');
-  return file;
+const removed = {
+  code: 'usage_error',
+  condition: '--workspace is no longer supported; Harness Advisor uses executor-supplied evidence only.',
+  remedy: 'Remove --workspace and its value; include the material source excerpts and results in --prompt.',
+};
+function noHostCalls(f) {
+  assert.equal(fs.existsSync(f.log + '.probes'), false);
+  assert.equal(fs.existsSync(f.log + '.calls'), false);
 }
-const finalEvent = { type: 'result', subtype: 'success', session_id: 's', result: 'Scoped advice.', is_error: false };
-function readEvents(file, overrides = {}) {
-  return [
-    { type: 'assistant', session_id: 's', parent_tool_use_id: null, message: { content: [
-      { type: 'tool_use', id: 'r', name: 'Read', input: { file_path: file } }] } },
-    { type: 'user', session_id: 's', parent_tool_use_id: null,
-      message: { content: [{ type: 'tool_result', tool_use_id: 'r', content: 'Source text' }] },
-      tool_use_result: { type: 'text', file: { filePath: file, content: 'source', startLine: 1, numLines: 1, totalLines: 1 } }, ...overrides },
-    finalEvent,
-  ];
-}
-test('workspace validates before host checks and canonicalizes without changing caller paths', t => {
-  const f = fixture(t);
-  for (const workspace of ['relative', f.prompt, path.join(f.root, 'missing')]) {
-    const r = f.invoke(['--native-absent', '--workspace', workspace]);
-    assert.equal(r.status, 2);
-    assert.equal(JSON.parse(r.stderr).error.code, 'workspace_invalid');
-    assert.equal(fs.existsSync(f.log), false);
-  }
-  const alias = path.join(f.root, 'alias');
-  fs.symlinkSync(f.home, alias);
-  const r = f.invoke(['--native-absent', '--workspace', alias, '--preflight']);
-  assert.equal(r.status, 0, r.stderr);
-  assert.equal(JSON.parse(r.stdout).workspace, fs.realpathSync(f.home));
-  assert.deepEqual(JSON.parse(r.stdout).tools, ['Read', 'Glob', 'Grep']);
-  assert.equal(fs.existsSync(f.log), false);
-});
-test('workspace requests isolated file tools and reports observed reads separately from enforcement', t => {
-  const f = fixture(t);
-  const workspace = fs.realpathSync(f.home);
-  const events = streamFile(f, readEvents(path.join(workspace, 'source.ts')));
-  const r = f.invoke(['--native-absent', '--workspace', workspace], { ADVISOR_TEST_STREAM: events });
-  assert.equal(r.status, 0, r.stderr);
-  const report = JSON.parse(r.stdout);
+function noInspection(report) {
+  assert.deepEqual(report.tools, []);
   assert.equal(report.runtime_controls, 'unverified');
-  assert.deepEqual(report.observations, [{ tool: 'Read', path: path.join(workspace, 'source.ts'), outcome: 'read', completeness: 'complete', start_line: 1, lines: 1 }]);
-  const call = JSON.parse(fs.readFileSync(f.log));
-  const option = name => call.args[call.args.indexOf(name) + 1];
-  for (const flag of ['--restricted', '--safe-mode', '--verbose', '--no-chrome']) assert.ok(call.args.includes(flag));
-  assert.equal(option('--tools'), 'Read,Glob,Grep');
-  assert.equal(option('--output-format'), 'stream-json');
-  assert.deepEqual(JSON.parse(option('--settings')).permissions.additionalDirectories, [workspace]);
-  assert.equal(option('--system-prompt'), contract);
-  assert.deepEqual(call.entries, []);
-  assert.equal(fs.existsSync(call.cwd), false);
-  assert.equal(fs.existsSync(workspace), true);
-  assert.equal(call.input, fs.readFileSync(f.prompt, 'utf8'));
-});
-test('old workspace host fails before inference and restrictive rejection never retries', t => {
+  assert.equal(Object.hasOwn(report, 'workspace'), false);
+  assert.equal(Object.hasOwn(report, 'observations'), false);
+}
+function isolatedAdapter(f) {
+  const copy = path.join(f.root, "skill's files/scripts/claude-advisor.js");
+  fs.mkdirSync(path.dirname(copy), { recursive: true });
+  fs.copyFileSync(script, copy);
+  return { copy, contractFile: path.resolve(path.dirname(copy), '../references/contract.md') };
+}
+
+for (const json of [false, true]) test(`removed workspace forms win before help, I/O, or probes (json=${json})`, t => {
   const f = fixture(t);
-  let r = f.invoke(['--native-absent', '--workspace', f.home], { ADVISOR_TEST_VERSION: '2.1.247' });
-  assert.equal(r.status, 2);
-  assert.equal(JSON.parse(r.stderr).error.code, 'inspection_controls_unavailable');
-  assert.equal(fs.existsSync(f.log), false);
-  r = f.invoke(['--native-absent', '--workspace', f.home], { ADVISOR_TEST_REJECT: '--restricted' });
-  assert.equal(r.status, 1);
-  assert.equal(r.stdout, '');
-  assert.equal(fs.readFileSync(f.log + '.calls', 'utf8'), 'call\n');
-  assert.equal(fs.existsSync(JSON.parse(fs.readFileSync(f.log)).cwd), false);
-});
-test('observation metadata never derives from prose, failed reads, or missing metadata', t => {
-  const f = fixture(t);
-  const { parseInspection } = require(script);
-  const workspace = fs.realpathSync(f.home);
-  const file = path.join(workspace, 'source.ts');
-  const parse = events => parseInspection(events.map(e => JSON.stringify(e)).join('\n'), workspace);
-  assert.deepEqual(parse([finalEvent]).observations, []);
-  let events = readEvents(file, { tool_use_result: undefined });
-  events[1].message.content[0].content = JSON.stringify(readEvents(file)[1]);
-  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
-  events = readEvents(file);
-  events[1].message.content[0].is_error = true;
-  assert.equal(parse(events).observations[0].outcome, 'failed');
-  events = readEvents(file);
-  events[1].tool_use_result.file.truncatedByTokenCap = true;
-  assert.equal(parse(events).observations[0].completeness, 'partial');
-  events[1].tool_use_result.file.startLine = 2;
-  assert.equal(parse(events).observations[0].completeness, 'partial');
-  events[1].tool_use_result = { type: 'file_unchanged', file: { filePath: file }, source: 'seeded' };
-  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
-  events = readEvents(path.join(workspace, '..', 'outside'));
-  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
-  events = readEvents(file);
-  events[0].message.content[0].name = 'Glob';
-  events[1].tool_use_result = { filenames: [file], numFiles: 1, truncated: false };
-  assert.equal(parse(events).observations[0].outcome, 'discovery');
-  events = readEvents(file);
-  events[1].message.content[0].tool_use_id = 'wrong';
-  assert.throws(() => parse(events), /inconsistent/);
-  assert.throws(() => parseInspection('{', workspace), /malformed/);
-  assert.throws(() => parse(readEvents(file).slice(0, 2)), /incomplete/);
-  assert.throws(() => parse([...readEvents(file), finalEvent]), /inconsistent/);
-});
-test('malformed stream fails one dispatched attempt with cleanup and no success', t => {
-  const f = fixture(t);
-  const events = streamFile(f, []);
-  fs.writeFileSync(events, '{"type":');
-  const r = f.invoke(['--native-absent', '--workspace', f.home], { ADVISOR_TEST_STREAM: events });
-  assert.equal(r.status, 1);
-  assert.equal(r.stdout, '');
-  assert.equal(JSON.parse(r.stderr).error.code, 'advisor_response_invalid');
-  assert.equal(fs.existsSync(JSON.parse(fs.readFileSync(f.log)).cwd), false);
+  const { copy } = isolatedAdapter(f); // No contract exists.
+  fs.unlinkSync(f.prompt);
+  for (const flag of [['--workspace', '/tmp/review'], ['--workspace=/tmp/review'], ['--workspace='], ['--workspace']]) {
+    for (const rest of [f.valid, [...f.valid, '--preflight'], ['--help'], []]) {
+      for (const args of [[...flag, ...rest], [...rest, ...flag]]) {
+        const r = f.run([...args, ...(json ? ['--json'] : [])], {}, copy);
+        assert.equal(r.status, 2, r.stderr);
+        assert.equal(r.stdout, '');
+        if (json) assert.deepEqual(JSON.parse(r.stderr), { error: removed });
+        else assert.equal(r.stderr, `ERROR [usage_error]: ${removed.condition}\nRemedy: ${removed.remedy}\n`);
+        noHostCalls(f);
+      }
+    }
+  }
+  fs.unlinkSync(path.join(f.bin, 'claude'));
+  const r = f.run(['--workspace', '--help', '--json'], {}, copy);
+  assert.deepEqual(JSON.parse(r.stderr), { error: removed });
+  noHostCalls(f);
 });
 
-test('stream attribution rejects inconsistent sessions and qualifies missing or mismatched read metadata', t => {
+test('usage errors precede host probes and similar unknown spelling remains generic', t => {
   const f = fixture(t);
-  const { parseInspection } = require(script);
-  const workspace = fs.realpathSync(f.home);
-  const file = path.join(workspace, 'source.ts');
-  const parse = events => parseInspection(events.map(e => JSON.stringify(e)).join('\n'), workspace);
-  let events = readEvents(file);
-  delete events[0].session_id;
-  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
-  events = readEvents(file);
-  events[1].tool_use_result.file.filePath = path.join(workspace, 'different.ts');
-  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
-  events = readEvents(file);
-  events[1].session_id = 'other';
-  assert.throws(() => parse(events), /inconsistent/);
-  events = readEvents(file);
-  events.splice(1, 0, events[0]);
-  assert.throws(() => parse(events), /inconsistent/);
-  events = readEvents(file);
-  events[1].message.content[0].is_error = 'false';
-  assert.throws(() => parse(events), /inconsistent/);
-  events = readEvents(file);
-  events[1].tool_use_result.file.numLines = -1;
-  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
-  assert.throws(() => parse([{ ...finalEvent, subtype: 'error_during_execution', is_error: true, errors: ['fixture rejection'] }]), /fixture rejection/);
-  events = readEvents(file);
-  events.splice(1, 1);
-  assert.equal(parse(events).observations[0].outcome, 'unconfirmed');
+  for (const args of [[], ['--workspaces'], ['--unknown'], ['--help', '--help'],
+    ['--model'], ['--model', '--json'], [...f.valid, '--model', 'other'],
+    f.valid.map(v => v === 'high' ? 'ultra' : v), f.valid.slice(1)]) {
+    const r = f.run([...args, '--json']);
+    assert.equal(r.status, 2, JSON.stringify(args));
+    assert.equal(JSON.parse(r.stderr).error.code, 'usage_error');
+    assert.notEqual(JSON.parse(r.stderr).error.condition, removed.condition);
+    assert.equal(r.stdout, '');
+    noHostCalls(f);
+  }
+});
+
+test('read-free help and preflight allocate no invocation directory', t => {
+  const f = fixture(t);
+  const { copy } = isolatedAdapter(f);
+  // A nonexistent TMPDIR makes any attempt to allocate a cwd fail.
+  const extra = { TMPDIR: path.join(f.root, 'absent') };
+  for (const json of [false, true]) {
+    const r = f.run(['--help', ...(json ? ['--json'] : [])], { ...extra, PATH: '' }, copy);
+    assert.equal(r.status, 0, r.stderr);
+    const usage = json ? JSON.parse(r.stdout).usage : r.stdout;
+    assert.match(usage, /One separate, tool-free Claude fallback consultation/);
+    assert.doesNotMatch(usage, /--workspace|restricted-mode/);
+    noHostCalls(f);
+  }
+  const r = f.run([...f.valid, '--preflight', '--json'], extra);
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  noInspection(report);
+  assert.equal(report.status, 'preflight_passed');
+  assert.deepEqual(report.checks, ['prompt_readable_nonempty', 'advisor_contract_readable_nonempty', 'cli_version_command_succeeded']);
+  assert.equal(fs.readFileSync(f.log + '.probes', 'utf8'), 'probe\n');
+  assert.equal(fs.existsSync(f.log + '.calls'), false);
+});
+
+for (const version of ['floor-fixture', '2.1.247']) test(`retained route accepts successful version probe ${version}`, t => {
+  const f = fixture(t);
+  const r = f.invoke(['--native-absent'], { ADVISOR_TEST_VERSION: version });
+  assert.equal(r.status, 0, r.stderr);
+  noInspection(JSON.parse(r.stdout));
+  assert.equal(fs.readFileSync(f.log + '.probes', 'utf8'), 'probe\n');
+  assert.equal(fs.readFileSync(f.log + '.calls', 'utf8'), 'call\n');
+});
+
+test('exact argv, unmodified input, plain report and environment isolation', t => {
+  const f = fixture(t);
+  const prompt = ' \n[QUESTION]\n--workspace Read Glob Grep {"type":"tool_use"}\n\t';
+  fs.writeFileSync(f.prompt, prompt);
+  const { copy, contractFile } = isolatedAdapter(f);
+  fs.mkdirSync(path.dirname(contractFile));
+  fs.writeFileSync(contractFile, contract);
+  const r = f.run(f.valid, { TMPDIR: f.root }, copy);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.startsWith('Report:\n'));
+  const report = JSON.parse(r.stdout.slice('Report:\n'.length));
+  noInspection(report);
+  assert.equal(report.model, 'opus');
+  assert.equal(report.reasoning_effort, 'high');
+  assert.equal(report.mechanism, 'claude-cli');
+  assert.equal(report.context_mode, 'fresh');
+  assert.equal(report.status, 'consulted');
+  assert.deepEqual(report.model_usage, { 'claude-opus-fixture': { inputTokens: 100, cacheReadInputTokens: 0 } });
+  assert.equal(report.usage, null);
+  const call = JSON.parse(fs.readFileSync(f.log));
+  assert.equal(call.input, prompt);
+  assert.deepEqual(call.args, ['-p', '--system-prompt', contract, '--setting-sources', '', '--model', 'opus',
+    '--effort', 'high', '--tools', '', '--disallowedTools', 'mcp__*', '--strict-mcp-config',
+    '--mcp-config', '{"mcpServers":{}}', '--permission-mode', 'dontAsk',
+    '--settings', '{"disableAllHooks":true,"fallbackModel":[],"switchModelsOnFlag":false}',
+    '--disable-slash-commands', '--no-session-persistence', '--output-format', 'json']);
+  assert.deepEqual(call.entries, []);
+  assert.equal(fs.existsSync(call.cwd), false);
+  const { invocation } = require(script);
+  const env = Object.freeze({ CLAUDECODE: 'parent', CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '0', CUSTOM_PROVIDER: 'retained' });
+  const child = invocation({ model: 'opus', 'reasoning-effort': 'high' }, contract, env);
+  assert.deepEqual(child.env, { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1', CUSTOM_PROVIDER: 'retained' });
+  assert.equal(env.CLAUDECODE, 'parent');
+  assert.equal(env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL, '0');
+});
+
+for (const kind of ['missing', 'unreadable', 'empty', 'whitespace']) test(`prompt ${kind} fails before host calls`, t => {
+  const f = fixture(t);
+  if (kind === 'missing') fs.unlinkSync(f.prompt);
+  if (kind === 'unreadable') fs.chmodSync(f.prompt, 0);
+  if (kind === 'empty') fs.writeFileSync(f.prompt, '');
+  if (kind === 'whitespace') fs.writeFileSync(f.prompt, ' \n\t');
+  const r = f.invoke(['--native-absent']);
+  assert.equal(r.status, 2, r.stderr);
+  const error = JSON.parse(r.stderr).error;
+  assert.equal(error.code, ['missing', 'unreadable'].includes(kind) ? 'input_read_failed' : 'input_invalid');
+  assert.match(error.remedy, /--help$/);
+  assert.equal(r.stdout, '');
+  noHostCalls(f);
+});
+
+for (const kind of ['missing', 'unreadable', 'empty', 'whitespace']) test(`contract ${kind} keeps reinstall diagnosis`, t => {
+  const f = fixture(t);
+  const { copy, contractFile } = isolatedAdapter(f);
+  fs.mkdirSync(path.dirname(contractFile));
+  if (kind !== 'missing') fs.writeFileSync(contractFile, kind === 'unreadable' ? contract : kind === 'empty' ? '' : ' \n\t');
+  if (kind === 'unreadable') fs.chmodSync(contractFile, 0);
+  const r = f.run([...f.valid, '--json'], {}, copy);
+  assert.equal(r.status, 2, r.stderr);
+  assert.deepEqual(JSON.parse(r.stderr).error, {
+    code: 'advisor_contract_unavailable',
+    condition: `Advisor contract is missing, unreadable, or empty at ${contractFile}`,
+    remedy: 'Reinstall the Harness plugin through your host plugin manager.',
+  });
+  assert.equal(r.stdout, '');
+  noHostCalls(f);
+});
+
+test('version nonzero failure is unavailable without inference', t => {
+  const f = fixture(t);
+  const r = f.invoke(['--native-absent'], { ADVISOR_TEST_PROBE_FAILURE: '1' });
+  assert.equal(r.status, 2);
+  assert.equal(JSON.parse(r.stderr).error.code, 'claude_unavailable');
+  assert.match(JSON.parse(r.stderr).error.condition, /fixture version failure/);
+  assert.equal(JSON.parse(r.stderr).error.remedy, 'claude --version');
+  assert.equal(r.stdout, '');
+  assert.equal(fs.readFileSync(f.log + '.probes', 'utf8'), 'probe\n');
+  assert.equal(fs.existsSync(f.log + '.calls'), false);
+});
+
+for (const response of ['{', '[]', '42', 'false', '"text"', '{}', '{"result":7}',
+  '{"result":"  \\n"}', '{"result":"advice","is_error":true}', '{"result":"advice","is_error":"false"}']) {
+  test(`invalid result ${response} fails once with cleanup`, t => {
+    const f = fixture(t);
+    const r = f.invoke(['--native-absent'], { ADVISOR_TEST_RESPONSE: response });
+    assert.equal(r.status, 1);
+    assert.equal(r.stdout, '');
+    assert.equal(JSON.parse(r.stderr).error.code, response === '{' ? 'advisor_response_invalid' : 'advisor_execution_failed');
+    assert.equal(fs.readFileSync(f.log + '.calls', 'utf8'), 'call\n');
+    assert.equal(fs.existsSync(JSON.parse(fs.readFileSync(f.log)).cwd), false);
+  });
+}
+
+for (const response of [{ result: ' advice ' }, { result: 'advice', is_error: 0, usage: ['opaque'], modelUsage: 'opaque' }]) {
+  test(`minimal result preserves acceptance and unknown usage ${JSON.stringify(response)}`, t => {
+    const f = fixture(t);
+    const r = f.invoke(['--native-absent'], { ADVISOR_TEST_RESPONSE: JSON.stringify(response) });
+    assert.equal(r.status, 0, r.stderr);
+    const report = JSON.parse(r.stdout);
+    noInspection(report);
+    assert.equal(report.advice, response.result);
+    assert.deepEqual(report.usage, response.usage ?? null);
+    assert.deepEqual(report.model_usage, response.modelUsage ?? null);
+  });
+}
+
+// Faults are confined to the adapter process and task-owned temporary paths.
+function preload(f) {
+  const file = path.join(f.root, 'boundary.cjs');
+  fs.writeFileSync(file, `
+const fs = require('node:fs');
+const originalMake = fs.mkdtempSync;
+const originalRemove = fs.rmSync;
+let directory;
+fs.mkdtempSync = function(prefix, ...args) {
+  if (process.env.ADVISOR_FAULT === 'allocate') throw new Error('fixture allocation denied');
+  directory = originalMake.call(this, prefix, ...args);
+  return directory;
+};
+fs.rmSync = function(target, ...args) {
+  if (target === directory && process.env.ADVISOR_FAULT === 'cleanup') throw new Error('fixture cleanup denied');
+  return originalRemove.call(this, target, ...args);
+};
+const originalWrite = process.stdout.write;
+process.stdout.write = function(...args) {
+  if (directory && fs.existsSync(directory)) throw new Error('success emitted before cleanup');
+  return originalWrite.apply(this, args);
+};
+`);
+  return ['--require', file];
+}
+
+test('success emission happens after cwd cleanup at the process boundary', t => {
+  const f = fixture(t);
+  const r = f.run([...f.valid, '--json'], { TMPDIR: f.root }, script, preload(f));
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).status, 'consulted');
+});
+
+for (const runtimeFailure of [false, true]) test(`cleanup denial retains path and original failure (runtime=${runtimeFailure})`, t => {
+  const f = fixture(t);
+  const r = f.run([...f.valid, '--json'], { TMPDIR: f.root, ADVISOR_FAULT: 'cleanup',
+    ...(runtimeFailure ? { ADVISOR_TEST_FAILURE: '1' } : {}) }, script, preload(f));
+  assert.equal(r.status, 1);
+  assert.equal(r.stdout, '');
+  const error = JSON.parse(r.stderr).error;
+  const cwd = JSON.parse(fs.readFileSync(f.log)).cwd;
+  assert.equal(error.code, runtimeFailure ? 'advisor_execution_failed' : 'advisor_failed');
+  assert.ok(error.condition.includes(cwd));
+  assert.match(error.condition, runtimeFailure ? /fixture unavailable model/ : /fixture cleanup denied/);
+  assert.equal(error.remedy, `rm -rf -- '${cwd.replace(/'/g, "'\\''")}'`);
+  assert.equal(fs.existsSync(cwd), true);
+  const recovery = spawnSync('/bin/sh', ['-c', error.remedy], { encoding: 'utf8' });
+  assert.equal(recovery.status, 0, recovery.stderr);
+  assert.equal(fs.existsSync(cwd), false);
+});
+
+test('allocation failure counts as started without inference or unrelated cleanup', t => {
+  const f = fixture(t);
+  const sentinel = path.join(f.root, 'unrelated');
+  fs.writeFileSync(sentinel, 'preserve');
+  const r = f.run([...f.valid, '--json'], { TMPDIR: f.root, ADVISOR_FAULT: 'allocate' }, script, preload(f));
+  assert.equal(r.status, 1);
+  assert.equal(r.stdout, '');
+  assert.equal(JSON.parse(r.stderr).error.code, 'advisor_failed');
+  assert.equal(JSON.parse(r.stderr).error.condition, 'fixture allocation denied');
+  assert.equal(fs.readFileSync(f.log + '.probes', 'utf8'), 'probe\n');
+  assert.equal(fs.existsSync(f.log + '.calls'), false);
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'preserve');
+});
+
+test('module import exposes only retained callable exports and performs no runtime work', t => {
+  const f = fixture(t);
+  const { copy } = isolatedAdapter(f); // Import needs neither prompt nor bundled contract.
+  const r = spawnSync(process.execPath, ['-e', `
+    const assert = require('node:assert/strict');
+    const api = require(process.argv[1]);
+    assert.deepEqual(Object.keys(api).sort(), ['invocation', 'parseArguments']);
+    assert.equal(api.parseArguments(['--help']).help, true);
+    assert.equal(api.invocation({model: 'opus', 'reasoning-effort': 'high'}, 'contract').command, 'claude');
+  `, copy], { encoding: 'utf8', env: { ...process.env, PATH: f.bin, ADVISOR_TEST_LOG: f.log } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, '');
+  assert.equal(r.stderr, '');
+  noHostCalls(f);
 });
