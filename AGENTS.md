@@ -125,7 +125,7 @@ Retain documentation tests that protect public contracts, and revise tests that 
 
 Read [testing](docs/development/testing.md) for setup, focused commands, the full gate, and result interpretation.
 
-The same reasoning applies to anything else that only exists to develop the code. If it never runs for someone who installed the plugin, it does not belong under `src/harness/`. Repo-root `scripts/` is where that development tooling lives, `bump-version.js` and `derive-bump-level.js` among it.
+The same reasoning applies to anything else that only exists to develop the code. If it never runs for someone who installed the plugin, it does not belong under `src/harness/`. Repo-root `scripts/` is where that development tooling lives, `bump-version.js` among it.
 
 Prefer no dependencies. Add a dependency only when the standard library genuinely cannot do the job, as with `archiver` in `back-up-directories`, and give that skill an `INSTALL.md`.
 

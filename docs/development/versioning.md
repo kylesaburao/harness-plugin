@@ -66,7 +66,7 @@ The publisher retries at most three genuine push races. Every newer source snaps
 
 Automatic runs with no pending eligible work report `no eligible changes`. Concurrency uses one `version-bump` group, keeps running work, and queues ordinary bursts; the finite queue is not a durable release-request log, so range catch-up remains authoritative.
 
-The [version writer](../../scripts/bump-version.js), [level derivation](../../scripts/derive-bump-level.js), [release policy](../../scripts/release-policy.js), and [workflow](../../.github/workflows/bump-version.yml) implement this policy.
+The [version writer](../../scripts/bump-version.js), [release policy](../../scripts/release-policy.js), and [workflow](../../.github/workflows/bump-version.yml) implement this policy.
 
 ## Hook installation and merge synchronization
 
