@@ -784,6 +784,23 @@ class RuntimeEntryPointTests(unittest.TestCase):
         self.assertEqual(terms_result.returncode, 2)
         self.assertEqual(json.loads(terms_result.stderr)["error"]["code"], "terms_invalid")
 
+    def test_malformed_term_fields_use_structured_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scripts, document = self.make_runtime(Path(directory), valid=True)
+            terms = Path(directory) / "terms.jsonl"
+            for field, value in [("forms", v) for v in (None, "widgets", {}, 7, [None], [" "])] + [("part_of_speech", v) for v in ([], {}, None, 7)]:
+                with self.subTest(field=field, value=value):
+                    entry = {"term": "widget", "part_of_speech": "technical_noun", field: value}
+                    terms.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+                    result = subprocess.run(
+                        [sys.executable, str(scripts / "ste_check.py"), str(document),
+                         "--mode", "procedural", "--terms", str(terms), "--json"],
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertEqual(json.loads(result.stderr)["error"]["code"], "terms_invalid")
+                    self.assertNotIn("Traceback", result.stderr)
+
     def test_plain_text_uses_file_sections_and_aggregate_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             scripts, document = self.make_runtime(Path(directory), valid=True)
@@ -1056,6 +1073,19 @@ class InitializerRecoveryTests(unittest.TestCase):
         self.assertIn("pip install pypdfium2", str(raised.exception))
         run.assert_not_called()
         self.assert_existing_survives()
+
+    def test_valid_bundle_is_reused_without_download_or_extraction(self):
+        self.config, self.generated, _ = make_bundle(self.root / "valid")
+        before = {file.name: (file.read_bytes(), file.stat().st_mtime_ns) for file in self.generated.iterdir()}
+        with mock.patch.object(initialize_references, "download_pdf") as download, mock.patch.object(
+            initialize_references, "run_extractor"
+        ) as extract, mock.patch.object(initialize_references, "run_builder") as build:
+            result = initialize_references.initialize(None, False, self.config, self.generated)
+        download.assert_not_called()
+        extract.assert_not_called()
+        build.assert_not_called()
+        self.assertEqual(result["dictionary_rows"], 2)
+        self.assertEqual(before, {file.name: (file.read_bytes(), file.stat().st_mtime_ns) for file in self.generated.iterdir()})
 
     def test_local_pdf_does_not_download(self):
         local_pdf = self.root / "source.pdf"

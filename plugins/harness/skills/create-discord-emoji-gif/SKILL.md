@@ -12,9 +12,9 @@ this skill is or why it exists, state both the Discord size target and this dura
 guidance.
 
 The Node.js entrypoints are the only supported executable paths. They search their
-respective backends, regenerate the winner, score it with VMAF, verify the published
-file, and publish it atomically. Use gifski by default. Use FFmpeg and gifsicle as the
-defined fallback.
+respective backends, score candidates with VMAF, retain the winner, verify it, and
+publish it atomically. Use gifski by default. Use FFmpeg and gifsicle as the defined
+fallback.
 
 Both backends need `ffmpeg` built with `libvmaf` and `ffprobe`. The default backend also
 needs `gifski`. The fallback needs `gifsicle`. Each converter reports all missing or
@@ -55,8 +55,8 @@ Node.js 22.0.0 is the supported runtime floor.
    most CPU cores. Narrow the search with environment variables when the user wants a
    faster result.
 
-2. One dispatch does the entire job: search, regenerate the winner, score it with VMAF,
-   verify it against expectations, and publish it. After a **successful** dispatch, do
+2. One dispatch searches and scores candidates with VMAF, retains the selected file,
+   verifies it, and publishes it atomically. After a **successful** dispatch, do
    not run any further command against the input or the output, and do not open the
    GIF. This includes `ffprobe`, `ffmpeg`, `gifsicle`, `file`, `stat`, `ls`, `wc`, `du`,
    `shasum`, an image viewer, or any other inspection tool. The dispatch's own report

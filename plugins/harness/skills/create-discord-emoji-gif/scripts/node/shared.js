@@ -206,9 +206,8 @@ async function inspectInput(manager, commands, input) {
 }
 
 function validateOutput(input, requested, size) {
-  const lastDot = input.lastIndexOf('.');
-  const base = lastDot === -1 ? input : input.slice(0, lastDot);
-  const output = requested || `${base}_${size}x${size}.gif`;
+  const parsed = path.parse(input);
+  const output = requested || path.join(parsed.dir, `${parsed.name}_${size}x${size}.gif`);
   try { if (fs.existsSync(output) && fs.realpathSync(input) === fs.realpathSync(output)) throw new StartupError('output_unusable', 'input and output paths must differ', 'pass an output path that is not the input file'); } catch (error) { if (error instanceof StartupError) throw error; }
   if (fs.existsSync(output) && fs.statSync(output).isDirectory()) throw new StartupError('output_unusable', `output path is a directory: ${output}`, 'pass a file path ending in .gif, not a directory');
   const directory = path.dirname(output);

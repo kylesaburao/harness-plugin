@@ -307,7 +307,7 @@ test('KEEP_WORK retains deterministic candidates and caches', () => {
     assert.ok(names.includes('f8-q80-m80-l80.gif'));
     assert.ok(names.includes('source-f8.y4m'));
     assert.ok(names.includes('vmaf-reference.mkv'));
-    assert.ok(names.includes('winner-regenerated.gif'));
+    assert.deepEqual(fs.readFileSync(path.join(kept, 'f8-q80-m80-l80.gif')), fs.readFileSync(output));
     const y4mHeader = fs.readFileSync(path.join(kept, 'source-f8.y4m'))
       .subarray(0, 200).toString('ascii').split('\n')[0];
     assert.match(y4mHeader, / C444(?: |$)/);
@@ -545,110 +545,6 @@ exec "${entry.executable}" "$@"
     assert.ok(report.error.remedy);
     assert.equal(fs.readFileSync(output, 'utf8'), 'existing output\n');
   }
-});
-
-test('successful regeneration without an output file reports regeneration_failed cleanly', () => {
-  const mockDir = fs.mkdtempSync(path.join(suiteDir, 'mock-regeneration-missing.'));
-  const realGifski = commandPath('gifski');
-  makeExecutable(path.join(mockDir, 'gifski'), `#!/bin/sh
-case "$1" in
-  --version|--help) exec "${realGifski}" "$@" ;;
-esac
-output=''
-previous=''
-for argument do
-  if [ "$previous" = '--output' ]; then output=$argument; fi
-  previous=$argument
-done
-case "$output" in
-  *winner-regenerated.gif) exit 0 ;;
-esac
-exec "${realGifski}" "$@"
-`);
-  const output = path.join(suiteDir, 'regeneration-missing.gif');
-  fs.writeFileSync(output, 'existing output\n');
-  const result = runScript(['--json', inputWithSpaces, output], {
-    PATH: `${mockDir}:${process.env.PATH}`,
-  });
-  assert.equal(result.status, 1, result.stderr);
-  const report = JSON.parse(result.stderr);
-  assert.equal(report.error.code, 'regeneration_failed');
-  assert.match(report.error.condition, /did not create the regenerated winner/);
-  assert.ok(report.error.remedy);
-  assert.doesNotMatch(result.stderr, /wc:/);
-  assert.equal(fs.readFileSync(output, 'utf8'), 'existing output\n');
-  assert.equal(
-    fs.readdirSync(suiteDir).some((name) => name.startsWith('.mov-to-gif-gifski-output.')),
-    false,
-  );
-});
-
-test('winner source failure reports regeneration_failed and preserves the destination', () => {
-  const mockDir = fs.mkdtempSync(path.join(suiteDir, 'mock-winner-source-failure.'));
-  const outputDir = fs.mkdtempSync(path.join(suiteDir, 'winner-source-output.'));
-  const output = path.join(outputDir, 'output.gif');
-  const counter = path.join(mockDir, 'counter');
-  const realFfmpeg = commandPath('ffmpeg');
-  makeExecutable(path.join(mockDir, 'ffmpeg'), `#!/bin/sh
-for argument do
-  case "$argument" in
-    *source-f8.y4m)
-      count=0
-      if [ -f "$TEST_COUNTER" ]; then read count < "$TEST_COUNTER"; fi
-      count=$((count + 1))
-      printf '%s\\n' "$count" > "$TEST_COUNTER"
-      if [ "$count" -eq 2 ]; then
-        printf 'forced winner source failure\\n' >&2
-        exit 1
-      fi
-      ;;
-  esac
-done
-exec "${realFfmpeg}" "$@"
-`);
-  fs.writeFileSync(output, 'existing destination\n');
-  const result = runScript(['--json', inputWithSpaces, output], {
-    PATH: `${mockDir}:${process.env.PATH}`, TEST_COUNTER: counter,
-  });
-  assert.equal(result.status, 1, result.stderr);
-  const report = JSON.parse(result.stderr).error;
-  assert.equal(report.code, 'regeneration_failed');
-  assert.equal(report.condition, 'winner source preparation failed: forced winner source failure');
-  assert.equal(report.remedy, 'fix the reported ffmpeg decode or filter error, then run the same conversion again');
-  assert.equal(fs.readFileSync(output, 'utf8'), 'existing destination\n');
-  assert.equal(fs.readdirSync(outputDir).some(name => name.startsWith('.mov-to-gif-gifski-output.')), false);
-});
-
-test('winner encode failure reports regeneration_failed and preserves the destination', () => {
-  const mockDir = fs.mkdtempSync(path.join(suiteDir, 'mock-winner-encode-failure.'));
-  const outputDir = fs.mkdtempSync(path.join(suiteDir, 'winner-encode-output.'));
-  const output = path.join(outputDir, 'output.gif');
-  const realGifski = commandPath('gifski');
-  makeExecutable(path.join(mockDir, 'gifski'), `#!/bin/sh
-case "$1" in --version|--help) exec "${realGifski}" "$@" ;; esac
-previous=''
-output=''
-for argument do
-  if [ "$previous" = '--output' ]; then output=$argument; fi
-  previous=$argument
-done
-case "$output" in
-  *winner-regenerated.gif)
-    printf 'forced winner encode failure\\n' >&2
-    exit 1
-    ;;
-esac
-exec "${realGifski}" "$@"
-`);
-  fs.writeFileSync(output, 'existing destination\n');
-  const result = runScript(['--json', inputWithSpaces, output], { PATH: `${mockDir}:${process.env.PATH}` });
-  assert.equal(result.status, 1, result.stderr);
-  const report = JSON.parse(result.stderr).error;
-  assert.equal(report.code, 'regeneration_failed');
-  assert.equal(report.condition, 'winner regeneration failed: forced winner encode failure');
-  assert.equal(report.remedy, 'fix the reported gifski error, then run the same conversion again');
-  assert.equal(fs.readFileSync(output, 'utf8'), 'existing destination\n');
-  assert.equal(fs.readdirSync(outputDir).some(name => name.startsWith('.mov-to-gif-gifski-output.')), false);
 });
 
 test('atomic publication failure preserves the destination', () => {

@@ -207,3 +207,30 @@ test('resultPayload and emitResult report the file that was actually published, 
   const parsed = JSON.parse(jsonCaptured);
   assert.deepEqual(parsed.result, gifskiPayload);
 });
+
+test('default output names use only the input filename extension', () => {
+  const directory = temporaryDirectory('input.dotted.');
+  try {
+    for (const [name, stem] of [['clip', 'clip'], ['clip.mp4', 'clip'], ['clip.part.mov', 'clip.part'], ['.clip', '.clip']]) {
+      const input = path.join(directory, name);
+      fs.writeFileSync(input, 'input');
+      assert.equal(shared.validateOutput(input, undefined, 128).output, path.join(directory, `${stem}_128x128.gif`));
+      assert.equal(shared.validateOutput(input, path.join(directory, 'explicit.gif'), 128).output, path.join(directory, 'explicit.gif'));
+      assert.throws(() => shared.validateOutput(input, input, 128), { code: 'output_unusable' });
+    }
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('every ranking field wins independently of completion order', () => {
+  for (const [backend, base, improvements] of [
+    [gifski, { score: '90', fps: 8, quality: 80, motionQuality: 80, lossyQuality: 80, bytes: 100 }, { score: '91', fps: 9, quality: 90, motionQuality: 90, lossyQuality: 90, bytes: 99 }],
+    [gifsicle, { score: '90', fps: 8, colors: 4, dither: 3 }, { score: '91', fps: 9, colors: 5, dither: 2 }],
+  ]) {
+    assert.equal(backend.selectWinner([]), undefined);
+    for (const [field, value] of Object.entries(improvements)) {
+      const better = { ...base, [field]: value };
+      assert.equal(backend.selectWinner([base, better]), better, field);
+      assert.equal(backend.selectWinner([better, base]), better, field);
+    }
+  }
+});

@@ -67,7 +67,7 @@ function buildCommandPlan(repoRoot, skipGif) {
     ], repoRoot),
     command('install pypdfium2', python, ['-m', 'pip', 'install', 'pypdfium2'], repoRoot),
     command('initialize ASD-STE100 references', python, [
-      path.join(STE_SCRIPTS, 'initialize_references.py'), '--force',
+      path.join(STE_SCRIPTS, 'initialize_references.py'),
     ], repoRoot),
     command('validate ASD-STE100 references', python, [
       path.join(STE_SCRIPTS, 'validate_references.py'), '--json',

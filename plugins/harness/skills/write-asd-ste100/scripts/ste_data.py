@@ -353,9 +353,12 @@ def load_terms(path: Path | None):
         part = entry.get("part_of_speech")
         if not isinstance(term, str) or not term.strip():
             raise ValueError(f"{path}: each term must have a nonempty string 'term'")
-        if part not in {"technical_noun", "technical_verb"}:
+        if not isinstance(part, str) or part not in {"technical_noun", "technical_verb"}:
             raise ValueError(f"{path}: {term!r} has invalid part_of_speech")
-        values = [term] + entry.get("forms", [])
+        extra_forms = entry.get("forms", [])
+        if not isinstance(extra_forms, list):
+            raise ValueError(f"{path}: {term!r} has invalid forms, expected a list")
+        values = [term] + extra_forms
         if not all(isinstance(value, str) and value.strip() for value in values):
             raise ValueError(f"{path}: {term!r} has an invalid form")
         entry["source"] = SOURCE_PROJECT

@@ -49,25 +49,24 @@ async function prepareReference(state) {
   if (result.code !== 0) throw new shared.RunError('reference_failed', `could not prepare the VMAF reference${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the ffmpeg decode or filter error, then run again');
 }
 
-async function prepareSourceCache(state, fps, suffix = '', failure = {}) {
-  const target = path.join(state.workDir, `${suffix || 'source'}-f${fps}.y4m`);
+async function prepareSourceCache(state, fps) {
+  const target = path.join(state.workDir, `source-f${fps}.y4m`);
   fs.rmSync(target, { force: true });
-  const result = await state.manager.runOwned(`source-f${fps}${suffix}`, state.commands.ffmpeg, ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=yuv444p,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'rawvideo', '-pix_fmt', 'yuv444p', '-f', 'yuv4mpegpipe', '-y', target], { stderr: 'capture' });
-  if (result.code !== 0) throw new shared.RunError(failure.code || 'source_prepare_failed', `${failure.condition || `could not prepare the source cache for ${fps} FPS`}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, failure.remedy || 'fix the reported ffmpeg decode or filter error, then run the same conversion again');
+  const result = await state.manager.runOwned(`source-f${fps}`, state.commands.ffmpeg, ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=yuv444p,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'rawvideo', '-pix_fmt', 'yuv444p', '-f', 'yuv4mpegpipe', '-y', target], { stderr: 'capture' });
+  if (result.code !== 0) throw new shared.RunError('source_prepare_failed', `could not prepare the source cache for ${fps} FPS${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported ffmpeg decode or filter error, then run the same conversion again');
   return target;
 }
 
-async function encodeCandidate(state, fps, candidate, source, target, task, failure = {}) {
+async function encodeCandidate(state, fps, candidate, source, target, task) {
   fs.rmSync(target, { force: true });
   const env = { ...process.env, RAYON_NUM_THREADS: String(state.rayonThreads) };
   const result = await state.manager.runOwned(task, state.commands.gifski, ['--quiet', '--fps', String(fps), '--width', String(state.config.gifSize), '--height', String(state.config.gifSize), '--quality', String(candidate.quality), '--motion-quality', String(candidate.motionQuality), '--lossy-quality', String(candidate.lossyQuality), '--repeat', '0', '--output', target, '-'], { stdin: { path: source }, stderr: 'capture', env });
-  if (result.code !== 0) throw new shared.RunError(failure.code || 'candidate_encode_failed', `${failure.condition || `candidate encode failed for ${task}`}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, failure.remedy || 'fix the reported gifski error, then run the same conversion again');
-  if (!fs.existsSync(target)) throw new shared.RunError(failure.code || 'candidate_encode_failed', failure.missingCondition || `gifski reported success but did not create ${task}`, failure.missingRemedy || 'repair or reinstall gifski, then run the same conversion again');
+  if (result.code !== 0) throw new shared.RunError('candidate_encode_failed', `candidate encode failed for ${task}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported gifski error, then run the same conversion again');
+  if (!fs.existsSync(target)) throw new shared.RunError('candidate_encode_failed', `gifski reported success but did not create ${task}`, 'repair or reinstall gifski, then run the same conversion again');
 }
 
 async function searchFps(state, fps) {
   const source = await prepareSourceCache(state, fps);
-  const results = [];
   const seen = new Set();
   let anchor;
   const evaluate = async candidate => {
@@ -81,10 +80,13 @@ async function searchFps(state, fps) {
     let fit = false;
     if (bytes < state.config.maxBytes) {
       const score = await shared.scoreCandidate(state.manager, state.commands, state.workDir, target, stem);
-      results.push({ ...candidate, fps, bytes, score, digest: shared.sha256File(target) });
+      const completed = { ...candidate, fps, bytes, score, path: target, digest: shared.sha256File(target) };
+      const previous = state.bestCandidate;
+      state.bestCandidate = selectWinner(previous ? [previous, completed] : [completed]);
+      if (!state.config.keepWork && previous && previous !== state.bestCandidate) fs.rmSync(previous.path, { force: true });
       fit = true;
     }
-    if (!state.config.keepWork) fs.rmSync(target, { force: true });
+    if (!state.config.keepWork && target !== state.bestCandidate?.path) fs.rmSync(target, { force: true });
     return fit;
   };
   const coarse = candidateSequence(state.config);
@@ -92,26 +94,6 @@ async function searchFps(state, fps) {
   anchor ??= state.config.minQuality;
   for (const candidate of candidateSequence(state.config, anchor).slice(coarse.length)) await evaluate(candidate);
   if (!state.config.keepWork) fs.rmSync(source, { force: true });
-  return results;
-}
-
-async function regenerateWinner(state, winner) {
-  const source = await prepareSourceCache(state, winner.fps, 'winner-source', {
-    code: 'regeneration_failed',
-    condition: 'winner source preparation failed',
-    remedy: 'fix the reported ffmpeg decode or filter error, then run the same conversion again',
-  });
-  const target = path.join(state.workDir, 'winner-regenerated.gif');
-  await encodeCandidate(state, winner.fps, winner, source, target, 'winner-regenerated', {
-    code: 'regeneration_failed',
-    condition: 'winner regeneration failed',
-    remedy: 'fix the reported gifski error, then run the same conversion again',
-    missingCondition: 'gifski reported success but did not create the regenerated winner',
-    missingRemedy: 'repair or reinstall gifski, then run the same conversion again',
-  });
-  const digest = shared.sha256File(target);
-  if (digest !== winner.digest) throw new shared.RunError('regeneration_mismatch', `winner regeneration digest mismatch: recorded ${winner.digest}, regenerated ${digest}`, 'reinstall the reviewed gifski version or inspect source-cache determinism before retrying');
-  return target;
 }
 
 async function convert(state) {
@@ -120,11 +102,11 @@ async function convert(state) {
   if (!state.json) process.stderr.write(`Searching ${state.config.minFps}-${state.config.maxFps} FPS, gifski quality ${state.config.minQuality}-${state.config.maxQuality} under ${state.config.maxBytes} bytes at ${state.config.gifSize}x${state.config.gifSize} with ${state.workers} encoder workers and ${state.rayonThreads} gifski threads each...\n`);
   await prepareReference(state);
   const fpsValues = Array.from({ length: state.config.maxFps - state.config.minFps + 1 }, (_, i) => state.config.minFps + i);
-  const groups = await state.manager.runOldestBounded(fpsValues, state.workers, fps => searchFps(state, fps));
-  const winner = selectWinner(groups.flat());
+  state.bestCandidate = undefined;
+  await state.manager.runOldestBounded(fpsValues, state.workers, fps => searchFps(state, fps));
+  const winner = state.bestCandidate;
   if (!winner) throw new shared.RunError('no_candidate', `no candidate fit below ${state.config.maxBytes} bytes`, 'increase MAX_BYTES, reduce GIF_SIZE or the FPS range, or lower MIN_QUALITY');
-  const regenerated = await regenerateWinner(state, winner);
-  const verified = await shared.publishVerified(regenerated, state.output, 'mov-to-gif-gifski', temporary => shared.verifyFinalGif(state.manager, state.commands, temporary, { size: state.config.gifSize, maxBytes: state.config.maxBytes, digest: winner.digest }), temporary => { state.outputTemp = temporary; });
+  const verified = await shared.publishVerified(winner.path, state.output, 'mov-to-gif-gifski', temporary => shared.verifyFinalGif(state.manager, state.commands, temporary, { size: state.config.gifSize, maxBytes: state.config.maxBytes, bytes: winner.bytes, digest: winner.digest }), temporary => { state.outputTemp = temporary; });
   const payload = shared.resultPayload({ script: state.scriptName, backend: 'gifski', input: state.input, output: state.output, config: state.config, winner, verified });
   shared.emitResult(payload, state.json);
 }

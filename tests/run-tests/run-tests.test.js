@@ -65,6 +65,7 @@ test('command plan has stable setup, preflight, Node group, and Python suite ord
     backup: ['backup.test.js'],
   });
   const { buildCommandPlan } = loadRunner();
+  assert.deepEqual(buildCommandPlan(root, false).find(stage => stage.label === 'initialize ASD-STE100 references').args, ['plugins/harness/skills/write-asd-ste100/scripts/initialize_references.py']);
   const labels = buildCommandPlan(root, false).map(({ label }) => label);
 
   assert.deepEqual(labels, [
