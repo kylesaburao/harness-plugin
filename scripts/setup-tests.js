@@ -25,7 +25,7 @@ function main(argv) {
     return 0;
   }
   const root = path.resolve(__dirname, '..');
-  if (!argv.includes('--check')) return runCommandPlan(buildSetupPlan(root));
+  if (!argv.includes('--check')) return runCommandPlan(buildSetupPlan(root), undefined, { summaryLabel: 'Test setup' });
   try { checkPrerequisites(root); return 0; }
   catch (error) {
     process.stderr.write(`ERROR [test_prerequisite_missing]: ${error.message}\nRemedy: node scripts/setup-tests.js\n`);

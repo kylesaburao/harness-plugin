@@ -15,6 +15,15 @@ function loadRunner() {
   return require(scriptPath);
 }
 
+function captureOutput() {
+  const output = { stdout: '', stderr: '' };
+  return {
+    output,
+    stdout: { write: text => { output.stdout += text; } },
+    stderr: { write: text => { output.stderr += text; } },
+  };
+}
+
 function makeTestTree(groups) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'run-tests-discovery.'));
   for (const [group, files] of Object.entries(groups)) {
@@ -95,13 +104,57 @@ test('every orchestration-stage failure stops later commands and returns its sta
 
   for (let failureIndex = 0; failureIndex < plan.length; failureIndex += 1) {
     const calls = [];
+    const capture = captureOutput();
     const status = runCommandPlan(plan, ({ args }) => {
       calls.push(Number(args[0]));
       return Number(args[0]) === failureIndex ? { status: 17 } : { status: 0 };
-    });
+    }, capture);
     assert.equal(status, 17, `failure at stage ${failureIndex}`);
     assert.deepEqual(calls, Array.from({ length: failureIndex + 1 }, (_, index) => index));
   }
+});
+
+test('stage timers measure invocations and the total includes gaps', () => {
+  const { runCommandPlan } = loadRunner();
+  const capture = captureOutput();
+  const times = [100, 200, 1434, 1600, 3600, 4000];
+  assert.equal(runCommandPlan([{ label: 'first' }, { label: 'second' }], () => ({ status: 0 }), {
+    ...capture, now: () => times.shift(),
+  }), 0);
+  assert.equal(capture.output.stdout, '\n==> first\nfirst: Passed | wall-clock elapsed: 1.234s\n\n==> second\nsecond: Passed | wall-clock elapsed: 2.000s\nTest gate: Passed | wall-clock elapsed: 3.900s\n');
+  assert.equal(times.length, 0);
+});
+
+test('failed exits and launch failures report timing and exactly one final summary', () => {
+  const { runCommandPlan } = loadRunner();
+  for (const result of [{ status: 17 }, { status: null, error: new Error('spawn missing ENOENT') }]) {
+    const capture = captureOutput();
+    const times = [0, 100, 350, 500];
+    let calls = 0;
+    assert.equal(runCommandPlan([{ label: 'failure' }, { label: 'never' }], () => {
+      calls += 1;
+      return result;
+    }, { ...capture, now: () => times.shift() }), result.status ?? 1);
+    assert.equal(calls, 1);
+    assert.equal(capture.output.stdout, '\n==> failure\nfailure: Failed | wall-clock elapsed: 0.250s\nTest gate: Failed | wall-clock elapsed: 0.500s\n');
+    assert.equal(capture.output.stderr, result.error ? 'ERROR [COMMAND_FAILED]: spawn missing ENOENT\n' : '');
+  }
+});
+
+test('a complete child invocation includes waiting time', () => {
+  const { runCommandPlan } = loadRunner();
+  const capture = captureOutput();
+  const status = runCommandPlan([{
+    label: 'waiting child', command: process.execPath,
+    args: ['-e', 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150)'],
+    cwd: repoRoot,
+  }], undefined, capture);
+  assert.equal(status, 0);
+  const durations = [...capture.output.stdout.matchAll(/wall-clock elapsed: ([\d.]+)s/g)].map(match => Number(match[1]));
+  assert.equal(durations.length, 2);
+  assert.ok(durations[0] >= 0.150, capture.output.stdout);
+  assert.ok(durations[1] >= durations[0], capture.output.stdout);
+  assert.equal((capture.output.stdout.match(/Test gate: Passed/g) || []).length, 1);
 });
 
 test('workflow limits credentials and tests each exact revision before bumping it', () => {

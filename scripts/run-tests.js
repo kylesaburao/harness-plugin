@@ -7,6 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { performance } = require('node:perf_hooks');
 
 const EXIT = Object.freeze({ OK: 0, FAILED: 1, CANNOT_START: 2 });
 const GIF_GROUP = 'create-discord-emoji-gif';
@@ -112,16 +113,28 @@ function spawnCommand(specification) {
   });
 }
 
-function runCommandPlan(plan, execute = spawnCommand) {
+function runCommandPlan(plan, execute = spawnCommand, {
+  now = () => performance.now(),
+  stdout = process.stdout,
+  stderr = process.stderr,
+  summaryLabel = 'Test gate',
+} = {}) {
+  const started = now();
+  let status = EXIT.OK;
   for (const specification of plan) {
-    process.stdout.write(`\n==> ${specification.label}\n`);
+    stdout.write(`\n==> ${specification.label}\n`);
+    const stageStarted = now();
     const result = execute(specification);
+    const elapsed = now() - stageStarted;
+    stdout.write(`${specification.label}: ${result.status === 0 ? 'Passed' : 'Failed'} | wall-clock elapsed: ${(elapsed / 1000).toFixed(3)}s\n`);
     if (result.status !== 0) {
-      if (result.error) process.stderr.write(`ERROR [COMMAND_FAILED]: ${result.error.message}\n`);
-      return Number.isInteger(result.status) && result.status !== 0 ? result.status : EXIT.FAILED;
+      if (result.error) stderr.write(`ERROR [COMMAND_FAILED]: ${result.error.message}\n`);
+      status = Number.isInteger(result.status) && result.status !== 0 ? result.status : EXIT.FAILED;
+      break;
     }
   }
-  return EXIT.OK;
+  stdout.write(`${summaryLabel}: ${status === EXIT.OK ? 'Passed' : 'Failed'} | wall-clock elapsed: ${((now() - started) / 1000).toFixed(3)}s\n`);
+  return status;
 }
 
 function main(argv) {

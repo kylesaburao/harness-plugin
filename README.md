@@ -76,6 +76,8 @@ MIT: see [LICENSE](LICENSE).
 
 Run `node scripts/setup-tests.js` once to install test dependencies and initialize references. Run `node scripts/run-tests.js` for the complete local gate. The test command validates the existing environment and does not install dependencies. Use `--skip-gif` to omit GIF tests and converter preflights.
 
+Each stage reports its status and wall-clock duration, followed by one total test-gate summary, including on failure. Framework summaries cover individual test groups. The gate timer measures the complete command plan, including time between stages, but excludes Node startup and any external container wrapper.
+
 ## Development container
 
 See [CONTAINER.md](CONTAINER.md) to build the Node 26 and media toolchain image, prepare persistent dependency volumes, and run temporary command containers against your live checkout with `./scripts/dev`. Git operations stay on the host.
