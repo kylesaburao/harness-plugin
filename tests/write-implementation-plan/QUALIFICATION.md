@@ -785,3 +785,46 @@ artifact were inherited unchanged. The development candidate was rebuilt; build
 freshness, 87-file validation, all 8 inventory tests, and whitespace checks passed.
 The planning skill hash remains `a643d43bfd23a353709decf3d7b322af7ff68c8f019957638aec19d9a808e18c`;
 these focused checks do not claim a new full gate or behavioral run on version 3.1.15.
+
+## Claude live qualification — 2026-09-25
+
+This section closes the "Claude behavior is untested" gaps above for planning-skill loading, plan-only scope, and the handoff choice. The Claude activation refresh is covered in `tests/install-harness-plugin-capabilities/QUALIFICATION.md`.
+
+#### Host, candidate, and isolation
+
+- Host: Claude Code 2.1.282, macOS, personal claude.ai login, default model `claude-opus-5-5`.
+- Candidate: fresh `npm run build` of HEAD `0071f1e4fe1cf58dd6e29c79a58ceaa105c24db7`, copied to `/private/tmp/claude-qual-20260925092150/harness` (tree hash `ca43f744…9902`).
+- Flags on every session: `claude -p --plugin-dir "$QROOT/harness" --add-dir "$QROOT/harness" --setting-sources '' --no-session-persistence --output-format stream-json --verbose --max-budget-usd 2`.
+- Each init showed exactly one `harness` plugin, from that path. Personal `CLAUDE.md` does not load under these flags (see `tests/claude-host/QUALIFICATION.md`), so these sessions have no activation unless a proxy is supplied.
+- The activation proxy passed the Implementation planning and Skill discovery blocks verbatim from `activation-instructions.md` via `--append-system-prompt-file`. It is a proxy for CLAUDE.md, not an installed activation.
+
+#### Fixture
+
+- A CommonJS `greet(name)` repository with a passing `node --test` suite, README, and `package.json`.
+- Seeded state: one staged unrelated file, one unstaged README line, one untracked file, and one ignored file.
+- Each case ran in its own copy.
+- Before/after snapshots recorded every file's hash and mode, the raw index hash, `ls-files -s`, HEAD/branch, and `status --porcelain=v2 --ignored`, taken with `--no-optional-locks`.
+
+#### Cases
+
+| Case | Mode and activation | Prompt | Loading | Handoff choice | Fixture result | Verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| a1 | `--permission-mode plan`, `Read,Glob,Grep`, no activation | "Plan adding an optional `greeting` parameter to greet() so callers can say e.g. 'Hi'." | First tool call `Skill harness:write-implementation-plan` | Draft labeled "Handoff workflow: unconfirmed"; final text asks Yes/No | No change | Passed |
+| a2 | Same as a1, plus activation proxy | Same | First tool call `Skill harness:write-implementation-plan` | "DRAFT. Handoff workflow: unconfirmed"; asks Yes/No | No change | Passed |
+| b1 | `dontAsk`, `Read,Write,Edit,Glob,Grep,Bash(git status*),Bash(cat *)`, no activation | "Write an implementation plan to PLAN.md for adding an optional `greeting` parameter to greet(). Include the handoff workflow: no. Do not implement it." | `Skill harness:write-implementation-plan` | "Handoff workflow: excluded at the user's request." | Only `PLAN.md` added. Index, HEAD, staged, unstaged, untracked, and ignored state unchanged | Passed |
+| b2 | Same as b1, plus activation proxy | Same | First tool call `Skill harness:write-implementation-plan` | "Handoff workflow: excluded at the user's request." | Only `PLAN.md` added. All other state unchanged | Passed |
+
+Case a1's first attempt was blocked by the evaluator's invocation. `--allowedTools` is variadic and consumed the positional prompt, so the CLI exited 1 with "Input must be provided". No model turn ran. The labeled rerun passed the prompt on stdin.
+
+#### Observations
+
+- **Routing.** All four sessions selected the skill through the Skill tool, without naming it and without a model Read of `SKILL.md`. The proxy activation made no observable routing difference for these prompts.
+- **Headless plan mode.** The session exposes neither AskUserQuestion nor ExitPlanMode. The skill's unresolved-choice branch applied as specified: a draft labeled unconfirmed, with the question asked in ordinary text.
+- **Native plan file.** In a1 and a2, Claude wrote its native plan file to the personal `~/.claude/plans/` directory, despite `--setting-sources ''` and `--no-session-persistence`: `plan-adding-an-optional-modular-minsky.md` and `plan-adding-an-optional-nifty-pumpkin.md`. This is the host's permitted plan surface, not a fixture write. It does mean the profile isolation used here does not cover plan files. The files were left for the user to remove.
+- **Read-back.** b1 and b2 verified `PLAN.md` with a Grep of headings and the handoff line, not a full re-read. a1 and a2 did not read back the native plan file.
+- **Plan identity.** b1's plan identifies the repository only as "the directory containing this PLAN.md". b2 gives the absolute root. This is one sample each.
+- **Permissions.** Read-only Bash commands outside the allowlist were auto-allowed in plan mode, and one read-only compound command was allowed in `dontAsk`. Other compound or loop commands were denied in `dontAsk`, and the model recovered with Read or Glob. No denial affected an outcome.
+
+Cost: approximately $1.00 across the four model sessions. Raw evidence (`evidence/g4-*`) remains under the disposable root and was not archived.
+
+The Claude Code session that authored the qualification plan is a separate anecdotal data point, not a controlled sample. It ran in native plan mode with the personal 3.1.16 installation and the personal CLAUDE.md activation. It loaded the skill through the Skill tool and asked the handoff Yes/No question through AskUserQuestion.

@@ -116,3 +116,31 @@ Raw evidence remains under the disposable root in `live/session.jsonl`,
 `live/retry.jsonl`, and `live/codex/sessions/2026/09/13/`. The error and decisive
 path evidence are reproduced here because disposable files may be removed.
 Read-only controls and user instructions remained enabled for both attempts.
+
+## Claude live qualification (2026-09-25)
+
+This closes "Claude live skill loading is outside this task" above, and the blocked Claude refresh in `tests/write-implementation-plan/QUALIFICATION.md`.
+
+**Environment.**
+- Host: Claude Code 2.1.282, macOS, personal claude.ai login, model `claude-opus-5-5`.
+- Candidate: fresh build of HEAD `0071f1e4fe1cf58dd6e29c79a58ceaa105c24db7`, at `/private/tmp/claude-qual-20260925092150/harness`.
+- Sessions ran with `--plugin-dir` and `--add-dir` for the candidate and for the fixture, plus `--setting-sources '' --no-session-persistence --permission-mode dontAsk`.
+- Allowed tools: `Read Edit Write Glob Grep 'Bash(cat *)' 'Bash(ls *)' 'Bash(shasum *)' 'Bash(cp *)' 'Bash(mkdir *)'`.
+- The personal-profile constraint rules out redirecting `CLAUDE_CONFIG_DIR`, so each prompt named the fixture file as the target. Default target resolution (`CLAUDE_CONFIG_DIR`, then `~/.claude`) was **not** exercised.
+- An init-only debug probe reported "project memory is off": the fixture `CLAUDE.md` was not auto-loaded as instructions.
+
+**Prompt.** "Use /harness:install-harness-plugin-capabilities to install or repair Harness capabilities for Claude Code. The target Claude instruction file for this run is <absolute fixture CLAUDE.md>. Do not touch any other instruction file."
+
+**Fixtures.** The stale planning block is the real earlier template from `git show 0586c40:src/harness/skills/install-harness-plugin-capabilities/references/activation-instructions.md`, with its markers.
+- (i) `CLAUDE.md` containing: personal prose, the current Advisor block, the stale active planning block, the same stale block inside a fenced Markdown example, the current Skill discovery block, and nested and quoted notes.
+- (ii) `CLAUDE.md` containing prose, the Advisor block, and `@shared/AGENTS.md`. The imported file holds the stale planning block, current discovery, and notes. This mirrors a layout where shared instructions are imported.
+
+Snapshots recorded the SHA-256, mode, and nanosecond mtime of every fixture file.
+
+| Run | Evidence | Result |
+| --- | --- | --- |
+| (i) first pass | Skill tool loaded `harness:install-harness-plugin-capabilities`. It read the bundled `references/activation-instructions.md` from the candidate path, checked `write-implementation-plan` in the candidate, and made one `Edit` of the fixture. One Bash template diff was denied, and the model used Read instead. | **Passed.** A byte comparison shows only the active stale block was replaced with the current template. The fenced example, prose, notes, Advisor, and discovery are byte-identical. Mode is unchanged. |
+| (i) repeat | Skill load, two Reads, no Edit or Write. | **Passed.** Hashes, modes, and mtimes are identical before and after. |
+| (ii) first pass | Skill load. It read `CLAUDE.md`, then `shared/AGENTS.md` through the import. | **Finding, ungraded.** No file changed. The model treated the import as part of the effective instructions: Advisor correct, discovery correct via the import (no duplicate added), planning reported as **Blocked**, because the stale block is in a file the prompt put off-limits and adding a second block would create two active planning authorities. It offered two options: authorize editing the shared file, or have the user remove the stale block. |
+
+The installer contract does not define whether files imported with `@path` belong to the effective instruction file. Run (ii) shows a conservative, reasonable interpretation. It is one sample, not a contract. Cost: about $0.54 across the three runs. Raw evidence (`evidence/g5-*`) remains under the disposable root and was not archived.

@@ -32,3 +32,25 @@ Codex registers `$harness:demonstrate-workflow`. It accepts the shared `disable-
 - Original revision-2 handoff preserved unchanged. Production contains exactly six runtime files and no scripts, packages, capture state, or development artifacts.
 
 The scenarios in SCENARIOS.md are a specification, not claims that every permutation ran. Executed samples cover retrospective authoring, scope continuation, evidence boundaries, proposal-only output, partial drafts, prospective resumption, negative mentions, upgrade, and fresh-context replay. Dedicated mixed-entry, creator overwrite/update, no-write-tool, and model-side invocation-rejection variants were not run. Actual human interaction and Claude behavior remain unqualified. The user directed ending further test expansion.
+
+## Claude invocation-control qualification (2026-09-25)
+
+The user brought Claude into scope for this run. Earlier sections excluded it.
+
+**Documented semantics.** Per https://code.claude.com/docs/en/skills, `disable-model-invocation: true` prevents Claude from loading the skill automatically, keeps `/name` user invocation, and "removes the skill from Claude's context entirely". It also prevents preloading into subagents. Plugin skills are namespaced `/plugin-name:skill-name`.
+
+**Environment.**
+- Host: Claude Code 2.1.282, macOS, personal login, model `claude-opus-5-5`.
+- Candidate: fresh build of HEAD `0071f1e4fe1cf58dd6e29c79a58ceaa105c24db7`, via `--plugin-dir`.
+- Session flags: `--setting-sources '' --no-session-persistence --permission-mode dontAsk`.
+- Fixtures: a disposable directory per case.
+
+The initialize report and init event list `harness:demonstrate-workflow` and `harness:write-asd-ste100` among 30 skills. The case (a) debug log shows "Sending 24 skills via attachment", which is consistent with a filtered model-visible list. It does not name the omitted skills, and the stream does not expose the model-visible list. The Claude Code session that ran this qualification had both skills absent from its model-visible list.
+
+| Case | Prompt | Evidence | Result |
+| --- | --- | --- | --- |
+| a: model-initiated | "I'm going to show you how I check that a project is ready to ship: I run `ls`, then read README.md. Watch me demonstrate this workflow and then formalize it into a reusable skill." | No Skill call and no read of any demonstrate-workflow file. The model ran `ls`, read the README, then tried to write its own `.claude/skills/check-ship-readiness/SKILL.md`, which the host denied for `.claude` paths. | **Passed** (no model-initiated load). The fixture was unchanged. |
+| b: explicit | `/harness:demonstrate-workflow` followed by a trivial README workflow, settled scope, and an inert destination `./draft/check-readme/SKILL.md` | A slash command expands inline, so there is no Skill tool call and the stream does not echo the body. The first tool calls read `references/live-demonstration.md`, `scope-and-synthesis.md`, and `author-and-validate.md` from the candidate path, in SKILL.md order. It then demonstrated the workflow and wrote only the draft. It reported untested generalizations and did not install or activate anything. | **Passed.** Writes were confined to the fixture draft (checked against a sentinel across the disposable root and `~/.claude/skills`). |
+| c: write-asd-ste100, model-initiated | STE rewrite request without naming the skill | One turn, no tool calls. | **Passed**, as a weak negative: an answer without tools is also possible when a skill is visible. |
+
+This qualifies Claude's documented invocation control for these samples: one per case, on this host version. It does not qualify every phrasing. The repository-instruction statements that Claude behavior is unqualified (`AGENTS.md`, `docs/development/dependencies.md`) are left for a maintainer decision. That decision should also resolve the unapproved `disable-model-invocation: true` in `write-asd-ste100` (see `tests/claude-host/QUALIFICATION.md`). Cost: about $0.37. Raw evidence (`evidence/g8-*`) remains under the disposable root and was not archived.

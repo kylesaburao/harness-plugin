@@ -9,7 +9,7 @@ Qualified on macOS on 2026-09-13. This evidence checks resource provenance for t
 | Repository validation | Passed with validator limitation | Focused Node tests: 17 passed. Python tests: 142 passed. The inventory mutation cases rejected in-memory copies with the authority section removed or appended to. The portable skill validator passed 7 skills. Its rejections of existing `compatibility` fields were unrelated to this change, and `disable-model-invocation` validation was excluded by user instruction. Claude Code strict plugin-manifest validation passed with zero errors or warnings. |
 | Codex behavioral validation | Passed | Two fresh Codex sessions used the supplied `r2` instance for the bundled script and reference. |
 | Claude documentation compatibility | Passed | Official documentation defines `${CLAUDE_SKILL_DIR}` substitution in skill Markdown, relative Markdown links for supporting files, plugin skill discovery, and session-only `--plugin-dir` loading. The shared contract names the substitution and retains host-neutral `<SKILL_DIR>` command examples. |
-| Claude live validation | Pending | Deferred to an authenticated Claude session by scope. No live Claude inference or authentication change was attempted. |
+| Claude live validation | Passed on 2026-09-25, after permission corrections | Claude Code 2.1.282 loaded both skills and their resources from the `--plugin-dir` instance and probed no alternate root. The first attempts were blocked by the recorded allowlist, not by path resolution. See [Claude live validation](#claude-live-validation-2026-09-25). |
 
 ## Codex behavioral evidence
 
@@ -50,23 +50,25 @@ Client inspected without starting a session: `2.1.270 (Claude Code)`.
 - [Claude plugins reference](https://code.claude.com/docs/en/plugins-reference) documents plugin skills under `skills/<name>/SKILL.md`, their `/plugin-name:skill-name` namespace, and session-only loading with `--plugin-dir`.
 - Compatibility conclusion: Claude supplies the loaded skill directory through a documented substitution. After substitution, the shared contract provides an absolute source for `<SKILL_DIR>`. The quoted command examples and relative Markdown links fit the documented mechanism. No cache layout assumption is required.
 
-## Deferred Claude live procedure
+## Claude live validation (2026-09-25)
 
-Run this only in a future authenticated session. `<QUAL_ROOT>` is a new disposable absolute directory. Keep the working directory outside the plugin tree.
+Client: `2.1.282 (Claude Code)`, macOS, the user's personal claude.ai login. Repository HEAD `0071f1e4fe1cf58dd6e29c79a58ceaa105c24db7`. `npm run build` produced the candidate, which was copied to the disposable root `/private/tmp/claude-qual-20260925092150/harness` without the `back-up-directories` dependency overlay. Candidate tree SHA-256 over sorted per-file hashes: `ca43f7443adc4aef01960a11a74e8db8cb5aa47dffa42c421ddd91699de89902`. The working directory was the empty `/private/tmp/claude-qual-20260925092150/workspace`.
 
-```sh
-mkdir -p "<QUAL_ROOT>/claude-config" "<QUAL_ROOT>/workspace"
-cp -R "/Users/kyle/Documents/harness-plugin/plugins/harness" "<QUAL_ROOT>/harness"
-CLAUDE_CONFIG_DIR="<QUAL_ROOT>/claude-config" claude auth login --claudeai
-CLAUDE_CONFIG_DIR="<QUAL_ROOT>/claude-config" claude plugin validate "<QUAL_ROOT>/harness" --json --strict
-```
+The original deferred procedure used a disposable `CLAUDE_CONFIG_DIR` with its own login. By user decision, it was replaced with the personal profile plus `--setting-sources ''`. An initialize-only control request, which sends no model turn, showed one `harness` plugin loaded from the disposable path (`harness@inline`, version 3.1.16) plus built-ins. The personally installed `harness@harness-plugin` was not enabled, and personal `CLAUDE.md` was not loaded. Personal settings, plugins, and authentication were not changed.
 
-From `<QUAL_ROOT>/workspace`, run each command as a separate fresh session:
+Base command. Each case was a fresh session:
 
 ```sh
-CLAUDE_CONFIG_DIR="<QUAL_ROOT>/claude-config" claude --plugin-dir "<QUAL_ROOT>/harness" --setting-sources '' --permission-mode dontAsk --permission-prompts none --allowedTools 'Read,Bash(cat *),Bash(node *)' --no-session-persistence --output-format stream-json -p 'Use /harness:random-sampler to display its bundled CLI help without drawing a number. Report the substituted skill directory, exact SKILL.md path read, exact resource command, exit code, and first usage line. Do not inspect conventional alternate roots.'
-
-CLAUDE_CONFIG_DIR="<QUAL_ROOT>/claude-config" claude --plugin-dir "<QUAL_ROOT>/harness" --setting-sources '' --permission-mode dontAsk --permission-prompts none --allowedTools 'Read,Bash(cat *),Bash(node *)' --no-session-persistence --output-format stream-json -p 'Use /harness:diagnose-environment to read and summarize its bundled macOS reference without running system diagnostics. Report the substituted skill directory, exact SKILL.md path read, exact reference read command, and one-sentence summary. Do not inspect conventional alternate roots.'
+claude -p --plugin-dir "$QROOT/harness" --setting-sources '' --permission-mode dontAsk --permission-prompts none --allowedTools 'Read,Bash(cat *),Bash(node *)' --no-session-persistence --output-format stream-json --verbose --max-budget-usd 2 '<prompt from the original procedure>'
 ```
 
-Pass each case only when the stream shows the plugin skill, `SKILL.md`, and resource all came from `<QUAL_ROOT>/harness/skills/<skill>`. Fail provenance if any conventional alternate root is probed. Record authentication or permission failures as blocked, not passed.
+| Case | Attempt | Result |
+| --- | --- | --- |
+| random-sampler help | 1: base command | Blocked. The Skill tool loaded `harness:random-sampler` from `$QROOT/harness/skills/random-sampler`. The model ran `node "$QROOT/harness/skills/random-sampler/scripts/sample.mjs" --help; echo "EXIT=$?"`, which was denied. No alternate root was probed and no result was invented. |
+| random-sampler help | 2: added `--add-dir "$QROOT/harness"` | Blocked. The same command was denied because `echo` was not allowlisted. |
+| random-sampler help | 3: also allowed `Bash(echo *)` | **Passed.** The Skill tool loaded from the `--plugin-dir` instance. The command resolved under `$QROOT/harness/skills/random-sampler/scripts/`. Output `Usage: sample.mjs [--help | --preflight] [--json]`. No number was drawn. |
+| diagnose-environment reference | 1: base command | **Passed.** The Skill tool loaded `harness:diagnose-environment`. `cat` of the reference was denied, then the Read tool read `$QROOT/harness/skills/diagnose-environment/references/macos-environment.md`. The summary covered shell init order, architecture and Rosetta, Homebrew prefixes, version managers, quarantine, ownership, and targeted cache clearing. No diagnostics ran and no alternate root was probed. |
+
+Haiku control sessions isolated the permission behavior. `cat` of a file in the working directory passed with `Bash(cat *)`. Commands that name files outside the working directory were denied under `dontAsk` until that directory was added with `--add-dir`. A compound command needs every component allowlisted. For this host version, a future procedure therefore needs `--add-dir` for the plugin copy, plus allowlist entries for every command the model may chain.
+
+The skill instructions were supplied by the Skill tool, not by a model `Read` of `SKILL.md`. The substituted directory was reported from the loaded instance. This evidence covers loading and resource provenance for these two prompts. It does not establish compliance for every prompt. Raw stream evidence: `evidence/g2-*.jsonl` and `evidence/perm-control-*.jsonl` under the disposable root, which was not archived.

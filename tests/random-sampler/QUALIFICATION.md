@@ -105,3 +105,22 @@ modified to bypass this limitation.
   primary executed the tests.
 - Final native gate: **643 passed, zero failed or skipped**. Manifests and installer
   files remain unchanged. The user authorized commit and push after this loop.
+
+## Claude live qualification (2026-09-25)
+
+This section closes the Claude gap recorded above. Host: Claude Code 2.1.282 on macOS, using the user's personal claude.ai login, with default model `claude-opus-5-5`. The candidate was a fresh `npm run build` of HEAD `0071f1e4fe1cf58dd6e29c79a58ceaa105c24db7`, copied to `/private/tmp/claude-qual-20260925092150/harness`, with tree hash `ca43f744…9902`. Every session was fresh, ran from an empty disposable workspace, and used `--plugin-dir` and `--add-dir` for that copy, plus `--setting-sources '' --permission-mode dontAsk --permission-prompts none --no-session-persistence`. An initialize-only probe confirmed that only the candidate `harness` plugin loaded. The personal installation and personal `CLAUDE.md` were inactive. Personal configuration was not modified. No prompt named the skill.
+
+| Prompt | Implicit selection | Execution (attempt 1: `Read,Bash(node *),Bash(echo *)`) | Execution (attempt 2: `Read,Bash`) | Answer used result |
+| --- | --- | --- | --- | --- |
+| Random color from red, green, blue | Passed | Blocked: heredoc command denied | choice, index 0, red | Red |
+| Integer 1–10 inclusive | Passed | Blocked | integer [1,11), 10 | 10 |
+| Shuffle A–D | Passed | Blocked | shuffle, indices [1,0,2,3] | B, A, C, D |
+| Coin flip | Passed | Blocked | choice, index 1, tails | Tails |
+| d20 | Passed | Blocked | integer [1,21), 2 | 2 |
+| Draw two names without replacement | Passed | Blocked | sample, indices [0,2] | Ada, Cy |
+
+In both attempts, every positive session called the Skill tool for `harness:random-sampler` with the correct operation. Every session invoked `scripts/sample.mjs` from the loaded `--plugin-dir` instance through its documented `--json` heredoc form. In attempt 1, `Bash(node *)` did not match the heredoc command under `dontAsk`. All six sessions reported the denial and gave no pseudorandom substitute answer. Attempt 2 allowed unscoped Bash in the disposable workspace. Each session then executed the sampler once and returned its result unchanged.
+
+All four negative prompts answered by reasoning in one turn, with no Skill call and no sampler execution: best error-state color, safer database, ranking candidates, and review likelihood.
+
+These samples qualify Claude implicit selection, bundled-script execution, result use, and negative routing for this host and model. They are not a deterministic routing guarantee. A restrictive command allowlist must admit the heredoc invocation. Raw evidence: `evidence/g3-*.jsonl` and `evidence/g3r-*.jsonl` under the disposable root, which was not archived.
