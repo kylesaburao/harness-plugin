@@ -30,6 +30,14 @@ A deterministic module used by two or more production skills can live under `plu
 
 Shared production code does not relax the requirement that every `SKILL.md` contains its own complete instructions and contract. The GIF runner is skill-local because only one skill consumes it. The backup helper is test-only because production never imports it.
 
+## Bundled resource paths
+
+The exact `SKILL.md` instance loaded by the host is authoritative for its bundled resources. A resource-bearing skill must tell the agent to resolve scripts, references, assets, and sibling documents from the host-supplied path for that exact file. Claude Code exposes this directory through `${CLAUDE_SKILL_DIR}` substitution. Expand a catalog root alias only through the mapping supplied with that loaded instance. Preserve the caller's working directory and the skill's existing input and output path semantics.
+
+Use the quoted `<SKILL_DIR>` substitution placeholder in agent-facing bundled executable examples, for example `node "<SKILL_DIR>/scripts/tool.js"`. The placeholder is not a presumed environment variable. Do not infer a skill directory from a conventional Claude or Codex location. Do not select another installed copy by version, timestamp, or search order. Another installation can be used only when the host or user explicitly selects it.
+
+Keep the complete `## Bundled path authority` contract inline in every resource-bearing `SKILL.md`. Loading a shared contract would depend on the same path resolution it governs. `tests/inventory/bundled-path-authority.test.js` discovers the affected tracked skills and enforces the shared wording.
+
 New skill executables use Node.js by default. Use the oldest supported Node.js version that
 provides the required standard-library APIs, and document that minimum in the skill. Use
 Bash, Python, or another runtime only when a concrete platform API, maintained library, or

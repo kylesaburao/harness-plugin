@@ -9,6 +9,12 @@ Use ordinary agent file operations. For each requested host, copy one companion
 file into its user directory and add Advisor instructions and a Final plans
 pointer to its user-level instruction file. Follow these steps in order.
 
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
 ## 1. Select the host and destination files
 
 Establish whether the user wants Codex, Claude Code, or both. Verify that Harness

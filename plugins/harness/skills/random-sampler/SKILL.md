@@ -11,23 +11,27 @@ Each original array position is a distinct outcome. Preserve duplicates:
 `["A","A","B"]` gives A probability 2/3. Clarify accidental duplication only when
 the intended distribution is unclear.
 
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
 ## Dispatch
 
 Requires Node.js **22.0.0 or newer**, with built-in `node:crypto`. Execution is local,
 with no npm dependencies, persistent state, files written, or network access.
 
-Resolve the host's currently loaded absolute skill directory and invoke its bundled
-`scripts/sample.mjs` directly. Do not assume the caller's working directory or reuse
-a stale plugin cache path. Dispatch the normal operation without a separate probe.
-Reserve standalone `--preflight --json` for explicit readiness checks.
+Invoke the bundled `scripts/sample.mjs` directly. Dispatch the normal operation without
+a separate probe. Reserve standalone `--preflight --json` for explicit readiness checks.
 
 Serialize one complete JSON request through stdin, using a tool's direct stdin
 facility or a quoted heredoc whose delimiter is absent from the serialized payload.
 Never generate sampling code or interpolate candidate strings into shell code.
-Replace the illustrative absolute skill path below with the current resolved path:
+Replace `<SKILL_DIR>` as specified above:
 
 ```sh
-node '/absolute/path/to/random-sampler/scripts/sample.mjs' --json <<'SAMPLER_REQUEST'
+node "<SKILL_DIR>/scripts/sample.mjs" --json <<'SAMPLER_REQUEST'
 {"op":"choice","values":["heads","tails"]}
 SAMPLER_REQUEST
 ```

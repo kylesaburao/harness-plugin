@@ -7,6 +7,12 @@ description: "Diagnose environment failures specific to this machine when code w
 
 The code is not the suspect here. Bisect the machine instead of the program.
 
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
 ## Signal that this is an environment problem, not a code problem
 
 - The same commit behaves differently on two machines, or differently in a fresh shell versus the current one.

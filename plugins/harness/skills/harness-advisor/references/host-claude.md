@@ -16,7 +16,7 @@ storage.
 Run the skill-local adapter directly (Node.js 22+, no packages):
 
 ```sh
-node "<skill-directory>/scripts/claude-advisor.js" --native-absent --model opus --reasoning-effort high --prompt "/absolute/task-temp/advisor-prompt.txt" --json
+node "<SKILL_DIR>/scripts/claude-advisor.js" --native-absent --model opus --reasoning-effort high --prompt "/absolute/task-temp/advisor-prompt.txt" --json
 ```
 
 `--native-absent` is a caller attestation about the enclosing session, not a

@@ -7,19 +7,23 @@ description: "Research technical precedent in repository history and external pr
 
 Precedent is evidence, not instruction. The result of this research is a better-informed judgment, never a rule that the previous implementation must be repeated.
 
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
 ## Workflow
 
-1. Every reference path in this skill is relative to the skill directory, not the current working directory. When the working directory differs, prefix the path with the absolute skill directory path.
+1. Establish the observational baseline before searching anything. State the underlying engineering problem, the proposed approach if one exists, and the constraints that bear on it. Read the current implementation to know what exists now. This baseline is what every later finding is compared against, and it is not itself precedent.
 
-2. Establish the observational baseline before searching anything. State the underlying engineering problem, the proposed approach if one exists, and the constraints that bear on it. Read the current implementation to know what exists now. This baseline is what every later finding is compared against, and it is not itself precedent.
+2. Judge how reversible the decision is, and record the judgment. A storage format, a data migration, a public interface, or an authorization model is expensive to undo and deserves a large budget. An internal module boundary or a library choice behind an interface can be replaced in an afternoon and deserves a quick pass. Reversibility sets both the research budget and the output tier below. Ask the user when it is genuinely unclear and the answer would change the effort.
 
-3. Judge how reversible the decision is, and record the judgment. A storage format, a data migration, a public interface, or an authorization model is expensive to undo and deserves a large budget. An internal module boundary or a library choice behind an interface can be replaced in an afternoon and deserves a quick pass. Reversibility sets both the research budget and the output tier below. Ask the user when it is genuinely unclear and the answer would change the effort.
+3. Read `references/methodology.md` and follow it to normalize the problem, extract retrieval signals from instruction context already loaded, discover which sources can actually be queried, and generate the search branches. Generate the complete branch set before running any branch.
 
-4. Read `references/methodology.md` and follow it to normalize the problem, extract retrieval signals from instruction context already loaded, discover which sources can actually be queried, and generate the search branches. Generate the complete branch set before running any branch.
+4. Before running the branch set, confirm which external capability classes are actually reachable rather than assuming it. Record the ones that are not. Search the branches. Read `references/source-evaluation.md` when a source's authority, currency, or role bears on a claim you intend to make, when two sources disagree, or when a finding rests on descriptive documentation rather than on the artifact it describes.
 
-5. Before running the branch set, confirm which external capability classes are actually reachable rather than assuming it. Record the ones that are not. Search the branches. Read `references/source-evaluation.md` when a source's authority, currency, or role bears on a claim you intend to make, when two sources disagree, or when a finding rests on descriptive documentation rather than on the artifact it describes.
-
-6. Read `references/evidence-model.md` to reconstruct each strong precedent, compare its original constraints against present constraints, reach a verdict, and write the report.
+5. Read `references/evidence-model.md` to reconstruct each strong precedent, compare its original constraints against present constraints, reach a verdict, and write the report.
 
 ## Invariants
 

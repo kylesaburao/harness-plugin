@@ -18,6 +18,12 @@ Creating the agreed skill deliverable is part of this invocation. Do not stop at
 
 Keep the effort scoped to the selected work. Do not record unrelated later activity. Use ordinary available tools without expanding permissions. Keep the working account in session context, not a persistent log.
 
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
 ## Select the entry path
 
 For completed work, begin retrospectively. Read `references/retrospective.md`, reconstruct the relevant episode, then proceed to scope selection. Do not require a new demonstration or rerun the task to make it count.
@@ -27,8 +33,6 @@ For an upcoming task, use prospective entry. Read `references/live-demonstration
 For invocation midway through work, reconstruct earlier accessible evidence and accompany the remaining work. Keep the evidence boundary clear.
 
 A bare invocation normally refers to the most recent relevant work. If several targets are plausible, name them briefly and ask which one to formalize. Do not silently combine unrelated tasks. With no usable task evidence, ask for the intended task or a specific missing record rather than inventing a history.
-
-Resolve every reference from the loaded skill's directory, not the working directory. Keep reconstruction in the context containing the relevant session. Do not delegate it to a fresh context that lacks the evidence.
 
 ## Reconstruct what matters
 

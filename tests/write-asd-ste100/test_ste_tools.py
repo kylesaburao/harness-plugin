@@ -98,15 +98,6 @@ class SkillInstructionTests(unittest.TestCase):
 
         self.assertNotIn("Codex", frontmatter)
 
-    def test_skill_documents_absolute_path_rule(self):
-        instructions = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-
-        self.assertIn(
-            "Every command path in this skill is relative to the skill directory, "
-            "not the current working directory.",
-            instructions,
-        )
-
     def test_skill_documents_shared_user_level_references(self):
         instructions = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 

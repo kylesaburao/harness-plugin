@@ -20,10 +20,12 @@ plugin commands). After install it has no reference data: run `initialize_refere
 Initialization needs the `pypdfium2` package. macOS's system `python3` is not meant to receive
 `pip install`s, so use a virtual environment:
 
+`<SKILL_DIR>` is the exact loaded skill directory established by `SKILL.md`.
+
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install pypdfium2
-.venv/bin/python scripts/initialize_references.py
+.venv/bin/python "<SKILL_DIR>/scripts/initialize_references.py"
 ```
 
 Runtime lookup and checking (`ste_lookup.py`, `ste_check.py`, `validate_references.py`) use only
@@ -62,11 +64,11 @@ source identity, as plain text or, with `--json`, structured JSON. No Python tra
 commands.
 
 ```sh
-python3 scripts/ste_lookup.py WRITE
-python3 scripts/ste_lookup.py clean --part-of-speech v --json
-python3 scripts/ste_check.py document.md --mode descriptive --json
-python3 scripts/ste_check.py a.md b.md --mode procedural --terms STE_TERMS.jsonl --json
-printf 'Use the tool.\n' | python3 scripts/ste_check.py - --mode procedural --json
+python3 "<SKILL_DIR>/scripts/ste_lookup.py" WRITE
+python3 "<SKILL_DIR>/scripts/ste_lookup.py" clean --part-of-speech v --json
+python3 "<SKILL_DIR>/scripts/ste_check.py" document.md --mode descriptive --json
+python3 "<SKILL_DIR>/scripts/ste_check.py" a.md b.md --mode procedural --terms STE_TERMS.jsonl --json
+printf 'Use the tool.\n' | python3 "<SKILL_DIR>/scripts/ste_check.py" - --mode procedural --json
 ```
 
 Every `ste_check.py` invocation is a batch, including one file. Paths are explicit: no directory

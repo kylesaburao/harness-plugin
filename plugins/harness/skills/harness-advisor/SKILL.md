@@ -10,6 +10,14 @@ Advisor supplies reasoning at a sparse decision point. This skill requests
 delegation for consultations that pass the following policy, subject to the
 active host's tools and higher-priority instructions.
 
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
+## Claude safety boundary
+
 Claude safety boundary: if native Advisor was positively detected in this session,
 stop using this Skill entirely, even after native errors. The host's CLAUDE.md gate
 owns detection and native behavior. Nothing below governs native consultations.
@@ -54,11 +62,10 @@ Advisor supervision. Compose with domain skills without taking over their workfl
 
 ## Resolve routing and dispatch
 
-Requires Node.js **22.0.0 or newer**, standard library only. Resolve the actual
-installed skill directory and run directly:
+Requires Node.js **22.0.0 or newer**, standard library only. Run directly:
 
 ```sh
-node "<skill-directory>/scripts/advisor-config.js" resolve --host codex --primary sol --json
+node "<SKILL_DIR>/scripts/advisor-config.js" resolve --host codex --primary sol --json
 ```
 
 Use the current host and semantic primary family, never a guessed exact model ID.
@@ -86,11 +93,11 @@ unless the user specifies it. An omitted effort on a saved route uses `high`.
 When the user asks to save a preference, use the manager, never edit JSON:
 
 ```sh
-node "<skill-directory>/scripts/advisor-config.js" show --json
-node "<skill-directory>/scripts/advisor-config.js" set-default --host codex --advisor sol --reasoning-effort high --json
-node "<skill-directory>/scripts/advisor-config.js" clear-default --host codex --json
-node "<skill-directory>/scripts/advisor-config.js" set-route --host claude --primary sonnet --advisor opus --reasoning-effort high --json
-node "<skill-directory>/scripts/advisor-config.js" remove-route --host claude --primary sonnet --json
+node "<SKILL_DIR>/scripts/advisor-config.js" show --json
+node "<SKILL_DIR>/scripts/advisor-config.js" set-default --host codex --advisor sol --reasoning-effort high --json
+node "<SKILL_DIR>/scripts/advisor-config.js" clear-default --host codex --json
+node "<SKILL_DIR>/scripts/advisor-config.js" set-route --host claude --primary sonnet --advisor opus --reasoning-effort high --json
+node "<SKILL_DIR>/scripts/advisor-config.js" remove-route --host claude --primary sonnet --json
 ```
 
 “Use Sol as my Advisor” saves a host default. “Ask Sol” selects one call only.

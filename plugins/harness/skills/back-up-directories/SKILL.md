@@ -8,6 +8,14 @@ description: "Back up a folder as a dated ZIP copied to external drives or cloud
 Creates `<folder>_Backup_<Month><DD><YYYY>.zip` from a source directory, then copies it to
 every configured target. Configuration is a JSON file, not command-line flags.
 
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
+## Dependency
+
 This skill needs one npm package. Read [INSTALL.md](INSTALL.md) if the preflight reports
 `dependency_missing`.
 
@@ -23,10 +31,7 @@ at every target.
 
 ## Workflow
 
-1. Every path below is relative to the skill directory, not the current working directory.
-   When they differ, prefix the script with the absolute skill directory path.
-
-2. Build the configuration. Copy `references/backup-config.json` to a local file the user
+1. Build the configuration. Copy `references/backup-config.json` to a local file the user
    owns, then edit it:
 
    ```json
@@ -42,14 +47,14 @@ at every target.
    configuration file's own directory. Name the local copy something matching
    `*.local.json`, which the repository ignores, because these paths are machine-specific.
 
-3. Validate the configuration without backing anything up. This is a separate dispatch
+2. Validate the configuration without backing anything up. This is a separate dispatch
    because the real run is interactive and the agent must never invoke or answer its
    `Proceed? [y/N]` prompt (see "This tool is interactive" above), so this preflight is how
    the agent shows the user a safe preview before handing off a command it will not run
    itself:
 
    ```sh
-   node scripts/backup.js --preflight --json path/to/backup-config.local.json
+   node "<SKILL_DIR>/scripts/backup.js" --preflight --json path/to/backup-config.local.json
    ```
 
    This runs exactly the validation a real run does, including the environment check, so it
@@ -60,10 +65,10 @@ at every target.
    before running it, since it writes to the skill directory. Exit status 3 with
    `config_invalid` means the configuration needs a fix, not the environment.
 
-4. Hand the run to the user:
+3. Hand the run to the user:
 
    ```sh
-   node scripts/backup.js path/to/backup-config.local.json
+   node "<SKILL_DIR>/scripts/backup.js" path/to/backup-config.local.json
    ```
 
 ## Reading the result

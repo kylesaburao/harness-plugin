@@ -9,16 +9,15 @@ one npm dependency is not present yet.
 Run this once, with Node.js 22.12.0 or newer:
 
 ```sh
-npm install --omit=dev --prefix <skill-directory>
+npm install --omit=dev --prefix "<SKILL_DIR>"
 ```
 
-Replace `<skill-directory>` with this skill's installed path (for example, the plugin cache
-path your harness reports, or `plugins/harness/skills/back-up-directories` in a local clone
-of this repository). The preflight prints the exact command with the path already filled
-in, so prefer copying it from there:
+Replace `<SKILL_DIR>` with the exact loaded skill directory established by `SKILL.md`.
+The preflight prints the exact command with the path already filled in, so prefer copying
+it from there:
 
 ```sh
-node <skill-directory>/scripts/backup.js --preflight --json
+node "<SKILL_DIR>/scripts/backup.js" --preflight --json
 ```
 
 The package is `archiver`, which writes the ZIP. Everything else the utility uses comes
@@ -31,7 +30,7 @@ upgrade can replace the cache directory and drop the installed packages.
 ## Verify
 
 ```sh
-node <skill-directory>/scripts/backup.js --preflight --json
+node "<SKILL_DIR>/scripts/backup.js" --preflight --json
 ```
 
 `{"status":"ready", ...}` and exit status 0 mean the skill can run. Exit status 2 with

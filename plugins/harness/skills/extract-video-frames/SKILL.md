@@ -16,6 +16,12 @@ first non-attached-picture video stream, constructs the FFmpeg filter graph, ext
 into a temporary sibling, checks the result, and publishes the completed directory.
 Do not recreate or modify its FFmpeg commands.
 
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
 ## Constraints
 
 - Output is always `<input-stem>-frames` beside the path the caller supplied. There is
@@ -49,12 +55,10 @@ containing no frame fails during preflight with `window_empty` and creates nothi
 
 ## Workflow
 
-Resolve the script relative to this skill directory, not the caller's working directory.
-
 1. Run an input-aware preflight because a full extraction can create many large files:
 
    ```sh
-   node scripts/extract-video-frames.js --preflight --json [--start TIME] [--end TIME] INPUT_VIDEO
+   node "<SKILL_DIR>/scripts/extract-video-frames.js" --preflight --json [--start TIME] [--end TIME] INPUT_VIDEO
    ```
 
    This checks metadata, timestamps, the requested window, and the complete display
@@ -66,7 +70,7 @@ Resolve the script relative to this skill directory, not the caller's working di
 2. If preflight succeeds, dispatch the same request without `--preflight`:
 
    ```sh
-   node scripts/extract-video-frames.js --json [--start TIME] [--end TIME] INPUT_VIDEO
+   node "<SKILL_DIR>/scripts/extract-video-frames.js" --json [--start TIME] [--end TIME] INPUT_VIDEO
    ```
 
    The normal command repeats the same preflight before it writes anything. In plain

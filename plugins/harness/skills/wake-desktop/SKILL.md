@@ -25,13 +25,13 @@ to the target broadcast domain. Preflight cannot prove packet delivery.
 ICMP filtering can hide an awake host, and a ping response proves reachability,
 not that its desktop or application services are ready.
 
-## Dispatch
+## Bundled path authority
 
-Resolve both `scripts/wake-desktop.js` and `scripts/manage-targets.js` from the **loaded skill's absolute installed
-path**, not the working directory or a hard-coded plugin version. For example,
-a Codex cache path can be
-`/Users/<user>/.codex/plugins/cache/<marketplace>/harness/<version>/skills/wake-desktop/scripts/wake-desktop.js`.
-Use the actual path supplied for the loaded skill, including in Claude Code.
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
+## Dispatch
 
 Collect only missing names or addresses. Interpret “my desktop” as the saved name
 `desktop` when unambiguous. Use the manager's `list --json` to discover saved names
@@ -53,13 +53,13 @@ Dispatch the real command directly, which validates configuration and checks the
 environment before sending:
 
 ```sh
-node "<absolute-installed-skill-path>/scripts/wake-desktop.js" --mac "<target-mac>" --ip "<target-ip-or-hostname>" --timeout 120 --json
+node "<SKILL_DIR>/scripts/wake-desktop.js" --mac "<target-mac>" --ip "<target-ip-or-hostname>" --timeout 120 --json
 ```
 
 For a named wake:
 
 ```sh
-node "<absolute-installed-skill-path>/scripts/wake-desktop.js" --target desktop --json
+node "<SKILL_DIR>/scripts/wake-desktop.js" --target desktop --json
 ```
 
 Add `--no-wait` when only sending is requested. Use `--preflight` for an explicit
@@ -80,11 +80,11 @@ Only addresses are saved, not timeouts, credentials, or wake preferences.
 Dispatch the requested command directly using the loaded skill's absolute path:
 
 ```sh
-node "<absolute-installed-skill-path>/scripts/manage-targets.js" register --name desktop --ip 192.168.1.91 --mac 34:5a:60:37:3e:21 --json
-node "<absolute-installed-skill-path>/scripts/manage-targets.js" update --name desktop --ip 192.168.1.92 --json
-node "<absolute-installed-skill-path>/scripts/manage-targets.js" rename --name desktop --new-name "office desktop" --json
-node "<absolute-installed-skill-path>/scripts/manage-targets.js" remove --name "office desktop" --json
-node "<absolute-installed-skill-path>/scripts/manage-targets.js" list --json
+node "<SKILL_DIR>/scripts/manage-targets.js" register --name desktop --ip 192.168.1.91 --mac 34:5a:60:37:3e:21 --json
+node "<SKILL_DIR>/scripts/manage-targets.js" update --name desktop --ip 192.168.1.92 --json
+node "<SKILL_DIR>/scripts/manage-targets.js" rename --name desktop --new-name "office desktop" --json
+node "<SKILL_DIR>/scripts/manage-targets.js" remove --name "office desktop" --json
+node "<SKILL_DIR>/scripts/manage-targets.js" list --json
 ```
 
 Registration requires name and both addresses. Use `--replace` only when replacement

@@ -11,6 +11,14 @@ Create a looping 128x128 GIF with fewer than 256000 bytes. Clips of
 this skill is or why it exists, state both the Discord size target and this duration
 guidance.
 
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
+## Runtime requirements
+
 The Node.js entrypoints are the only supported executable paths. They search their
 respective backends, score candidates with VMAF, retain the winner, verify it, and
 publish it atomically. Use gifski by default. Use FFmpeg and gifsicle as the defined
@@ -22,12 +30,10 @@ unsuitable tools and gives platform-specific remedies.
 
 ## Select an entrypoint
 
-Resolve paths relative to this skill directory, not the caller's current directory.
-
 | Request | Entrypoint |
 | --- | --- |
-| Default | `node scripts/node/mov-to-gif-gifski.js` |
-| Explicit gifsicle | `node scripts/node/mov-to-gif.js` |
+| Default | `node "<SKILL_DIR>/scripts/node/mov-to-gif-gifski.js"` |
+| Explicit gifsicle | `node "<SKILL_DIR>/scripts/node/mov-to-gif.js"` |
 
 Use this procedure:
 
@@ -67,8 +73,8 @@ Node.js 22.0.0 is the supported runtime floor.
 3. Convert with the selected entrypoint:
 
    ```sh
-   node scripts/node/mov-to-gif-gifski.js INPUT_VIDEO [OUTPUT.gif]
-   node scripts/node/mov-to-gif.js INPUT_VIDEO [OUTPUT.gif]
+   node "<SKILL_DIR>/scripts/node/mov-to-gif-gifski.js" INPUT_VIDEO [OUTPUT.gif]
+   node "<SKILL_DIR>/scripts/node/mov-to-gif.js" INPUT_VIDEO [OUTPUT.gif]
    ```
 
    The converter validates the environment and the video before doing any conversion
@@ -89,7 +95,7 @@ Node.js 22.0.0 is the supported runtime floor.
    also validates the video.
 
    ```sh
-   node scripts/node/mov-to-gif-gifski.js --preflight --json INPUT_VIDEO
+   node "<SKILL_DIR>/scripts/node/mov-to-gif-gifski.js" --preflight --json INPUT_VIDEO
    ```
 
 ## Tuning
