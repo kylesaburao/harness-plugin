@@ -137,3 +137,28 @@ Executed verification:
 - Final `npm run build:check` and `git diff --check`: passed.
 
 Local evidence: `tmp/ts-stage5-focused.log`, `tmp/ts-stage5-node22.log`, `tmp/ts-stage5-host-gate.log`, `tmp/ts-stage5-container-gate.log`, and `tmp/ts-stage5-container-gate-rerun.log`, with corresponding setup logs. Stages 6 and 7 remain.
+
+## Stage 6: frame extraction
+
+Starting revision: `136d7101c34e9178866174f56dcbac1984ec14f7`. Converted both frame modules and regenerated the installed graph. The transitional JavaScript list is empty, with mechanism removal reserved for Stage 7.
+
+- `frame-records.ts` owns FrameRecord, FrameParserPhase, and streaming reader options. UTF-8 chunk decoding, one-object retention, JSON-envelope validation, and descriptor cleanup remain intact.
+- `media-model.ts` owns raw StreamMetadata, validated ColorPlan, FrameWindow, SourceIdentity, bigint tick/nanosecond arithmetic, two-pass spool reduction, pixel descriptor checks, and display transforms.
+- The skill-local `process-manager.ts` distinguishes captured stdout from an omitted spool stdout field and retains child ownership, bounded stderr, exclusive spool creation, and signal/close ordering. It remains separate from the GIF manager.
+- `errors.ts` retains the existing diagnostic class and storage/error helpers without a repository-wide error hierarchy. The entrypoint owns PreparedExtraction, ExtractionResult, preparation, publication, and adjacent Swift lookup. Synthetic preparation preserves its original own `media: undefined` property.
+- The collision fixture now tests an emitted file against a nested asset directory and explicitly rejects production JavaScript source. Both retain the assertion that failed assembly leaves distribution unchanged.
+
+Executed verification:
+
+- `npm run typecheck`, `npm run build`, `npm run build:check`, `git diff --check`, and `node scripts/validate-dist.js --tracked`: passed, with **87 generated files**.
+- `node --test tests/extract-video-frames/*.test.js tests/distribution/*.test.js` with host access: **139 passed, zero failed/skipped**, including native HEIC execution.
+- The first Node20.6.0 command included all shared-node tests and passed145/failed1. Its copied-plugin layout test also invokes GIF entrypoints, which correctly require Node22. No frame test failed. That overly broad qualification command is retained in `tmp/ts-stage6-node206.log`.
+- `tmp/node-runtimes/node-v20.6.0-darwin-arm64/bin/node --test tests/extract-video-frames/*.test.js tests/shared-node/media-result.test.js tests/shared-node/resolve-command.test.js` with host access: **145 passed, zero failed/skipped**, including native HEIC.
+- After restoring synthetic preparation property presence, `tmp/node-runtimes/node-v20.6.0-darwin-arm64/bin/node tmp/verify-frame-preparation.cjs` passed actual synthetic HLG TIFF/HEIC preparation, own-property assertions, and child cleanup.
+- Final production-code native setup and `node scripts/run-tests.js` with host access: **658 passed, zero failed/skipped** on the available macOS27 host. This qualifies native behavior on macOS27, not a separate macOS26 installation.
+- First container gate passed598/failed0/skipped60. A later gate passed595/failed3/skipped60 because Git rejected the bind-mounted checkout as dubious ownership. The earlier Stage5 failure log contains the same diagnostic, resolving its immediate failure cause. A direct container check showed uid501:gid20, checkout ownership0:0, and .git/index ownership501:20, and reproduced Git exit128. The cause of differing ownership-check outcomes between invocations was not established.
+- Fixed the inventory test's read-only Git invocation with `-c safe.directory=<exact REPO_ROOT>`. This changes no global Git configuration. Its three tests passed natively and in Docker with an intentionally unrelated safe.directory environment value.
+- Fresh container setup followed by `./scripts/dev exec node scripts/run-tests.js` after that test fix: **598 passed, zero failed, 60 platform skips**. Native platform skips are not represented as Linux HEIC qualification. The final native production gate preceded only this test invocation change, whose native focused suite passed afterward.
+- Compared `tiff-to-heic.swift` from both source and distribution byte-for-byte against `git show 233fd2792ef598464152a52b7e96e110eacde70f:plugins/harness/skills/extract-video-frames/scripts/tiff-to-heic.swift`: unchanged.
+
+Evidence: `tmp/ts-stage6-focused.log`, `tmp/ts-stage6-node206-frames.log`, `tmp/ts-stage6-preparation.log`, `tmp/ts-stage6-host-gate-final.log`, `tmp/ts-stage6-container-gate-final.log`, `tmp/ts-stage6-container-inventory.log`, and `tmp/ts-stage6-container-gate-repaired.log`, plus setup and earlier partial-check logs. Stage7 remains, including fresh checkout, full isolated-artifact and supported-host qualification, release/version regeneration, and final acceptance audit.

@@ -1,14 +1,36 @@
 'use strict';
-const fs = require('node:fs');
+import fs = require('node:fs');
+
+// ffprobe fields are untrusted until the media model validates them.
+export interface FrameRecord {
+  best_effort_timestamp?: unknown;
+  duration?: unknown;
+  pkt_duration?: unknown;
+  color_primaries?: unknown;
+  color_transfer?: unknown;
+  color_space?: unknown;
+  color_range?: unknown;
+  [field: string]: unknown;
+}
+
+export type FrameParserPhase = 'prefix' | 'object' | 'separator' | 'first' | 'next' | 'root-end' | 'done';
+
+export interface FrameReaderOptions {
+  highWaterMark?: number;
+  assertRunning?: () => void;
+}
 
 // The selected ffprobe JSON envelope, with at most one frame retained at a time.
-async function* frameRecords(filename, { highWaterMark = 64 * 1024, assertRunning = () => {} } = {}) {
+async function* frameRecords(filename: string, { highWaterMark = 64 * 1024, assertRunning = () => {} }: FrameReaderOptions = {}): AsyncGenerator<FrameRecord> {
   const input = fs.createReadStream(filename, { highWaterMark, encoding: 'utf8' });
   const prefix = '{"frames":[';
-  let phase = 'prefix', prefixIndex = 0, depth = 0, quoted = false, escaped = false;
-  let parts = [];
+  let phase: FrameParserPhase = 'prefix';
+  let prefixIndex = 0, depth = 0, quoted = false, escaped = false;
+  let parts: string[] = [];
   try {
-    for await (const chunk of input) {
+    for await (const rawChunk of input) {
+      // The stream's UTF-8 decoder supplies strings, including split code points.
+      const chunk = rawChunk as string;
       assertRunning();
       let start = phase === 'object' ? 0 : -1;
       for (let index = 0; index < chunk.length; index++) {
@@ -22,7 +44,8 @@ async function* frameRecords(filename, { highWaterMark = 64 * 1024, assertRunnin
           else if (c === '{') depth++;
           else if (c === '}' && --depth === 0) {
             parts.push(chunk.slice(start, index + 1));
-            const record = JSON.parse(parts.join(''));
+            // The envelope parser admits only a complete object at this boundary.
+            const record = JSON.parse(parts.join('')) as FrameRecord;
             parts = [];
             phase = 'separator';
             start = -1;
@@ -57,7 +80,7 @@ async function* frameRecords(filename, { highWaterMark = 64 * 1024, assertRunnin
     if (phase !== 'done') throw new SyntaxError('truncated ffprobe frame JSON');
   } finally {
     input.destroy();
-    if (!input.closed) await new Promise(resolve => input.once('close', resolve));
+    if (!input.closed) await new Promise<void>(resolve => input.once('close', resolve));
   }
 }
-module.exports = { frameRecords };
+export { frameRecords };

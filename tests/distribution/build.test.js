@@ -86,9 +86,12 @@ test('type errors, output collisions and escaping links cannot publish', t => {
   const bad = path.join(root, 'src/harness/shared/node/bad.ts');
   fs.writeFileSync(bad, 'export const value: number = "bad";');
   assert.throws(() => build(root), /Compilation failed/); assert.deepEqual(snapshot(root), before); fs.unlinkSync(bad);
-  const collision = path.join(root, 'src/harness/skills/extract-video-frames/scripts/extract-video-frames.ts');
-  fs.writeFileSync(collision, 'export const value = 1;');
-  assert.throws(() => build(root), /Output collision/); assert.deepEqual(snapshot(root), before); fs.unlinkSync(collision);
+  const collision = path.join(root, 'src/harness/shared/node/resolve-command.js');
+  fs.mkdirSync(collision);
+  fs.writeFileSync(path.join(collision, 'nested.md'), 'a directory cannot replace emitted JavaScript');
+  assert.throws(() => build(root), /EEXIST|EISDIR|ENOTDIR/); assert.deepEqual(snapshot(root), before); fs.rmSync(collision, { recursive: true });
+  fs.writeFileSync(collision, 'module.exports = {};');
+  assert.throws(() => build(root), /Unclassified/); assert.deepEqual(snapshot(root), before); fs.unlinkSync(collision);
   fs.symlinkSync('/etc/passwd', bad);
   assert.throws(() => build(root), /Symlink/); assert.deepEqual(snapshot(root), before); fs.unlinkSync(bad);
   write(root, 'src/harness/unsupported.bin', 'bad');

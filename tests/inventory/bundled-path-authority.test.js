@@ -18,7 +18,8 @@ function normalizeWhitespace(value) {
 }
 
 function trackedResourceBearingSkills() {
-  const tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', 'src/harness/skills'], {
+  // Docker bind mounts can report host ownership. Trust only this checkout for this read.
+  const tracked = execFileSync('git', ['-c', `safe.directory=${REPO_ROOT}`, 'ls-files', '--cached', '--others', '--exclude-standard', '--', 'src/harness/skills'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
   }).trim().split('\n').filter(Boolean);
