@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM node:26-trixie AS media-builder
+# Base images are pinned to their multi-platform index digests; the comment keeps the readable tag.
+# node:26-trixie
+FROM node:26-trixie@sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6 AS media-builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -9,6 +11,7 @@ RUN apt-get update \
 WORKDIR /build
 # xxd is required for VMAF's built-in models, even though Meson treats it as optional.
 RUN curl -fL https://github.com/Netflix/vmaf/archive/refs/tags/v3.2.0.tar.gz -o vmaf.tar.gz \
+    && echo "a28f93f3b4fa65601be324587072e32a6a704a304ba7b1aec9b70b3f709bc1dc  vmaf.tar.gz" | sha256sum -c - \
     && tar -xzf vmaf.tar.gz \
     && meson setup vmaf-3.2.0/libvmaf/build vmaf-3.2.0/libvmaf \
         --prefix=/opt/media --libdir=lib --buildtype=release \
@@ -16,6 +19,7 @@ RUN curl -fL https://github.com/Netflix/vmaf/archive/refs/tags/v3.2.0.tar.gz -o 
     && ninja -C vmaf-3.2.0/libvmaf/build install
 
 RUN curl -fL https://ffmpeg.org/releases/ffmpeg-8.0.3.tar.xz -o ffmpeg.tar.xz \
+    && echo "6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818  ffmpeg.tar.xz" | sha256sum -c - \
     && tar -xf ffmpeg.tar.xz \
     && cd ffmpeg-8.0.3 \
     && PKG_CONFIG_PATH=/opt/media/lib/pkgconfig ./configure \
@@ -24,10 +28,12 @@ RUN curl -fL https://ffmpeg.org/releases/ffmpeg-8.0.3.tar.xz -o ffmpeg.tar.xz \
     && make -j"$(nproc)" \
     && make install
 
-FROM rust:1-trixie AS gifski-builder
+# rust:1-trixie
+FROM rust:1-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS gifski-builder
 RUN cargo install gifski --version 1.34.0 --locked --root /opt/gifski
 
-FROM node:26-trixie
+# node:26-trixie
+FROM node:26-trixie@sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates git python3 python3-venv ripgrep gifsicle libx264-164 \

@@ -70,14 +70,14 @@ The host needs local Docker with a working daemon, Git, a POSIX shell and standa
 
 Follow the [container guide](container.md) to build, set up, and run the gate.
 
-The [Dockerfile](../../Dockerfile) supplies the following development toolchain. These image selections are not minimum versions required of plugin users.
+The [Dockerfile](../../Dockerfile) supplies the following development toolchain. These image selections are not minimum versions required of plugin users. Base images are pinned by digest and source downloads by SHA-256. Changing a tag or source version requires updating its digest in the Dockerfile and here.
 
 | Layer | Installed items |
 | --- | --- |
-| Runtime image | `node:26-trixie` with Node and npm, Debian Python 3 and venv support, Git, ripgrep, CA certificates, gifsicle, and the inherited shell/system utilities, including `unzip`. |
-| Media runtime | FFmpeg **8.0.3**, VMAF **3.2.0**, and gifski **1.34.0**. FFmpeg is built with `--enable-libvmaf --enable-gpl --enable-libx264`. The image includes libvmaf and Debian `libx264-164` runtime libraries. |
+| Runtime image | `node:26-trixie`, pinned to index digest `sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6`, with Node and npm, Debian Python 3 and venv support, Git, ripgrep, CA certificates, gifsicle, and the inherited shell/system utilities, including `unzip`. |
+| Media runtime | FFmpeg **8.0.3**, VMAF **3.2.0**, and gifski **1.34.0**. FFmpeg is built with `--enable-libvmaf --enable-gpl --enable-libx264`. The build verifies the source tarballs by SHA-256: FFmpeg `ffmpeg-8.0.3.tar.xz` `6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818` and VMAF `v3.2.0.tar.gz` `a28f93f3b4fa65601be324587072e32a6a704a304ba7b1aec9b70b3f709bc1dc`. The image includes libvmaf and Debian `libx264-164` runtime libraries. |
 | C/C++ builder only | `build-essential`, curl, CA certificates, Meson, Ninja, NASM, pkg-config, `libx264-dev`, and `xxd`. `xxd` embeds the VMAF models. Source unpacking uses tar and xz from the base image. |
-| Rust builder only | Rust and Cargo from `rust:1-trixie`, used to build gifski with its locked dependency graph. |
+| Rust builder only | Rust and Cargo from `rust:1-trixie`, pinned to index digest `sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181`, used to build gifski with its locked dependency graph. |
 | Setup volumes | The root toolchain, candidate-local backup npm dependencies mounted at `.build/harness/skills/back-up-directories/node_modules`, disposable Python virtual environment with `pypdfium2`, and ASD reference bundle. |
 
 See [container persistence and reset](container.md#persistence-and-reset) for dependency volumes and lifecycle.

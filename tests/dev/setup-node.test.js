@@ -177,6 +177,6 @@ test('repository runtime declarations agree and bootstrap retains executable mod
   assert.equal(lock.packages[''].engines.node, pkg.engines.node);
   assert.equal(pkg.private, true);
   const docker = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8');
-  assert.deepEqual([...docker.matchAll(/^FROM node:([^\s]+)/gm)].map(match => match[1]), ['26-trixie', '26-trixie']);
+  assert.deepEqual([...docker.matchAll(/^FROM node:([^\s@]+)/gm)].map(match => match[1]), ['26-trixie', '26-trixie']);
   assert.equal(fs.statSync(helper).mode & 0o777, 0o755);
 });
