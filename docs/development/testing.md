@@ -52,7 +52,7 @@ On Linux/WSL2, after `./scripts/dev setup`:
 ./scripts/dev exec npm test
 ```
 
-The gate checks selected-artifact freshness and static validity before behavioral tests. It validates existing dependencies and does not install them. After all test processes finish, it removes the repository `.venv`; run setup before each complete gate. Backup `node_modules` and user-level reference bundles remain. A parent shell may still display `(.venv)` until deactivated or closed.
+The gate checks selected-artifact freshness and static validity before behavioral tests. One `build.js --check` stage does both: it compiles a candidate, compares it with the selected artifact, and validates that artifact. `npm run validate:build` remains available on its own for validation without a compile. It validates existing dependencies and does not install them. After all test processes finish, it removes the repository `.venv`; run setup before each complete gate. Backup `node_modules` and user-level reference bundles remain. A parent shell may still display `(.venv)` until deactivated or closed.
 
 Use `--skip-gif` for a hosted-style partial gate that omits GIF tests and both converter preflights. Report that exclusion. Linux platform skips do not establish native macOS frame-extraction coverage, and the hosted subset is not the complete local gate.
 

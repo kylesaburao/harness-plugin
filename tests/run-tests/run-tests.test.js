@@ -191,7 +191,6 @@ test('setup is separate from the validation and test command plan', () => {
   assert.deepEqual(labels, [
     'validate test prerequisites',
     'verify selected artifact',
-    'validate selected artifact',
     'validate ASD-STE100 references',
     'preflight GIF converter (gifski)',
     'preflight GIF converter (gifsicle)',
@@ -200,6 +199,12 @@ test('setup is separate from the validation and test command plan', () => {
     'Node tests: wake',
     'ASD-STE100 Python tests',
   ]);
+
+  // build.js --check already runs validateArtifact on the selected tree, so the gate
+  // compiles and validates once instead of repeating validate-dist.js.
+  const plan = buildCommandPlan(root, false);
+  assert.equal(plan.some(stage => stage.args.includes('scripts/validate-dist.js')), false);
+  assert.equal(plan.filter(stage => stage.args.includes('scripts/build.js')).length, 1);
 
   const hostedLabels = buildCommandPlan(root, true).map(({ label }) => label);
   assert.equal(hostedLabels.includes('preflight GIF converter (gifski)'), false);

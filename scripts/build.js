@@ -128,9 +128,11 @@ function assemble(root, stage) {
     const data = JSON.parse(fs.readFileSync(path.join(source, template), 'utf8'));
     if (Object.hasOwn(data, 'version')) throw new Error(`Source manifest must not own a version: ${template}`);
   }
-  if (!fs.existsSync(path.join(root, 'node_modules/.bin/tsc'))) throw new Error('Local TypeScript compiler missing. Run npm ci --include=dev');
+  const tsc = path.join(root, 'node_modules/.bin/tsc');
+  if (!fs.existsSync(tsc)) throw new Error('Local TypeScript compiler missing. Run npm ci --include=dev');
   const compiled = path.join(stage, 'compiled');
-  const result = spawnSync('npm', ['run', '--silent', 'compile', '--', '--outDir', compiled], { cwd: root, encoding: 'utf8' });
+  // Same invocation as the package "compile" script, spawned directly to skip npm startup.
+  const result = spawnSync(tsc, ['-p', 'tsconfig.json', '--outDir', compiled], { cwd: root, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error(`Compilation failed: ${result.error?.message || result.stdout + result.stderr}`);
   const emitted = inventory(path.join(compiled, 'harness'), { missing: true });
   const candidate = path.join(stage, 'candidate');

@@ -105,7 +105,6 @@ function buildCommandPlan(repoRoot, skipGif, target = 'development')
   const plan = [
     command('validate test prerequisites', 'node', ['scripts/setup-tests.js', '--target', target, '--check'], repoRoot),
     command('verify selected artifact', 'node', ['scripts/build.js', '--target', target, '--check'], repoRoot),
-    command('validate selected artifact', 'node', ['scripts/validate-dist.js', '--target', target], repoRoot),
     command('validate ASD-STE100 references', python, [
       path.join(steScripts, 'validate_references.py'), '--json',
     ], repoRoot),
