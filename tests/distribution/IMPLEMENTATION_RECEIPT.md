@@ -118,3 +118,22 @@ Executed verification:
 - `git diff --check`: passed.
 
 Local evidence: `tmp/ts-stage4-focused.log`, `tmp/ts-stage4-node2212.log`, `tmp/ts-stage4-host-setup.log`, `tmp/ts-stage4-container-setup.log`, `tmp/ts-stage4-host-gate.log`, and `tmp/ts-stage4-container-gate.log`. Stages 5 through 7 remain.
+
+## Stage 5: GIF implementation
+
+Starting checkpoint: `15dba8b`. Converted all six GIF modules. Extracted toolchain discovery/readiness into `preflight.ts`, final verification/publication into `verification.ts`, and the existing skill-local diagnostics into `errors.ts` to keep runtime imports acyclic. The existing shared API remains a writable CommonJS facade. The runner retains lifecycle ownership. Worker results are generic and ordered by submission, while per-converter scoring state is established only after reference preparation. Both converters preserve candidate ordering, cancellation, retained-file publication, and final reports. Only the two frame modules remain transitional.
+
+A second automatic fresh Astra high Advisor consultation reviewed this new boundary decision after primary inspection of all six sources. Its accepted guidance concerned acyclic ownership, explicit ready commands, and honest prepared-state types. This was a design consultation, not an independent implementation verdict. One automatic call remains.
+
+Executed verification:
+
+- `npm run typecheck`, `npm run build`, and `npm run build:check`: passed.
+- The first focused run passed 114 tests and failed to load one test file because a placeholder-command fixture edit had incorrect nested quoting. Corrected that fixture.
+- `node --test tests/create-discord-emoji-gif/*.test.js tests/distribution/*.test.js`: **130 passed, zero failed, zero skipped** after correction. A small regression checks that ready commands include both media tools and the selected encoder. Existing cancellation/cleanup fixtures now supply complete successful command sets.
+- `tmp/node-runtimes/node-v22.0.0-darwin-arm64/bin/node --test tests/create-discord-emoji-gif/*.test.js`: **123 passed, zero failed, zero skipped**, exercising both actual backends and lifecycle contracts at the declared runtime floor.
+- Native setup followed by `node scripts/run-tests.js` with host access: **658 passed, zero failed, zero skipped**.
+- First container full gate: 595 passed, three bundled-path inventory failures, 60 platform skips. All 123 GIF tests passed. An immediate focused container inventory rerun passed all three without source changes. The cause of that first inventory failure was not established.
+- Fresh container setup followed by `./scripts/dev exec node scripts/run-tests.js`: **598 passed, zero failed, 60 platform skips**. No source change was made between the failed and passing full container gates.
+- Final `npm run build:check` and `git diff --check`: passed.
+
+Local evidence: `tmp/ts-stage5-focused.log`, `tmp/ts-stage5-node22.log`, `tmp/ts-stage5-host-gate.log`, `tmp/ts-stage5-container-gate.log`, and `tmp/ts-stage5-container-gate-rerun.log`, with corresponding setup logs. Stages 6 and 7 remain.

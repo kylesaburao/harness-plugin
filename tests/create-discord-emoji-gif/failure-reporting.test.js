@@ -17,7 +17,7 @@ for (const failed of [false, true]) {
       const { runConverter } = require(${JSON.stringify(base + '/converter-runner')});
       shared.validateInput = () => {};
       shared.inspectInput = async () => [];
-      shared.checkGifskiPreflight = async () => ({ commands: {} });
+      shared.checkGifskiPreflight = async () => ({ commands: { ffmpeg: 'unused', ffprobe: 'unused', gifski: 'unused', gifsicle: 'unused' } });
       shared.preflightError = () => null;
       shared.validateOutput = () => ({ output: ${JSON.stringify(root + '/output.gif')} });
       const remove = fs.rmSync;
@@ -79,7 +79,7 @@ test('repeated successful and failed preflights restore signal listeners', async
     for (const fail of [false, true, false]) {
       shared.checkGifskiPreflight = async () => {
         if (fail) throw new shared.StartupError('probe_failed', 'fixture failure', 'retry');
-        return { commands: {}, failures: [], policy: { os: process.platform } };
+        return { commands: { ffmpeg: 'unused', ffprobe: 'unused', gifski: 'unused', gifsicle: 'unused' }, failures: [], policy: { os: process.platform } };
       };
       const code = await runConverter({ argv: ['--preflight', '--json'], env: {}, backend: 'gifski', defaultScriptName: 'test', workPrefix: 'unused', convert: async () => assert.fail() });
       assert.equal(code, fail ? 2 : 0);
@@ -98,7 +98,7 @@ test('interruption with duplicate score waiters prevents publication and cleans 
     const shared=require(${JSON.stringify(base + '/shared')});
     const {runConverter}=require(${JSON.stringify(base + '/converter-runner')});
     shared.validateInput=()=>{};shared.inspectInput=async()=>[];
-    shared.checkGifskiPreflight=async()=>({commands:{ffmpeg:'unused'}});
+    shared.checkGifskiPreflight=async()=>({commands:{ffmpeg:'unused',ffprobe:'unused',gifski:'unused'}});
     shared.preflightError=()=>null;
     shared.validateOutput=()=>({output:${JSON.stringify(output)}});
     runConverter({argv:['--json','input'],env:{TMPDIR:${JSON.stringify(root)}},backend:'gifski',defaultScriptName:'test',workPrefix:'work-',convert:async state=>{

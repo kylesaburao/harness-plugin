@@ -1,10 +1,4 @@
 [
-  "skills/create-discord-emoji-gif/scripts/node/converter-runner.js",
-  "skills/create-discord-emoji-gif/scripts/node/gif-loop.js",
-  "skills/create-discord-emoji-gif/scripts/node/mov-to-gif-gifski.js",
-  "skills/create-discord-emoji-gif/scripts/node/mov-to-gif.js",
-  "skills/create-discord-emoji-gif/scripts/node/process-manager.js",
-  "skills/create-discord-emoji-gif/scripts/node/shared.js",
   "skills/extract-video-frames/scripts/extract-video-frames.js",
   "skills/extract-video-frames/scripts/frame-records.js"
 ]

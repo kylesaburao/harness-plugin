@@ -249,9 +249,9 @@ for (const [entry, preflight, signal, phase] of [
     const shared = require(${JSON.stringify(base + '/shared')});
     const slow = async manager => {
       await manager.runOwned('slow-probe', process.execPath, ['-e', ${JSON.stringify(`const fs=require('node:fs'); const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid)); setInterval(()=>{},1000)`)}],{stdio:'ignore'}); fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid)); process.on('${signal}',()=>setTimeout(()=>process.exit(0),50)); setInterval(()=>{},1000);`)}]);
-      return { commands: {} };
+      return { commands: { ffmpeg: 'unused', ffprobe: 'unused', gifski: 'unused', gifsicle: 'unused' } };
     };
-    shared.checkGifskiPreflight = shared.checkGifsiclePreflight = ${phase === 'capability' ? 'slow' : 'async () => ({ commands: {} })'};
+    shared.checkGifskiPreflight = shared.checkGifsiclePreflight = ${phase === 'capability' ? 'slow' : 'async () => ({ commands: { ffmpeg: "unused", ffprobe: "unused", gifski: "unused", gifsicle: "unused" } })'};
     shared.preflightError = () => null;
     ${phase === 'input' ? 'shared.inspectInput = slow;' : ''}
   `);

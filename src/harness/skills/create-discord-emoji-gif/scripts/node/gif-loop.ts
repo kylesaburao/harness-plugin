@@ -1,24 +1,26 @@
 'use strict';
 
+export interface GifLoop { mode: 'infinite'; repeatCount: number; extension: string }
+
 // Walk framing only. FFprobe remains responsible for image decodability.
-function inspectGifLoop(buffer) {
+function inspectGifLoop(buffer: Buffer): GifLoop {
   let offset = 0;
-  const fail = condition => { throw new Error(`invalid GIF looping: ${condition}`); };
-  const take = length => {
+  const fail: (condition: string) => never = condition => { throw new Error(`invalid GIF looping: ${condition}`); };
+  const take = (length: number) => {
     if (offset + length > buffer.length) fail('truncated block');
     const start = offset;
     offset += length;
     return buffer.subarray(start, offset);
   };
-  const byte = () => take(1)[0];
+  const byte = () => take(1)[0]!;
   const subBlocks = () => {
     for (let size = byte(); size !== 0; size = byte()) take(size);
   };
-  const colorTable = packed => { if (packed & 0x80) take(3 * (2 ** ((packed & 7) + 1))); };
+  const colorTable = (packed: number) => { if (packed & 0x80) take(3 * (2 ** ((packed & 7) + 1))); };
   const header = take(6).toString('latin1');
   if (header !== 'GIF87a' && header !== 'GIF89a') fail('unsupported header');
-  colorTable(take(7)[4]);
-  let loop;
+  colorTable(take(7)[4]!);
+  let loop: { repeatCount: number; extension: string } | undefined;
   while (offset < buffer.length) {
     const sentinel = byte();
     if (sentinel === 0x3b) {
@@ -28,7 +30,7 @@ function inspectGifLoop(buffer) {
       return { mode: 'infinite', ...loop };
     }
     if (sentinel === 0x2c) {
-      colorTable(take(9)[8]);
+      colorTable(take(9)[8]!);
       byte(); // LZW minimum code size, decoded by FFprobe.
       subBlocks();
     } else if (sentinel === 0x21) {
@@ -52,4 +54,4 @@ function inspectGifLoop(buffer) {
   fail('missing trailer');
 }
 
-module.exports = { inspectGifLoop };
+export { inspectGifLoop };

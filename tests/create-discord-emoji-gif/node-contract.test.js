@@ -292,3 +292,13 @@ test('combined final verification preserves values and rejects incomplete report
     assert.equal(fs.readFileSync(output, 'utf8'), 'existing');
   }
 });
+
+
+test('ready commands require both media tools and the selected encoder', () => {
+  const state = { policy: shared.platformPolicy('darwin', 'gifski'), commands: { ffmpeg: 'ffmpeg' }, failures: [] };
+  assert.throws(() => shared.requireReadyCommands(state, 'gifski'), { code: 'command_missing', exitCode: 2 });
+  state.commands.ffprobe = 'ffprobe';
+  assert.throws(() => shared.requireReadyCommands(state, 'gifski'), { code: 'command_missing' });
+  state.commands.gifski = 'gifski';
+  assert.deepEqual(shared.requireReadyCommands(state, 'gifski'), state.commands);
+});
