@@ -128,10 +128,10 @@ for (const kind of ['sdr', 'hdr', 'synthetic']) {
     }
     const realManager = new subject.ProcessManager();
     const calls = [];
-    const manager = { run: async (command, args) => {
+    const manager = { assertRunning: () => realManager.assertRunning(), run: async (command, args, options) => {
       calls.push({ command, args });
       if (path.basename(command) === 'swiftc') return { code: 1, stdout: '', stderr: 'intentional compilation sentinel' };
-      return realManager.run(command, args);
+      return realManager.run(command, args, options);
     } };
     const preparing = subject.prepare(manager, { input, start: null, end: null }, root);
     if (kind === 'sdr') {

@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { analyzeFixture } = require('./frame-spool-fixture');
 
 const subject = require('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
 const descriptors = subject.descriptorMap(require('./pixel-formats.json'));
@@ -105,16 +106,16 @@ test('first real video stream is selected instead of attached artwork', () => {
   assert.equal(selected.index, 2);
 });
 
-test('presented-frame selection includes exact start and end timestamps', () => {
+test('presented-frame selection includes exact start and end timestamps', async () => {
   const color = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv' };
   const frameData = { frames: ['8', '9', '10', '11'].map(best_effort_timestamp => ({ best_effort_timestamp, pkt_duration: '1' })) };
-  const timing = subject.analyzePresentedFrames(frameData, color, { start: 500000000n, end: 1000000000n, timeBase: '1/2' });
+  const timing = await analyzeFixture(frameData, color, { start: 500000000n, end: 1000000000n, timeBase: '1/2' });
   assert.equal(timing.expectedFrames, 2);
   assert.equal(timing.firstPts, 500000000n);
   assert.equal(timing.lastPts, 1000000000n);
 });
 
-test('timestamp analysis ignores invalid records and retains exact large origins and final duration', () => {
+test('timestamp analysis ignores invalid records and retains exact large origins and final duration', async () => {
   const color = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv' };
   const frames = [
     { best_effort_timestamp: 'N/A', duration: '999' },
@@ -124,38 +125,38 @@ test('timestamp analysis ignores invalid records and retains exact large origins
     { duration: '999' },
   ];
   const options = { start: null, end: null, timeBase: '1/2' };
-  const timing = subject.analyzePresentedFrames({ frames }, color, options);
+  const timing = await analyzeFixture({ frames }, color, options);
   assert.equal(timing.expectedFrames, 2);
   assert.equal(timing.firstTick, 0n);
   assert.equal(timing.lastTick, 1n);
   assert.equal(timing.duration, 1500000000n);
-  assert.throws(() => subject.analyzePresentedFrames({ frames: [{}] }, color, options), { code: 'input_unusable' });
-  assert.throws(() => subject.analyzePresentedFrames({ frames }, color, { ...options, end: 1500000001n }), { code: 'window_out_of_range' });
-  assert.throws(() => subject.analyzePresentedFrames({ frames }, color, { ...options, start: 1000000000n }), { code: 'window_empty' });
+  await assert.rejects(() => analyzeFixture({ frames: [{}] }, color, options), { code: 'input_unusable' });
+  await assert.rejects(() => analyzeFixture({ frames }, color, { ...options, end: 1500000001n }), { code: 'window_out_of_range' });
+  await assert.rejects(() => analyzeFixture({ frames }, color, { ...options, start: 1000000000n }), { code: 'window_empty' });
 });
 
-test('color changes outside the selected interval and on invalid timestamps remain errors', () => {
+test('color changes outside the selected interval and on invalid timestamps remain errors', async () => {
   const color = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv' };
   for (const best_effort_timestamp of ['2', 'N/A']) {
     const frames = [{ best_effort_timestamp: '0' }, { best_effort_timestamp, color_transfer: 'smpte2084' }];
-    assert.throws(() => subject.analyzePresentedFrames({ frames }, color, { start: 0n, end: 0n, timeBase: '1/2' }), { code: 'color_metadata_ambiguous' });
+    await assert.rejects(() => analyzeFixture({ frames }, color, { start: 0n, end: 0n, timeBase: '1/2' }), { code: 'color_metadata_ambiguous' });
   }
 });
 
 // ffprobe renamed the per-frame `pkt_duration` field to `duration`. Reading only the old name
 // made clip duration stop at the last frame's PTS instead of its end, so an --end at the true
 // end of the clip was rejected as out of range. Both names are accepted.
-test('clip duration includes the final frame, using either ffprobe duration field name', () => {
+test('clip duration includes the final frame, using either ffprobe duration field name', async () => {
   const color = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv' };
   const modern = { frames: [8, 9, 10, 11].map(best_effort_timestamp => ({ best_effort_timestamp, duration: 1 })) };
   const legacy = { frames: ['8', '9', '10', '11'].map(best_effort_timestamp => ({ best_effort_timestamp, pkt_duration: '1' })) };
 
   for (const frameData of [modern, legacy]) {
-    const timing = subject.analyzePresentedFrames(frameData, color, { start: null, end: null, timeBase: '1/2' });
+    const timing = await analyzeFixture(frameData, color, { start: null, end: null, timeBase: '1/2' });
     assert.equal(timing.duration, 2000000000n);
     assert.equal(timing.expectedFrames, 4);
     // An --end at the true clip end is in range, not window_out_of_range.
-    assert.equal(subject.analyzePresentedFrames(frameData, color, { start: null, end: 2000000000n, timeBase: '1/2' }).expectedFrames, 4);
+    assert.equal((await analyzeFixture(frameData, color, { start: null, end: 2000000000n, timeBase: '1/2' })).expectedFrames, 4);
   }
 });
 
@@ -241,13 +242,13 @@ test('representative decode accepts normal stdout progress', async () => {
   assert.ok(args.includes('-xerror'));
 });
 
-test('omitted fractional end uses exact duration ticks', () => {
+test('omitted fractional end uses exact duration ticks', async () => {
   const data = { frames: [{ best_effort_timestamp: '0', duration: '1' }] };
   const options = { start: null, end: null, timeBase: '1/30' };
-  const result = subject.analyzePresentedFrames(data, {}, options);
+  const result = await analyzeFixture(data, {}, options);
   assert.equal(result.endTick, 1n);
   assert.equal(result.expectedFrames, 1);
-  assert.throws(() => subject.analyzePresentedFrames(data, {}, { ...options, end: 33333334n }), { code: 'window_out_of_range' });
+  await assert.rejects(() => analyzeFixture(data, {}, { ...options, end: 33333334n }), { code: 'window_out_of_range' });
 });
 
 test('textual display matrices accept translation and reject both perspective fields', () => {

@@ -7,6 +7,7 @@ const path = require('node:path');
 const { resolveCommand } = require('../../../shared/node/resolve-command');
 const { mediaFailed, childDetails } = require('../../../shared/node/media-result');
 const { spawn } = require('node:child_process');
+const { frameRecords } = require('./frame-records');
 
 const MINIMUM_NODE = Object.freeze([20, 6, 0]);
 const MINIMUM_MACOS = Object.freeze([26, 0, 0]);
@@ -161,18 +162,30 @@ class ProcessManager {
     this.assertRunning();
     return new Promise((resolve, reject) => {
       let child;
+      let stdoutFd;
+      let closeError;
+      let opening = options.stdoutFile !== undefined;
       try {
-        child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        if (options.stdoutFile !== undefined) {
+          if (!path.isAbsolute(options.stdoutFile)) throw new Error('stdoutFile must be absolute');
+          stdoutFd = fs.openSync(options.stdoutFile, 'wx', 0o600);
+        }
+        opening = false;
+        child = spawn(command, args, { stdio: ['ignore', stdoutFd ?? 'pipe', 'pipe'] });
       } catch (error) {
-        reject(error);
+        reject(opening ? spoolStorageError(options.stdoutFile, error) : error);
         return;
+      } finally {
+        if (stdoutFd !== undefined) {
+          try { fs.closeSync(stdoutFd); } catch (error) { closeError = error; }
+        }
       }
       this.active.add(child);
       child.closed = new Promise(resolve => child.once('close', resolve));
-      const stdout = [];
+      const stdout = options.stdoutFile === undefined ? [] : null;
       let stderr = Buffer.alloc(0);
       let settled = false;
-      child.stdout.on('data', chunk => {
+      child.stdout?.on('data', chunk => {
         if (options.progress) options.progress(chunk.toString());
         else stdout.push(chunk);
       });
@@ -185,9 +198,11 @@ class ProcessManager {
         if (settled) return;
         settled = true;
         this.active.delete(child);
+        if (closeError) { reject(spoolStorageError(options.stdoutFile, closeError, childDetails(command, { code, signal, stderr: stderr.toString() }))); return; }
         if (launchError) { reject(Object.assign(launchError, { task: command, childExitCode: code, childSignal: signal, stderr: stderr.toString() })); return; }
-        resolve({ code, signal, stdout: Buffer.concat(stdout).toString(), stderr: stderr.toString() });
+        resolve({ code, signal, ...(stdout ? { stdout: Buffer.concat(stdout).toString() } : {}), stderr: stderr.toString() });
       });
+      if (closeError) child.kill('SIGKILL');
     });
   }
 
@@ -400,13 +415,28 @@ function selectVideoStream(streams) {
   return stream;
 }
 
-function analyzePresentedFrames(frameData, color, options) {
+async function analyzeFrameSpool(filename, color, options, readerOptions = {}) {
+  try {
+    return await reduceFrameSpool(filename, color, options, readerOptions);
+  } catch (error) {
+    if (error instanceof DraftError) throw error;
+    if (error instanceof SyntaxError) throw new DraftError('input_unusable', 'ffprobe could not enumerate frame timestamps: output was not valid JSON', 'repair or re-export the video with valid presentation timestamps');
+    throw spoolStorageError(filename, error);
+  }
+}
+
+function spoolStorageError(filename, error, details = {}) {
+  return new DraftError('frame_metadata_storage_failed', `could not store or read frame metadata at ${filename}: ${errorText(error)}`, `ensure sufficient free space and read/write access in ${path.dirname(filename)}, then run the same command again`, EXIT.CANNOT_START, details);
+}
+
+async function reduceFrameSpool(filename, color, options, readerOptions) {
   let origin = null;
   let lastTimestamp;
   let lastDuration;
-  for (const frame of frameData.frames || []) {
+  let colorError;
+  for await (const frame of frameRecords(filename, readerOptions)) {
     for (const [field, expected] of [['color_primaries', color.primaries], ['color_transfer', color.transfer], ['color_space', color.matrix], ['color_range', color.range]]) {
-      if (frame[field] && frame[field] !== expected) throw new DraftError('color_metadata_ambiguous', `frame-level ${field} changes from ${expected} to ${frame[field]}`, 're-export the video with one consistent color description for the selected stream');
+      if (frame[field] && frame[field] !== expected) colorError ??= new DraftError('color_metadata_ambiguous', `frame-level ${field} changes from ${expected} to ${frame[field]}`, 're-export the video with one consistent color description for the selected stream');
     }
     const pts = integerTimestamp(frame.best_effort_timestamp);
     if (pts !== null) {
@@ -415,6 +445,7 @@ function analyzePresentedFrames(frameData, color, options) {
       lastDuration = integerTimestamp(frame.duration ?? frame.pkt_duration ?? '0') || 0n;
     }
   }
+  if (colorError) throw colorError;
   const timeBase = parseTimeBase(options.timeBase);
   if (origin === null) throw new DraftError('input_unusable', 'selected video stream has no timestamped frames', 'repair or re-export the source with valid presentation timestamps');
   const durationTicks = lastTimestamp - origin + lastDuration;
@@ -427,7 +458,7 @@ function analyzePresentedFrames(frameData, color, options) {
   let expectedFrames = 0;
   let firstTick;
   let lastTick;
-  for (const frame of frameData.frames || []) {
+  for await (const frame of frameRecords(filename, readerOptions)) {
     const timestamp = integerTimestamp(frame.best_effort_timestamp);
     if (timestamp === null) continue;
     const pts = timestamp - origin;
@@ -447,8 +478,21 @@ async function inspectInput(manager, state, options) {
   if (!stream.width || !stream.height) throw new DraftError('stream_unsupported', 'selected video stream has no valid dimensions', 're-export the source with a decodable video stream');
   const color = classifyStream(stream, pixelProperties(stream, state.pixelDescriptors));
   const transform = displayTransform(stream);
-  const frameData = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-threads', '0', '-select_streams', String(stream.index), '-show_frames', '-show_entries', 'frame=best_effort_timestamp,duration,pkt_duration,color_range,color_space,color_primaries,color_transfer,pix_fmt', '-of', 'json', state.paths.supplied], 'input_unusable', 'ffprobe could not enumerate frame timestamps', 'repair or re-export the video with valid presentation timestamps');
-  const timing = analyzePresentedFrames(frameData, color, { ...options, timeBase: stream.time_base });
+  const spool = path.join(state.encoderDirectory, 'frame-metadata.json');
+  const result = await manager.run(state.commands.ffprobe, ['-v', 'error', '-threads', '0', '-select_streams', String(stream.index), '-show_frames', '-show_entries', 'frame=best_effort_timestamp,duration,pkt_duration,color_range,color_space,color_primaries,color_transfer,pix_fmt', '-of', 'json', state.paths.supplied], { stdoutFile: spool });
+  manager.assertRunning();
+  if (mediaFailed(result)) {
+    const details = childDetails('input_unusable', result);
+    if (/no space left on device|ENOSPC|disk quota exceeded/i.test(result.stderr)) throw spoolStorageError(spool, new Error(result.stderr.trim()), details);
+    throw new DraftError('input_unusable', `ffprobe could not enumerate frame timestamps${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair or re-export the video with valid presentation timestamps', EXIT.CANNOT_START, details);
+  }
+  let timing;
+  try {
+    timing = await analyzeFrameSpool(spool, color, { ...options, timeBase: stream.time_base }, { assertRunning: () => manager.assertRunning() });
+  } catch (error) {
+    if (error.code === 'input_unusable' && error.condition.endsWith('output was not valid JSON')) Object.assign(error, childDetails('input_unusable', result));
+    throw error;
+  }
   const orientedWidth = transform.swapsDimensions ? stream.height : stream.width;
   const orientedHeight = transform.swapsDimensions ? stream.width : stream.height;
   return {
@@ -747,7 +791,7 @@ async function prepare(manager, options, encoderDirectory) {
     const paths = options.input ? validateInputAndOutput(options.input) : null;
     const platform = await platformPreflight(manager);
     const toolchain = await toolchainPreflight(manager, platform);
-    const state = { ...toolchain };
+    const state = { ...toolchain, encoderDirectory };
     if (paths) {
       state.paths = paths;
       state.media = await inspectInput(manager, state, options);
@@ -835,4 +879,4 @@ async function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then(code => { process.exitCode = code; }, error => { emitError(error, process.argv.includes('--json')); process.exitCode = EXIT.FAILED; });
 
-module.exports = { cleanupPaths, descriptorMap, pixelProperties, emitError, ProcessManager, analyzePresentedFrames, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };
+module.exports = { cleanupPaths, descriptorMap, pixelProperties, emitError, ProcessManager, analyzeFrameSpool, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, inspectInput, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };
