@@ -2,11 +2,11 @@
 
 ## Current status
 
-Implementation and final local qualification are complete. Stage7 is ready to commit. Cleanup, final committed-checkout verification, and the authorized push remain. No test or Advisor jobs are running. Keep this file current after delivery checkpoints.
+Implementation, final local qualification, committed-checkout verification, and scoped cleanup are complete. The authorized push and observation of hosted release automation remain. No test or Advisor jobs are running. Keep this file current after delivery checkpoints.
 
 Repository: `/Users/kyle/Documents/harness-plugin`, branch `main`.
 Starting revision: `233fd2792ef598464152a52b7e96e110eacde70f`.
-Current committed revision: `bcadf5f50fc9e37a1ac38a2ad7c29e9542eb9e05` (Stage6).
+Implementation finishing revision: `53a687f921afa6a33b8ecfd6951a8a5422e5cdb7` (Stage7). This subsequent handoff-only commit records delivery preparation.
 
 ## Durable authority
 
@@ -33,12 +33,12 @@ Explicit `npm run build` assembles a unique stage and reconciles generated files
 - Exact macOS26 execution remains an unavailable release qualification. The available native host tested is macOS27. Preserve this limit in delivery.
 - Final Advisor: no concrete defect in supplied evidence, no independent source inspection. All3 automatic consultations are spent, user_requested_calls0, same_family_automatic_calls3. All agents terminal. No more automatic calls.
 
-## Finish delivery
+## Delivery checkpoint
 
-1. Stage only the final scoped changes, including this handoff and receipt. Inspect staged inventory, run build check and tracked validation again, and commit with both author/committer dates `1999-12-31T23:59:00-08:00`.
-2. Verify fresh final committed output matches the already host-qualified distribution and passes static tracked validation without a root toolchain.
-3. Preserve specification and raw local logs, remove task-created disposable host/release fixture roots and transformation scratch. Preserve unrelated branches, worktrees, dependencies, and user files. Do not run broad git clean/reset.
-4. Update this handoff with exact finishing revision and cleanup results, commit it, then push main. Remote was fetched and had no commits ahead of local main. Recheck before push as needed.
-5. Observe push and existing automated version-bump workflow honestly. If it completes, fetch/fast-forward its commit and verify artifact. Do not label a local rehearsal as hosted success.
+Stage7 commit `53a687f921afa6a33b8ecfd6951a8a5422e5cdb7` passed staged whitespace, build check, tracked validation87 files, and staged scope inspection. Both dates are1999-12-31T23:59:00-08:00. A fresh clone of that commit passed `node scripts/validate-dist.js --tracked` without root dependencies or a build. Its distribution is byte-identical to the Stage6 artifact qualified in both real hosts. Evidence: `tmp/ts-stage7-final-checkout.json`.
 
-Host fixture paths before cleanup are recorded in `tmp/ts-stage7-host-paths.json`, rooted at `/private/tmp/harness-ts-stage7-t7o54xnn`. Raw evidence remains under ignored local `tmp/` and is summarized in the tracked receipt. Git mutations require sandbox escalation because `.git` is protected. Native HEIC requires host access. No approval rejection remains outstanding.
+Removed the task-created isolated host/release/final-clone fixture root,13 one-off transformation scripts, and empty `.build`. Preserved the user specification, raw evidence, host qualification procedures, runtime binaries, existing dependencies, and unrelated branches/worktrees. Evidence: `tmp/ts-stage7-cleanup.json`. The original fixture paths in earlier logs are historical and no longer exist.
+
+Next: commit this handoff update, push main, then observe the existing version-bump workflow. Record actual push/hosted outcomes. If the bot commits a version bump, fetch and fast-forward it, verify artifact, and finish with a clean local tree synchronized to origin. No ordinary source changes remain. Do not rerun expensive local gates merely for this status-only documentation update.
+
+Git mutations require sandbox escalation because `.git` is protected. Native HEIC requires host access. No approval rejection remains outstanding.
