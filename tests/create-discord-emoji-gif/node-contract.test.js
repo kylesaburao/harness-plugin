@@ -122,8 +122,12 @@ test('a non-GIF verification result preserves the destination and removes the pu
 
 test('gifski worker allocation and candidate ordering are deterministic', () => {
   const config = { minFps: 7, maxFps: 9, jobs: 8, minQuality: 80, maxQuality: 100 };
-  assert.equal(gifski.calculateGifskiWorkers(config), 3);
-  assert.equal(gifski.calculateRayonThreads(config), 2);
+  assert.equal(gifski.calculateGifskiWorkers(config, 9), 4);
+  assert.equal(gifski.calculateRayonThreads(config, 4), 2);
+  assert.equal(gifski.calculateGifskiWorkers(config, 1), 1);
+  assert.equal(gifski.calculateRayonThreads(config, 1), 8);
+  assert.equal(gifski.calculateGifskiWorkers({ ...config, jobs: 1 }, 9), 1);
+  assert.equal(gifski.calculateRayonThreads({ ...config, jobs: 1 }, 1), 2);
   assert.deepEqual(gifski.candidateSequence(config).map(row => row.quality), [100, 90, 80]);
   const identities = gifski.candidateSequence(config, 90).map(row => `${row.quality}|${row.motionQuality}|${row.lossyQuality}`);
   assert.equal(new Set(identities).size, identities.length);

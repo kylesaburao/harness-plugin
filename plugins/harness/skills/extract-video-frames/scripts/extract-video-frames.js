@@ -398,27 +398,44 @@ function selectVideoStream(streams) {
 }
 
 function analyzePresentedFrames(frameData, color, options) {
+  let origin = null;
+  let lastTimestamp;
+  let lastDuration;
   for (const frame of frameData.frames || []) {
     for (const [field, expected] of [['color_primaries', color.primaries], ['color_transfer', color.transfer], ['color_space', color.matrix], ['color_range', color.range]]) {
       if (frame[field] && frame[field] !== expected) throw new DraftError('color_metadata_ambiguous', `frame-level ${field} changes from ${expected} to ${frame[field]}`, 're-export the video with one consistent color description for the selected stream');
     }
+    const pts = integerTimestamp(frame.best_effort_timestamp);
+    if (pts !== null) {
+      origin ??= pts;
+      lastTimestamp = pts;
+      lastDuration = integerTimestamp(frame.duration ?? frame.pkt_duration ?? '0') || 0n;
+    }
   }
   const timeBase = parseTimeBase(options.timeBase);
-  const frames = (frameData.frames || []).map(frame => ({ pts: integerTimestamp(frame.best_effort_timestamp), duration: integerTimestamp(frame.duration ?? frame.pkt_duration ?? '0') })).filter(frame => frame.pts !== null);
-  if (!frames.length) throw new DraftError('input_unusable', 'selected video stream has no timestamped frames', 'repair or re-export the source with valid presentation timestamps');
-  const origin = frames[0].pts;
-  const normalized = frames.map(frame => ({ pts: frame.pts - origin, duration: frame.duration || 0n }));
-  const last = normalized.at(-1);
-  const durationTicks = last.pts + last.duration;
+  if (origin === null) throw new DraftError('input_unusable', 'selected video stream has no timestamped frames', 'repair or re-export the source with valid presentation timestamps');
+  const durationTicks = lastTimestamp - origin + lastDuration;
   const duration = ticksToNanoseconds(durationTicks, timeBase, true);
   const start = options.start === null ? 0n : options.start;
   const end = options.end === null ? duration : options.end;
   if (start < 0n || end < 0n || compareNanosecondsToTicks(start, durationTicks, timeBase) > 0 || compareNanosecondsToTicks(end, durationTicks, timeBase) > 0) throw new DraftError('window_out_of_range', `requested window ${formatTime(start)}..${formatTime(end)} is outside 0..${formatTime(duration)}`, `pass bounds between 0 and ${formatTime(duration)} seconds`);
   const startTick = ceilDivide(start * timeBase.denominator, timeBase.numerator * NS_PER_SECOND);
   const endTick = end * timeBase.denominator / (timeBase.numerator * NS_PER_SECOND);
-  const selected = normalized.filter(frame => frame.pts >= startTick && frame.pts <= endTick);
-  if (!selected.length) throw new DraftError('window_empty', `inclusive window ${formatTime(start)}..${formatTime(end)} contains no presented frame`, 'widen the window or choose a timestamp matching a presented frame');
-  return { start, end, duration, startTick, endTick, expectedFrames: selected.length, firstTick: selected[0].pts, lastTick: selected.at(-1).pts, firstPts: ticksToNanoseconds(selected[0].pts, timeBase), lastPts: ticksToNanoseconds(selected.at(-1).pts, timeBase), timeBase };
+  let expectedFrames = 0;
+  let firstTick;
+  let lastTick;
+  for (const frame of frameData.frames || []) {
+    const timestamp = integerTimestamp(frame.best_effort_timestamp);
+    if (timestamp === null) continue;
+    const pts = timestamp - origin;
+    if (pts >= startTick && pts <= endTick) {
+      firstTick ??= pts;
+      lastTick = pts;
+      expectedFrames += 1;
+    }
+  }
+  if (!expectedFrames) throw new DraftError('window_empty', `inclusive window ${formatTime(start)}..${formatTime(end)} contains no presented frame`, 'widen the window or choose a timestamp matching a presented frame');
+  return { start, end, duration, startTick, endTick, expectedFrames, firstTick, lastTick, firstPts: ticksToNanoseconds(firstTick, timeBase), lastPts: ticksToNanoseconds(lastTick, timeBase), timeBase };
 }
 
 async function inspectInput(manager, state, options) {
@@ -481,7 +498,7 @@ function ffmpegArguments(state, temporary) {
 
 function codecArguments(color) {
   return color.codec === 'png'
-    ? ['-c:v', 'png', '-compression_level', '9']
+    ? ['-c:v', 'png', '-compression_level', '6']
     : ['-c:v', 'tiff'];
 }
 
@@ -707,12 +724,15 @@ async function prepare(manager, options, encoderDirectory) {
     const platform = await platformPreflight(manager);
     const toolchain = await toolchainPreflight(manager, platform);
     const state = { ...toolchain };
-    await compileEncoder(manager, state, encoderDirectory);
     if (paths) {
       state.paths = paths;
       state.media = await inspectInput(manager, state, options);
+      if (state.media.color.dynamicRange !== 'sdr') await compileEncoder(manager, state, encoderDirectory);
       await representativeDecodePreflight(manager, state);
-    } else await syntheticEncoderPreflight(manager, state);
+    } else {
+      await compileEncoder(manager, state, encoderDirectory);
+      await syntheticEncoderPreflight(manager, state);
+    }
     return state;
   } catch (error) {
     if (error instanceof DraftError) throw error;

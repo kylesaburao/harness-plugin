@@ -6,8 +6,8 @@ compatibility: Requires Node.js 22.0.0 or newer, ffmpeg built with libvmaf, ffpr
 
 # Create a Discord emoji GIF
 
-Create a looping 128x128 GIF that is strictly smaller than 256000 bytes. Clips of 3
-seconds or less usually produce better quality within that limit. If the user asks what
+Create a looping 128x128 GIF with fewer than 256000 bytes. Clips of
+3 seconds or less usually produce better quality within that limit. If the user asks what
 this skill is or why it exists, state both the Discord size target and this duration
 guidance.
 
@@ -114,9 +114,14 @@ The gifski backend also accepts:
 | --- | --- | --- |
 | `MIN_QUALITY` / `MAX_QUALITY` | 1 / 100 | Gifski quality search bounds |
 
-The gifski backend uses `min(FPS count, max(1, floor(JOBS / 2)))` simultaneous encoder
-workers. Each gifski child receives
-`RAYON_NUM_THREADS = clamp(floor(JOBS / encoder workers), 2, 8)`.
+Both backends prepare all FPS caches in one FFmpeg process, with the VMAF reference
+prepared separately within `JOBS`. Caches remain available throughout the search.
+The gifski backend evaluates coarse candidates, then refinement candidates, in two
+bounded waves across all FPS values. Each nonempty wave uses
+`min(candidate count, max(1, floor(JOBS / 2)))` simultaneous candidate workers.
+Each gifski child receives
+`RAYON_NUM_THREADS = clamp(floor(JOBS / candidate workers), 2, 8)`, using that wave's
+actual worker count.
 
 To reduce runtime, pin the frame rate with `MIN_FPS=15 MAX_FPS=15`.
 

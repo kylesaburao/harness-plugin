@@ -72,10 +72,10 @@ const scenario = ${JSON.stringify(scenario)};
 const scored = [];
 const bounded = ProcessManager.prototype.runOldestBounded;
 ProcessManager.prototype.runOldestBounded = function(items, jobs, worker) {
-  const search = items.every(item => typeof item === 'number' || item.colors);
+  const search = items.every(item => item.candidate || item.colors);
   return bounded.call(this, items, jobs, async item => {
-    const key = typeof item === 'number' ? item : item.colors;
-    if (search && key === (scenario === 'reverse' ? (backend === 'gifski' ? 8 : 4) : (backend === 'gifski' ? 9 : 5))) await new Promise(resolve => setTimeout(resolve, 300));
+    const key = item.candidate ? item.candidate.quality : item.colors;
+    if (search && key === (scenario === 'reverse' ? (backend === 'gifski' ? 90 : 4) : (backend === 'gifski' ? 80 : 5))) await new Promise(resolve => setTimeout(resolve, 300));
     return worker(item);
   });
 };
@@ -132,10 +132,10 @@ if (scenario === 'rename') {
           if (backend === 'gifski') {
             const { candidateSequence } = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/mov-to-gif-gifski');
             for (const fps of [8, 9]) {
-              assert.deepEqual(proof.scored.filter(candidate => candidate.name.startsWith(`f${fps}-`)).map(candidate => candidate.name), candidateSequence({ minQuality: 70, maxQuality: 90 }, 90).map(c => `f${fps}-q${c.quality}-m${c.motionQuality}-l${c.lossyQuality}.gif`));
+              assert.deepEqual(proof.scored.filter(candidate => candidate.name.startsWith(`f${fps}-`)).map(candidate => candidate.name).sort(), candidateSequence({ minQuality: 70, maxQuality: 90 }, 90).map(c => `f${fps}-q${c.quality}-m${c.motionQuality}-l${c.lossyQuality}.gif`).sort());
             }
           }
-          if (scenario !== 'keep') assert.match(proof.scored[0].name, new RegExp(backend === 'gifski' ? `^f${scenario === 'reverse' ? 9 : 8}-` : `-c${scenario === 'reverse' ? 5 : 4}-`));
+          if (scenario !== 'keep') assert.match(proof.scored[0].name, new RegExp(backend === 'gifski' ? `-q${scenario === 'reverse' ? 80 : 90}-` : `-c${scenario === 'reverse' ? 5 : 4}-`));
         }
         assert.equal(fs.readdirSync(directory).some(name => name.startsWith('.mov-to-gif')), false);
         if (scenario !== 'keep') assert.equal(fs.readdirSync(directory).some(name => name.startsWith('mov-to-gif')), false);

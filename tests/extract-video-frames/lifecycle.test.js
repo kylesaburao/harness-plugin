@@ -117,6 +117,37 @@ test('raw preflight failures become stable exit-2 diagnostics', { skip: process.
   await assert.rejects(subject.prepare(manager, { input: null }, encoderDirectory), { code: 'preflight_failed', exitCode: 2 });
 });
 
+for (const kind of ['sdr', 'hdr', 'synthetic']) {
+  test(`preflight ${kind === 'sdr' ? 'decodes SDR without compiling' : `compiles for ${kind} HDR`}`, { skip: process.platform !== 'darwin' || !realFfmpeg }, async t => {
+    const root = temporaryRoot(t);
+    const input = kind === 'synthetic' ? null : path.join(root, 'clip.mov');
+    if (input) {
+      const hdr = kind === 'hdr';
+      const generated = spawnSync(realFfmpeg, ['-hide_banner', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=16x16:r=2:d=1', '-c:v', 'libx265', '-x265-params', hdr ? 'log-level=error:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc' : 'log-level=error:colorprim=bt709:transfer=bt709:colormatrix=bt709', '-pix_fmt', hdr ? 'yuv420p10le' : 'yuv420p', '-color_primaries', hdr ? 'bt2020' : 'bt709', '-color_trc', hdr ? 'arib-std-b67' : 'bt709', '-colorspace', hdr ? 'bt2020nc' : 'bt709', '-color_range', 'tv', input], { encoding: 'utf8' });
+      assert.equal(generated.status, 0, generated.stderr);
+    }
+    const realManager = new subject.ProcessManager();
+    const calls = [];
+    const manager = { run: async (command, args) => {
+      calls.push({ command, args });
+      if (path.basename(command) === 'swiftc') return { code: 1, stdout: '', stderr: 'intentional compilation sentinel' };
+      return realManager.run(command, args);
+    } };
+    const preparing = subject.prepare(manager, { input, start: null, end: null }, root);
+    if (kind === 'sdr') {
+      const state = await preparing;
+      assert.equal(state.media.color.dynamicRange, 'sdr');
+      assert.equal(calls.some(call => path.basename(call.command) === 'swiftc'), false);
+      assert.ok(calls.some(call => call.args.includes('-progress') && call.args.includes('null')));
+    } else {
+      await assert.rejects(preparing, error => error.code === 'heic_encoder_unavailable' && error.condition.includes('intentional compilation sentinel'));
+      const compileIndex = calls.findIndex(call => path.basename(call.command) === 'swiftc');
+      assert.ok(compileIndex >= 0);
+      if (input) assert.ok(calls.slice(0, compileIndex).some(call => call.args.includes('-show_frames')));
+    }
+  });
+}
+
 for (const [signal, exitCode, phase] of [['SIGTERM', 143, 'encoding'], ['SIGTERM', 143, 'verification']]) {
   test(`CLI ${signal} terminates HDR ${phase}, cleans TIFF/HEIC/helper partials, and exits ${exitCode}`, { skip: process.platform !== 'darwin' || !realFfmpeg }, async t => {
     const root = temporaryRoot(t);

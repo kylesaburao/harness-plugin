@@ -137,8 +137,8 @@ test('skill instructions define the Discord target and fallback rules', () => {
   assert.match(skill, /fall through to\s+gifsicle only for/);
   assert.match(skill, /fall through only from gifski `no_candidate`/);
   assert.match(skill, /For an explicit backend comparison, dispatch both entrypoints/);
-  assert.match(skill, /`min\(FPS count, max\(1, floor\(JOBS \/ 2\)\)\)`/);
-  assert.match(skill, /`RAYON_NUM_THREADS = clamp\(floor\(JOBS \/ encoder workers\), 2, 8\)`/);
+  assert.match(skill, /`min\(candidate count, max\(1, floor\(JOBS \/ 2\)\)\)`/);
+  assert.match(skill, /`RAYON_NUM_THREADS = clamp\(floor\(JOBS \/ candidate workers\), 2, 8\)`/);
   assert.match(skill, /not run any further command against the input or the output/);
   assert.match(skill, /confirmed the digest after the atomic rename/);
 
@@ -276,8 +276,8 @@ test('a tight limit is strict and a one-byte-smaller ceiling fails without repla
 
 test('worker and Rayon settings cover pinned, narrow, and default FPS ranges', () => {
   const cases = [
-    { name: 'pinned', min: '8', max: '8', jobs: '16', workers: 1, threads: 8 },
-    { name: 'narrow', min: '7', max: '9', jobs: '8', workers: 3, threads: 2 },
+    { name: 'pinned', min: '8', max: '8', jobs: '16', workers: 4, threads: 4 },
+    { name: 'narrow', min: '7', max: '9', jobs: '8', workers: 4, threads: 2 },
     { name: 'default', min: '15', max: '24', jobs: '16', workers: 8, threads: 2 },
   ];
   for (const entry of cases) {
@@ -286,11 +286,13 @@ test('worker and Rayon settings cover pinned, narrow, and default FPS ranges', (
       MIN_FPS: entry.min,
       MAX_FPS: entry.max,
       JOBS: entry.jobs,
+      MIN_QUALITY: '60',
+      MAX_QUALITY: '90',
     });
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.match(
       result.stderr,
-      new RegExp(`with ${entry.workers} encoder workers and ${entry.threads} gifski threads each`),
+      new RegExp(`with ${entry.workers} candidate workers and ${entry.threads} gifski threads each`),
     );
     verifyGif(output, 100000);
   }
@@ -364,7 +366,7 @@ test('normal conversion removes its work directory and source cache', () => {
   }
 });
 
-test('concurrent source caches stay within the worker bound and disappear as workers finish', async () => {
+test('all source caches coexist during candidate evaluation and disappear after conversion', async () => {
   const temporaryRoot = fs.mkdtempSync(path.join(suiteDir, 'bounded-caches.'));
   const output = path.join(suiteDir, 'bounded-caches.gif');
   const child = spawn(process.execPath, [SCRIPT, longInput, output], {
@@ -406,8 +408,8 @@ test('concurrent source caches stay within the worker bound and disappear as wor
     }
     const status = await exitPromise;
     assert.equal(status, 0, `${stdout}\n${stderr}`);
-    assert.ok(seen.size > 2, `expected sequential cache turnover, saw ${[...seen]}`);
-    assert.ok(maximumConcurrent <= 2, `saw ${maximumConcurrent} caches with a 2-worker bound`);
+    assert.equal(seen.size, 5, `expected all requested caches, saw ${[...seen]}`);
+    assert.equal(maximumConcurrent, 5);
     assert.deepEqual(fs.readdirSync(temporaryRoot), []);
     verifyGif(output, 1000000);
   } finally {
@@ -494,7 +496,8 @@ exec "${realFfmpeg}" "$@"
   assert.equal(result.status, 1, result.stderr);
   const report = JSON.parse(result.stderr);
   assert.equal(report.error.code, 'source_prepare_failed');
-  assert.match(report.error.condition, /8 FPS/);
+  assert.equal(report.error.task, 'source-caches');
+  assert.match(report.error.condition, /source caches/);
   assert.match(report.error.condition, /forced source preparation failure/);
   assert.ok(report.error.remedy);
   assert.equal(fs.readFileSync(output, 'utf8'), 'existing output\n');

@@ -112,6 +112,34 @@ test('presented-frame selection includes exact start and end timestamps', () => 
   assert.equal(timing.lastPts, 1000000000n);
 });
 
+test('timestamp analysis ignores invalid records and retains exact large origins and final duration', () => {
+  const color = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv' };
+  const frames = [
+    { best_effort_timestamp: 'N/A', duration: '999' },
+    { best_effort_timestamp: '9007199254740993', duration: '1' },
+    { best_effort_timestamp: 'bad' },
+    { best_effort_timestamp: '9007199254740994', duration: '2', pkt_duration: '99' },
+    { duration: '999' },
+  ];
+  const options = { start: null, end: null, timeBase: '1/2' };
+  const timing = subject.analyzePresentedFrames({ frames }, color, options);
+  assert.equal(timing.expectedFrames, 2);
+  assert.equal(timing.firstTick, 0n);
+  assert.equal(timing.lastTick, 1n);
+  assert.equal(timing.duration, 1500000000n);
+  assert.throws(() => subject.analyzePresentedFrames({ frames: [{}] }, color, options), { code: 'input_unusable' });
+  assert.throws(() => subject.analyzePresentedFrames({ frames }, color, { ...options, end: 1500000001n }), { code: 'window_out_of_range' });
+  assert.throws(() => subject.analyzePresentedFrames({ frames }, color, { ...options, start: 1000000000n }), { code: 'window_empty' });
+});
+
+test('color changes outside the selected interval and on invalid timestamps remain errors', () => {
+  const color = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv' };
+  for (const best_effort_timestamp of ['2', 'N/A']) {
+    const frames = [{ best_effort_timestamp: '0' }, { best_effort_timestamp, color_transfer: 'smpte2084' }];
+    assert.throws(() => subject.analyzePresentedFrames({ frames }, color, { start: 0n, end: 0n, timeBase: '1/2' }), { code: 'color_metadata_ambiguous' });
+  }
+});
+
 // ffprobe renamed the per-frame `pkt_duration` field to `duration`. Reading only the old name
 // made clip duration stop at the last frame's PTS instead of its end, so an --end at the true
 // end of the clip was rejected as out of range. Both names are accepted.
@@ -145,7 +173,7 @@ test('representative decode probe uses the selected frame and a null sink', () =
   assert.equal(args[args.indexOf('-f') + 1], 'null');
   assert.match(args[args.indexOf('-vf') + 1], /between\(pts\\,1\\,1\)/);
   assert.equal(args[args.indexOf('-progress') + 1], 'pipe:1');
-  assert.deepEqual(args.slice(args.indexOf('-c:v'), args.indexOf('-f')), ['-c:v', 'png', '-compression_level', '9']);
+  assert.deepEqual(args.slice(args.indexOf('-c:v'), args.indexOf('-f')), ['-c:v', 'png', '-compression_level', '6']);
 });
 
 test('HDR extraction writes TIFF intermediates with the source transfer intact', () => {

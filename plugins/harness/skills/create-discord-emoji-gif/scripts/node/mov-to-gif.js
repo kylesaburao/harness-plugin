@@ -27,10 +27,12 @@ async function prepareReference(state) {
   await checked(state, 'vmaf-reference', state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,fps=24`, '-an', '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'yuv420p', '-color_range', 'pc', '-f', 'matroska', path.join(state.workDir, 'vmaf-reference.mkv')], {}, 'reference_failed', 'could not prepare the VMAF reference', 'fix the reported ffmpeg decode or filter error, then run again');
 }
 
-async function prepareScaledSource(state, fps) {
-  const target = path.join(state.workDir, `source-f${fps}.nut`);
-  await checked(state, `source-f${fps}`, state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=bgra`, '-an', '-c:v', 'rawvideo', '-pix_fmt', 'bgra', '-f', 'nut', target], {}, 'source_prepare_failed', `could not prepare the source cache for ${fps} FPS`, 'fix the reported ffmpeg decode or filter error, then run the same conversion again');
-  return target;
+async function prepareScaledSources(state) {
+  const args = ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input];
+  for (let fps = state.config.minFps; fps <= state.config.maxFps; fps += 1) {
+    args.push('-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=bgra`, '-an', '-c:v', 'rawvideo', '-pix_fmt', 'bgra', '-f', 'nut', path.join(state.workDir, `source-f${fps}.nut`));
+  }
+  await checked(state, 'source-caches', state.commands.ffmpeg, args, {}, 'source_prepare_failed', 'could not prepare the source caches', 'fix the reported ffmpeg decode or filter error, then run the same conversion again');
 }
 
 async function generatePalette(state, fps, colors, source, palette, task) {
@@ -80,8 +82,7 @@ async function evaluateColorTask(state, item) {
 
 async function convert(state) {
   if (!state.json) process.stderr.write(`Searching ${state.config.minFps}-${state.config.maxFps} FPS, 4-256 colors, dithers 2-5 under ${state.config.maxBytes} bytes at ${state.config.gifSize}x${state.config.gifSize} with ${state.config.jobs} workers...\n`);
-  const preparation = [{ kind: 'reference' }, ...Array.from({ length: state.config.maxFps - state.config.minFps + 1 }, (_, index) => ({ kind: 'source', fps: state.config.minFps + index }))];
-  await state.manager.runOldestBounded(preparation, state.config.jobs, item => item.kind === 'reference' ? prepareReference(state) : prepareScaledSource(state, item.fps));
+  await state.manager.runOldestBounded([prepareReference, prepareScaledSources], state.config.jobs, prepare => prepare(state));
   state.referenceFrames = await shared.referenceFrameCount(state);
   state.bestCandidate = undefined;
   await state.manager.runOldestBounded(candidateTasks(state.config), state.config.jobs, item => evaluateColorTask(state, item));

@@ -6,10 +6,10 @@ const path = require('node:path');
 const { runConverter } = require('./converter-runner');
 const shared = require('./shared');
 
-function calculateGifskiWorkers(config) {
-  return Math.min(config.maxFps - config.minFps + 1, Math.max(1, Math.floor(config.jobs / 2)));
+function calculateGifskiWorkers(config, candidateCount) {
+  return Math.min(candidateCount, Math.max(1, Math.floor(config.jobs / 2)));
 }
-function calculateRayonThreads(config, workers = calculateGifskiWorkers(config)) {
+function calculateRayonThreads(config, workers) {
   return Math.min(8, Math.max(2, Math.floor(config.jobs / workers)));
 }
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
@@ -49,12 +49,15 @@ async function prepareReference(state) {
   if (shared.mediaFailed(result)) throw shared.subprocessError('reference_failed', `could not prepare the VMAF reference${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the ffmpeg decode or filter error, then run again', 'vmaf-reference', result);
 }
 
-async function prepareSourceCache(state, fps) {
-  const target = path.join(state.workDir, `source-f${fps}.y4m`);
-  fs.rmSync(target, { force: true });
-  const result = await state.manager.runOwned(`source-f${fps}`, state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=yuv444p,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'rawvideo', '-pix_fmt', 'yuv444p', '-f', 'yuv4mpegpipe', '-y', target], { stderr: 'capture' });
-  if (shared.mediaFailed(result)) throw shared.subprocessError('source_prepare_failed', `could not prepare the source cache for ${fps} FPS${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported ffmpeg decode or filter error, then run the same conversion again', `source-f${fps}`, result);
-  return target;
+async function prepareSourceCaches(state) {
+  const args = ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input];
+  for (let fps = state.config.minFps; fps <= state.config.maxFps; fps += 1) {
+    const target = path.join(state.workDir, `source-f${fps}.y4m`);
+    fs.rmSync(target, { force: true });
+    args.push('-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=yuv444p,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'rawvideo', '-pix_fmt', 'yuv444p', '-f', 'yuv4mpegpipe', '-y', target);
+  }
+  const result = await state.manager.runOwned('source-caches', state.commands.ffmpeg, args, { stderr: 'capture' });
+  if (shared.mediaFailed(result)) throw shared.subprocessError('source_prepare_failed', `could not prepare the source caches${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported ffmpeg decode or filter error, then run the same conversion again', 'source-caches', result);
 }
 
 async function encodeCandidate(state, fps, candidate, source, target, task) {
@@ -65,46 +68,49 @@ async function encodeCandidate(state, fps, candidate, source, target, task) {
   if (!fs.existsSync(target)) throw new shared.RunError('candidate_encode_failed', `gifski reported success but did not create ${task}`, 'repair or reinstall gifski, then run the same conversion again');
 }
 
-async function searchFps(state, fps) {
-  const source = await prepareSourceCache(state, fps);
-  const seen = new Set();
-  let anchor;
-  const evaluate = async candidate => {
-    const identity = `${candidate.quality}|${candidate.motionQuality}|${candidate.lossyQuality}`;
-    if (seen.has(identity)) return false;
-    seen.add(identity);
-    const stem = `f${fps}-q${candidate.quality}-m${candidate.motionQuality}-l${candidate.lossyQuality}`;
-    const target = path.join(state.workDir, `${stem}.gif`);
-    await encodeCandidate(state, fps, candidate, source, target, stem);
-    const bytes = fs.statSync(target).size;
-    let fit = false;
-    if (bytes < state.config.maxBytes) {
-      const score = await shared.scoreCandidate(state.manager, state.commands, state.workDir, target, stem, state.referenceFrames, fps, state.config.keepWork);
-      const completed = { ...candidate, fps, bytes, score, path: target, digest: shared.sha256File(target) };
-      const previous = state.bestCandidate;
-      state.bestCandidate = selectWinner(previous ? [previous, completed] : [completed]);
-      if (!state.config.keepWork && previous && previous !== state.bestCandidate) fs.rmSync(previous.path, { force: true });
-      fit = true;
-    }
-    if (!state.config.keepWork && target !== state.bestCandidate?.path) fs.rmSync(target, { force: true });
-    return fit;
-  };
-  const coarse = candidateSequence(state.config);
-  for (const candidate of coarse) if (await evaluate(candidate) && anchor === undefined) anchor = candidate.quality;
-  anchor ??= state.config.minQuality;
-  for (const candidate of candidateSequence(state.config, anchor).slice(coarse.length)) await evaluate(candidate);
-  if (!state.config.keepWork) fs.rmSync(source, { force: true });
+async function evaluateCandidate(state, { fps, candidate }) {
+  const source = path.join(state.workDir, `source-f${fps}.y4m`);
+  const stem = `f${fps}-q${candidate.quality}-m${candidate.motionQuality}-l${candidate.lossyQuality}`;
+  const target = path.join(state.workDir, `${stem}.gif`);
+  await encodeCandidate(state, fps, candidate, source, target, stem);
+  const bytes = fs.statSync(target).size;
+  let fit = false;
+  if (bytes < state.config.maxBytes) {
+    const score = await shared.scoreCandidate(state.manager, state.commands, state.workDir, target, stem, state.referenceFrames, fps, state.config.keepWork);
+    const completed = { ...candidate, fps, bytes, score, path: target, digest: shared.sha256File(target) };
+    const previous = state.bestCandidate;
+    state.bestCandidate = selectWinner(previous ? [previous, completed] : [completed]);
+    if (!state.config.keepWork && previous && previous !== state.bestCandidate) fs.rmSync(previous.path, { force: true });
+    fit = true;
+  }
+  if (!state.config.keepWork && target !== state.bestCandidate?.path) fs.rmSync(target, { force: true });
+  return fit;
+}
+
+async function evaluateWave(state, candidates, wave) {
+  if (!candidates.length) return [];
+  const workers = calculateGifskiWorkers(state.config, candidates.length);
+  state.rayonThreads = calculateRayonThreads(state.config, workers);
+  if (!state.json) process.stderr.write(`Evaluating ${wave} wave with ${workers} candidate workers and ${state.rayonThreads} gifski threads each...\n`);
+  return state.manager.runOldestBounded(candidates, workers, item => evaluateCandidate(state, item));
 }
 
 async function convert(state) {
-  state.workers = calculateGifskiWorkers(state.config);
-  state.rayonThreads = calculateRayonThreads(state.config, state.workers);
-  if (!state.json) process.stderr.write(`Searching ${state.config.minFps}-${state.config.maxFps} FPS, gifski quality ${state.config.minQuality}-${state.config.maxQuality} under ${state.config.maxBytes} bytes at ${state.config.gifSize}x${state.config.gifSize} with ${state.workers} encoder workers and ${state.rayonThreads} gifski threads each...\n`);
-  await prepareReference(state);
+  if (!state.json) process.stderr.write(`Searching ${state.config.minFps}-${state.config.maxFps} FPS, gifski quality ${state.config.minQuality}-${state.config.maxQuality} under ${state.config.maxBytes} bytes at ${state.config.gifSize}x${state.config.gifSize}...\n`);
+  await state.manager.runOldestBounded([prepareReference, prepareSourceCaches], state.config.jobs, prepare => prepare(state));
   state.referenceFrames = await shared.referenceFrameCount(state);
   const fpsValues = Array.from({ length: state.config.maxFps - state.config.minFps + 1 }, (_, i) => state.config.minFps + i);
   state.bestCandidate = undefined;
-  await state.manager.runOldestBounded(fpsValues, state.workers, fps => searchFps(state, fps));
+  const coarse = candidateSequence(state.config);
+  const coarseTasks = fpsValues.flatMap(fps => coarse.map(candidate => ({ fps, candidate })));
+  const fits = await evaluateWave(state, coarseTasks, 'coarse');
+  const refinement = fpsValues.flatMap((fps, index) => {
+    // Results retain submission order, so completion speed cannot choose the anchor.
+    const anchor = coarse.find((candidate, offset) => fits[index * coarse.length + offset])?.quality ?? state.config.minQuality;
+    return candidateSequence(state.config, anchor).slice(coarse.length).map(candidate => ({ fps, candidate }));
+  });
+  await evaluateWave(state, refinement, 'refinement');
+  if (!state.config.keepWork) for (const fps of fpsValues) fs.rmSync(path.join(state.workDir, `source-f${fps}.y4m`), { force: true });
   const winner = state.bestCandidate;
   if (!winner) throw new shared.RunError('no_candidate', `no candidate fit below ${state.config.maxBytes} bytes`, 'increase MAX_BYTES, reduce GIF_SIZE or the FPS range, or lower MIN_QUALITY');
   const verified = await shared.publishVerified(winner.path, state.output, 'mov-to-gif-gifski', temporary => shared.verifyFinalGif(state.manager, state.commands, temporary, { size: state.config.gifSize, maxBytes: state.config.maxBytes, bytes: winner.bytes, digest: winner.digest, referenceFrames: state.referenceFrames, fps: winner.fps }), temporary => { state.outputTemp = temporary; });
