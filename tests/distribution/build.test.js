@@ -1,6 +1,7 @@
 'use strict';
 
 const test = require('node:test');
+const { before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,10 +18,9 @@ const {
 } = require('../../scripts/artifact-paths');
 const { repositoryRoot } = require('../helpers/plugin-paths');
 
-function fixture(t)
+function createFixture()
 {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-build-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.cpSync(path.join(repositoryRoot, 'src'), path.join(root, 'src'), { recursive: true });
   fs.mkdirSync(path.join(root, 'scripts'));
   for (const name of ['package.json', 'tsconfig.json'])
@@ -32,6 +32,43 @@ function fixture(t)
     fs.copyFileSync(path.join(repositoryRoot, 'scripts', name), path.join(root, 'scripts', name));
   }
   fs.symlinkSync(path.join(repositoryRoot, 'node_modules'), path.join(root, 'node_modules'));
+  return root;
+}
+
+function fixture(t)
+{
+  const root = createFixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+// One compiled fixture shared by cases whose first step is an unmodified
+// build. It is read-only by convention: cases never write to it, and each one
+// copies only the artifact tree it needs into its own fresh fixture.
+let compiled;
+
+before(() =>
+{
+  compiled = createFixture();
+  build(compiled);
+  build(compiled, { target: 'distribution' });
+});
+
+after(() =>
+{
+  if (compiled)
+  {
+    fs.rmSync(compiled, { recursive: true, force: true });
+  }
+});
+
+// Equivalent to fixture(t) followed by build(root, { target }) on the
+// unmodified sources.
+function builtFixture(t, target)
+{
+  const root = fixture(t);
+  fs.mkdirSync(path.join(root, '.build'), { recursive: true });
+  fs.cpSync(artifactRoot(compiled, target), artifactRoot(root, target), { recursive: true });
   return root;
 }
 
@@ -112,8 +149,7 @@ test('fixed artifact targets reject arbitrary names and escaping paths', () =>
 
 test('default build creates a deterministic development artifact without changing publication', t =>
 {
-  const root = fixture(t);
-  build(root, { target: 'distribution' });
+  const root = builtFixture(t, 'distribution');
   const published = snapshot(root, 'distribution');
   const canonical = fs.readFileSync(path.join(root, 'src/harness/package.json'));
   write(root, 'src/harness/shared/node/unreleased.ts', 'export const unreleased: number = 1;\n');
@@ -156,8 +192,7 @@ test('default build creates a deterministic development artifact without changin
 
 test('development checks detect content, missing, extra, and mode drift without repair', t =>
 {
-  const root = fixture(t);
-  build(root);
+  const root = builtFixture(t, 'development');
   const file = artifactPath(root, 'development', 'shared/node/media-result.js');
   for (const alter of [
     () => fs.appendFileSync(file, '\n// drift\n'),
@@ -176,8 +211,7 @@ test('development checks detect content, missing, extra, and mode drift without 
 
 test('a distribution check can report expected publication drift without writing tracked output', t =>
 {
-  const root = fixture(t);
-  build(root, { target: 'distribution' });
+  const root = builtFixture(t, 'distribution');
   write(root, 'src/harness/shared/node/unreleased.ts', 'export const unreleased: number = 1;\n');
   const before = snapshot(root, 'distribution');
   assert.throws(
@@ -285,8 +319,7 @@ test('writers use independent locks and clean only invocation-owned staging', t 
 
 test('source versions are rejected and the canonical version is injected into both hosts', t =>
 {
-  const root = fixture(t);
-  build(root);
+  const root = builtFixture(t, 'development');
   const template = path.join(root, 'src/harness/.claude-plugin/plugin.json');
   const original = fs.readFileSync(template, 'utf8');
   fs.writeFileSync(template, JSON.stringify({ ...JSON.parse(original), version: '9.0.0' }));
@@ -367,8 +400,7 @@ test('build CLI rejects malformed targets and arguments before changing either a
 
 test('tracked validation compares index paths, modes, and raw blob bytes with tested files', t =>
 {
-  const root = fixture(t);
-  build(root, { target: 'distribution' });
+  const root = builtFixture(t, 'distribution');
   initializeGit(root);
   execFileSync('git', ['add', 'dist'], { cwd: root });
   const files = inventory(artifactRoot(root, 'distribution'));
