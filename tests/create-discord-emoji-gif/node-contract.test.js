@@ -169,7 +169,7 @@ test('publishVerified skips the post-rename digest check when verify() returns n
 test('resultPayload and emitResult report the file that was actually published, both backends', () => {
   const gifskiConfig = { gifSize: 128, maxBytes: 256000 };
   const gifskiWinner = { fps: 15, quality: 90, motionQuality: 90, lossyQuality: 90, score: '85.587572' };
-  const gifskiVerified = { dimensions: '128x128', frameCount: 60, duration: '2.500000', bytes: 227780, digest: 'a'.repeat(64) };
+  const gifskiVerified = { dimensions: '128x128', frameCount: 60, duration: '2.500000', bytes: 227780, digest: 'a'.repeat(64), loop: { mode: 'infinite', repeatCount: 0, extension: 'NETSCAPE2.0' } };
   const gifskiPayload = shared.resultPayload({
     script: 'mov-to-gif-gifski.js', backend: 'gifski',
     input: '/tmp/clip.mov', output: '/tmp/clip_128x128.gif',
@@ -184,7 +184,7 @@ test('resultPayload and emitResult report the file that was actually published, 
 
   const gifsicleConfig = { gifSize: 64, maxBytes: 100000 };
   const gifsicleWinner = { fps: 8, colors: 100, dither: 2, score: '80.1' };
-  const gifsicleVerified = { dimensions: '64x64', frameCount: 4, duration: '0.500000', bytes: 5000, digest: 'b'.repeat(64) };
+  const gifsicleVerified = { dimensions: '64x64', frameCount: 4, duration: '0.500000', bytes: 5000, digest: 'b'.repeat(64), loop: { mode: 'infinite', repeatCount: 0, extension: 'ANIMEXTS1.0' } };
   const gifsiclePayload = shared.resultPayload({
     script: 'mov-to-gif.js', backend: 'gifsicle',
     input: '/tmp/clip.mov', output: '/tmp/clip_64x64.gif',
@@ -204,6 +204,12 @@ test('resultPayload and emitResult report the file that was actually published, 
   assert.ok(lines.some(line => line.startsWith('Report: mov-to-gif-gifski.js, gifski backend')));
   assert.equal(lines.filter(line => line.startsWith('Check: PASS')).length, gifskiPayload.checks.length);
   assert.ok(lines.some(line => line.includes('sha256')));
+  assert.equal(gifskiPayload.loop, gifskiVerified.loop.mode);
+  assert.ok(gifskiPayload.checks.some(check => /loop is infinite/.test(check.name)));
+  assert.match(captured, /GIF application extension establishes looping/);
+  assert.match(captured, /Filesystem\/hash code measured bytes/);
+  assert.match(captured, /VMAF comes from the scorer/);
+  assert.doesNotMatch(captured, /ffprobe measured every value/);
 
   let jsonCaptured = '';
   process.stdout.write = chunk => { jsonCaptured += chunk; return true; };
@@ -244,10 +250,10 @@ test('combined final verification preserves values and rejects incomplete report
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const source = path.join(directory, 'source.gif');
   const output = path.join(directory, 'output.gif');
-  fs.writeFileSync(source, 'winner');
+  fs.writeFileSync(source, Buffer.from('4749463839614000400000000021ff0b4e45545343415045322e3003010000003b', 'hex'));
   fs.writeFileSync(output, 'existing');
   const valid = { streams: [{ codec_name: 'gif', codec_type: 'video', width: 64, height: 64, nb_read_frames: '12' }], format: { duration: '0.500000' } };
-  const expected = { size: 64, maxBytes: 256000, referenceFrames: 12, fps: 24, bytes: 6, digest: shared.sha256File(source) };
+  const expected = { size: 64, maxBytes: 256000, referenceFrames: 12, fps: 24, bytes: fs.statSync(source).size, digest: shared.sha256File(source) };
   let calls = 0;
   let response = JSON.stringify(valid);
   let child = {};
@@ -262,7 +268,7 @@ test('combined final verification preserves values and rejects incomplete report
     return { code: 0, signal: null, stdout: response, stderr: '', ...child };
   } };
   const verify = (file, overrides = {}) => shared.verifyFinalGif(manager, { ffprobe: 'ffprobe' }, file, { ...expected, ...overrides });
-  assert.deepEqual(await verify(source), { dimensions: '64x64', frameCount: 12, duration: '0.500000', bytes: 6, digest: expected.digest });
+  assert.deepEqual(await verify(source), { dimensions: '64x64', frameCount: 12, duration: '0.500000', bytes: expected.bytes, digest: expected.digest, loop: { mode: 'infinite', repeatCount: 0, extension: 'NETSCAPE2.0' } });
   assert.equal(calls, 1);
   const invalid = ['{', 'null', '{}', JSON.stringify({ ...valid, streams: [] }), JSON.stringify({ ...valid, streams: [valid.streams[0], valid.streams[0]] })];
   for (const field of Object.keys(valid.streams[0])) {

@@ -19,6 +19,8 @@ module.exports = { repoRoot, skillDir, temporaryDirectory, makeExecutable, runEn
 
 function assertPublishedResult(payload, backend, input, output, maxBytes) {
   assert.equal(payload.status, 'verified');
+  assert.equal(payload.loop, 'infinite');
+  assert.ok(payload.checks.some(check => /loop is infinite/.test(check.name) && check.status === 'pass'));
   assert.equal(payload.backend, backend);
   assert.equal(payload.input, input);
   assert.equal(payload.output, output);

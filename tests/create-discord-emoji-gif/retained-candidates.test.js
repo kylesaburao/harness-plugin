@@ -29,6 +29,8 @@ for (const backend of ['gifski', 'gifsicle']) {
       });
       assert.equal(result.status, 0, result.stderr);
       const report = JSON.parse(result.stdout).result;
+      assert.equal(report.loop, 'infinite');
+      assert.ok(report.checks.some(check => /loop is infinite/.test(check.name)));
       const kept = result.stderr.match(/^Kept work directory: (.+)$/m)?.[1];
       assert.ok(kept, result.stderr);
       for (const file of ['vmaf-reference.mkv', backend === 'gifski' ? 'source-f8.y4m' : 'source-f8.nut', output]) {
@@ -46,7 +48,7 @@ for (const backend of ['gifski', 'gifsicle']) {
 }
 
 for (const backend of ['gifski', 'gifsicle']) {
-  for (const scenario of ['forward', 'reverse', 'keep', 'corrupt', 'missing', 'rename', 'no-candidate', 'interrupt']) {
+  for (const scenario of ['forward', 'reverse', 'keep', 'corrupt', 'finite-loop', 'missing', 'rename', 'no-candidate', 'interrupt']) {
     test(`${backend} retained-file lifecycle: ${scenario}`, async () => {
       const directory = temporaryDirectory('gif-retention.');
       try {
@@ -64,6 +66,17 @@ const shared = require(${JSON.stringify(path.join(skillDir, 'scripts/node/shared
 const backend = ${JSON.stringify(backend)};
 const scenario = ${JSON.stringify(scenario)};
 const scored = [];
+if (scenario === 'finite-loop') {
+  const hash = shared.sha256File;
+  shared.sha256File = file => {
+    const data = fs.readFileSync(file);
+    const identity = data.indexOf(Buffer.from('NETSCAPE2.0'));
+    if (identity < 0) throw new Error('test fixture has no expected encoder loop extension');
+    data[identity + 13] = 1; // Repetition low byte, before candidate hashing/scoring.
+    fs.writeFileSync(file, data);
+    return hash(file);
+  };
+}
 const bounded = ProcessManager.prototype.runOldestBounded;
 ProcessManager.prototype.runOldestBounded = function(items, jobs, worker) {
   const search = items.every(item => item.candidate || item.colors);
@@ -106,11 +119,12 @@ if (scenario === 'rename') {
         if (scenario === 'interrupt') {
           assert.equal(result.status, 143, result.stderr);
           assert.equal(fs.readFileSync(output, 'utf8'), 'existing destination');
-        } else if (['corrupt', 'missing', 'rename', 'no-candidate'].includes(scenario)) {
+        } else if (['corrupt', 'finite-loop', 'missing', 'rename', 'no-candidate'].includes(scenario)) {
           assert.equal(result.status, 1, result.stderr);
           const failure = JSON.parse(result.stderr).error;
-          assert.equal(failure.code, scenario === 'corrupt' ? 'verification_failed' : scenario === 'no-candidate' ? 'no_candidate' : 'publication_failed');
+          assert.equal(failure.code, ['corrupt', 'finite-loop'].includes(scenario) ? 'verification_failed' : scenario === 'no-candidate' ? 'no_candidate' : 'publication_failed');
           if (scenario === 'corrupt') assert.match(failure.condition, /digest does not match/);
+          if (scenario === 'finite-loop') assert.match(failure.condition, /finite repetition count 1/);
           assert.equal(fs.readFileSync(output, 'utf8'), 'existing destination');
         } else {
           assert.equal(result.status, 0, result.stderr);

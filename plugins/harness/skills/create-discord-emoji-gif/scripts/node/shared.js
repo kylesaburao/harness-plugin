@@ -1,5 +1,7 @@
 'use strict';
 
+const { inspectGifLoop } = require('./gif-loop');
+
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -310,9 +312,14 @@ async function verifyFinalGif(manager, commands, file, expected) {
   const bytes = fs.statSync(file).size;
   if (bytes >= expected.maxBytes) throw new RunError('verification_failed', `verification failed, output is ${bytes} bytes, limit is strictly below ${expected.maxBytes}`, 'increase MAX_BYTES or reduce GIF_SIZE, then run the conversion again');
   if (expected.bytes !== undefined && bytes !== expected.bytes) throw new RunError('verification_failed', `verification failed, expected ${expected.bytes} bytes, got ${bytes}`, 'run the same conversion again');
-  const digest = sha256File(file);
+  const buffer = fs.readFileSync(file);
+  const digest = crypto.createHash('sha256').update(buffer).digest('hex');
   if (expected.digest && digest !== expected.digest) throw new RunError('verification_failed', 'verification failed, output digest does not match the selected winner', 'ensure the output directory is on a reliable local filesystem, then run again');
-  return { dimensions, frameCount: Number(frames), duration, bytes, digest };
+  let loop;
+  try { loop = inspectGifLoop(buffer); } catch (error) {
+    throw new RunError('verification_failed', `verification failed, ${error.message}`, 'repair or reinstall the selected GIF encoder, then run the conversion again');
+  }
+  return { dimensions, frameCount: Number(frames), duration, bytes, digest, loop };
 }
 
 function createPublicationTemp(outputDir, prefix) {
@@ -398,6 +405,7 @@ function resultPayload({ script, backend, input, output, config, winner, verifie
     { name: 'duration agrees with the decoded reference', status: 'pass' },
     { name: `${verified.bytes} bytes is below the ${config.maxBytes} limit`, status: 'pass' },
     { name: 'sha256 matches after publication', status: 'pass' },
+    { name: `loop is ${verified.loop.mode} (${verified.loop.extension}, repetition count ${verified.loop.repeatCount})`, status: 'pass' },
   ];
   return {
     status: 'verified',
@@ -414,7 +422,7 @@ function resultPayload({ script, backend, input, output, config, winner, verifie
     bytes: verified.bytes,
     maxBytes: config.maxBytes,
     headroomBytes: config.maxBytes - verified.bytes,
-    loop: 'infinite',
+    loop: verified.loop.mode,
     vmaf: winner.score,
     sha256: verified.digest,
     parameters,
@@ -442,8 +450,10 @@ function emitResult(payload, json = false) {
     `  vmaf        ${payload.vmaf}`,
     `  sha256      ${payload.sha256}`,
     ...payload.checks.map(check => `Check: ${check.status === 'pass' ? 'PASS' : 'FAIL'} ${check.name}`),
-    'Verification: complete. ffprobe measured every value above, and the digest was confirmed',
-    'on the published file after rename. No further inspection is required.',
+    'Verification: complete. ffprobe measured codec, dimensions, frames and duration.',
+    'The GIF application extension establishes looping. Filesystem/hash code measured bytes',
+    'and confirmed the digest after publication. FPS and parameters are selected encoder',
+    'settings. VMAF comes from the scorer. No further inspection is required.',
   ];
   if (payload.cleanupFailures?.length) lines.push(`Cleanup incomplete: ${JSON.stringify(payload.cleanupFailures)}`);
   process.stdout.write(`${lines.join('\n')}\n`);
