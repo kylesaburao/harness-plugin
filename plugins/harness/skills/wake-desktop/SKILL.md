@@ -22,30 +22,25 @@ The target also has to be configured for it: Wake-on-LAN enabled in firmware, an
 address must belong to the wake-capable interface, which is normally the wired one. A
 laptop on Wi-Fi generally will not wake.
 
-Running from inside WSL2 is riskier than the preflight can detect. WSL2's default NAT
+Running from inside WSL2 is riskier than the checks can detect. WSL2's default NAT
 networking gives the Linux side its own virtual network, so the broadcast socket opens
-successfully and the preflight passes, but the magic packet may never reach the physical
-LAN's broadcast domain. A preflight pass under WSL2 does not confirm the packet can arrive;
-only a successful wake does. Windows 11's mirrored networking mode avoids this by sharing
-the host's network directly.
+successfully and the checks pass, but the magic packet may never reach the physical
+LAN's broadcast domain. A successful send under WSL2 does not confirm the packet can
+arrive; only a successful wake does. Windows 11's mirrored networking mode avoids this by
+sharing the host's network directly.
 
 ## Workflow
 
 1. Every path below is relative to the skill directory, not the current working directory.
    When they differ, prefix the script with the absolute skill directory path, for example
-   `node /path/to/wake-desktop/scripts/wake-desktop.js --preflight --json`.
+   `node /path/to/wake-desktop/scripts/wake-desktop.js --mac a1:b2:c3:d4:e5:f6 --ip 192.168.1.50 --json`.
 
 2. Collect the MAC address and the target host. Ask the user if you do not have both.
    `MAC_ADDRESS` and `IP_ADDRESS` in the environment are used only when the matching flag
    is absent, so pass them explicitly when you know them.
 
-3. Check readiness, which also validates the arguments without sending anything:
-
-   ```sh
-   node scripts/wake-desktop.js --mac a1:b2:c3:d4:e5:f6 --ip 192.168.1.50 --preflight --json
-   ```
-
-4. Wake it:
+3. Wake it. The script validates arguments and the environment before sending anything, so
+   this one dispatch also serves as the readiness check:
 
    ```sh
    node scripts/wake-desktop.js --mac a1:b2:c3:d4:e5:f6 --ip 192.168.1.50 --timeout 120 --json
@@ -54,7 +49,7 @@ the host's network directly.
    Add `--no-wait` to send the packet and return immediately, when the user does not need
    the host to be reachable before the next step.
 
-5. Read the exit status and the JSON. Do not infer the outcome from the log lines, which
+4. Read the exit status and the JSON. Do not infer the outcome from the log lines, which
    go to stderr and describe intent rather than result.
 
 ## Reading the result

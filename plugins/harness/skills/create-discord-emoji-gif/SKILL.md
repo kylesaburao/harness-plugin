@@ -17,7 +17,7 @@ winner, score it with VMAF, verify it, and publish it atomically. Use gifski by 
 Use FFmpeg and gifsicle as the defined fallback.
 
 Both backends need `ffmpeg` built with `libvmaf` and `ffprobe`. The default backend also
-needs `gifski`. The fallback needs `gifsicle`. Each preflight reports all missing or
+needs `gifski`. The fallback needs `gifsicle`. Each converter reports all missing or
 unsuitable tools and gives platform-specific remedies.
 
 ## Select an entrypoint
@@ -38,9 +38,9 @@ Use this procedure:
 3. Node.js 22.0.0 or newer selects the matching Node.js converter.
 4. Missing or older Node.js selects the matching Bash converter.
 5. An explicit gifsicle request selects Node.js gifsicle unless Bash was also requested.
-6. The default Node.js gifski preflight can fall through to Node.js gifsicle only for
-   `command_missing` for gifski, `gifski_probe_failed`, or
-   `gifski_capability_missing`.
+6. A default Node.js gifski attempt that fails before work starts (exit 2) can
+   fall through to Node.js gifsicle only for `command_missing` for gifski,
+   `gifski_probe_failed`, or `gifski_capability_missing`.
 7. Do not fall through on argument, input, output, FFmpeg, ffprobe, platform, or work
    directory failures.
 8. After Node.js conversion work starts, fall through only from Node.js gifski
@@ -55,24 +55,11 @@ does not change the supported runtime floor.
 
 ## Workflow
 
-1. Preflight the selected converter. Include the input when one is available:
+1. Warn the user before a broad search because it can take several minutes and use
+   most CPU cores. Narrow the search with environment variables when the user wants a
+   faster result.
 
-   ```sh
-   node scripts/node/mov-to-gif-gifski.js --preflight --json INPUT_VIDEO
-   node scripts/node/mov-to-gif.js --preflight --json INPUT_VIDEO
-   bash scripts/bash/mov-to-gif-gifski.sh --preflight --json INPUT_VIDEO
-   bash scripts/bash/mov-to-gif.sh --preflight --json INPUT_VIDEO
-   ```
-
-   `--preflight` without an input checks only the environment. With an input, it also
-   validates the video and reports a nonfatal `input_duration_long` warning when the
-   clip is longer than 3 seconds.
-
-2. Relay every preflight diagnosis verbatim, including each stable `code`, `condition`,
-   and `remedy`. Do not independently replace its remedy. Ask the user before running
-   an installation command because it changes the machine.
-
-3. Convert with the selected direct entrypoint:
+2. Convert with the selected direct entrypoint:
 
    ```sh
    node scripts/node/mov-to-gif-gifski.js INPUT_VIDEO [OUTPUT.gif]
@@ -81,14 +68,25 @@ does not change the supported runtime floor.
    bash scripts/bash/mov-to-gif.sh INPUT_VIDEO [OUTPUT.gif]
    ```
 
-   Without an output path, every converter writes
-   `<input-basename>_<size>x<size>.gif` next to the input. Progress and warnings go to
-   stderr. The result summary goes to stdout. A long-input warning does not reject,
-   trim, or modify the input.
+   The converter validates the environment and the video before doing any conversion
+   work, so this one dispatch also serves as the readiness check. It reports a nonfatal
+   `input_duration_long` warning on stderr when the clip is longer than 3 seconds. Without
+   an output path, every converter writes `<input-basename>_<size>x<size>.gif` next to the
+   input. Progress and warnings go to stderr. The result summary goes to stdout. A
+   long-input warning does not reject, trim, or modify the input.
 
-4. Warn the user before a broad search because it can take several minutes and use
-   most CPU cores. Narrow the search with environment variables when the user wants a
-   faster result.
+3. Relay a failure diagnosis verbatim, including each stable `code`, `condition`, and
+   `remedy`. Do not independently replace its remedy. Ask the user before running an
+   installation command because it changes the machine.
+
+   Run `--preflight` as its own dispatch only when a check is wanted without attempting a
+   conversion, for example confirming the environment before the user hands over a video.
+   `--preflight` without an input checks only the environment; with an input, it also
+   validates the video.
+
+   ```sh
+   node scripts/node/mov-to-gif-gifski.js --preflight --json INPUT_VIDEO
+   ```
 
 ## Tuning
 

@@ -60,7 +60,8 @@ Every script a skill runs must let a calling agent find out whether it can work,
 - Failures go to stderr as `ERROR [code]: condition` followed by `Remedy: command`, or as `{"error":{"code","condition","remedy"}}` under `--json`. The `code` is a stable identifier an agent can branch on. The `remedy` is the exact thing that fixes it.
 - Arguments are validated before the environment, so a typo is never reported as a missing dependency.
 - A normal run performs the same preflight before touching anything, so the probe and the real run cannot disagree.
-- The `SKILL.md` tells the agent to relay a preflight diagnosis verbatim instead of diagnosing independently, matching how `write-asd-ste100` handles its reference-bundle errors.
+  - Because of that, a calling agent dispatches the real command directly by default, not `--preflight` first. A failure from the real run carries the identical diagnosis `--preflight` would have given, so relay it rather than re-running `--preflight` to double-check. A `SKILL.md` gives `--preflight` its own dispatch only for a concrete reason it names, such as the real run being user-interactive and unanswerable on the user's behalf (`back-up-directories`), or the real run being materially expensive or side-effecting to attempt blind.
+- The `SKILL.md` tells the agent to relay a failure diagnosis verbatim, from whichever call produced it, instead of diagnosing independently, matching how `write-asd-ste100` handles its reference-bundle errors.
 
 The diagnostic shape matches `plugins/harness/skills/write-asd-ste100/scripts/ste_data.py`, which reports a code, the failed condition, and an initialization command.
 

@@ -26,16 +26,7 @@ at every target.
 1. Every path below is relative to the skill directory, not the current working directory.
    When they differ, prefix the script with the absolute skill directory path.
 
-2. Check the environment before anything else:
-
-   ```sh
-   node scripts/backup.js --preflight --json
-   ```
-
-   Exit status 2 with `dependency_missing` means the package is not installed. Relay the
-   `remedy` command and ask before running it, since it writes to the skill directory.
-
-3. Build the configuration. Copy `references/backup-config.json` to a local file the user
+2. Build the configuration. Copy `references/backup-config.json` to a local file the user
    owns, then edit it:
 
    ```json
@@ -51,17 +42,25 @@ at every target.
    configuration file's own directory. Name the local copy something matching
    `*.local.json`, which the repository ignores, because these paths are machine-specific.
 
-4. Validate the configuration without backing anything up:
+3. Validate the configuration without backing anything up. This is a separate dispatch
+   because the real run is interactive and the agent must never invoke or answer its
+   `Proceed? [y/N]` prompt (see "This tool is interactive" above), so this preflight is how
+   the agent shows the user a safe preview before handing off a command it will not run
+   itself:
 
    ```sh
    node scripts/backup.js --preflight --json path/to/backup-config.local.json
    ```
 
-   This runs exactly the validation a real run does, so it reports the resolved source,
-   output, targets, and the archive filename before any data moves. It has one side effect:
-   a missing output directory is created, as it would be on a real run.
+   This runs exactly the validation a real run does, including the environment check, so it
+   reports the resolved source, output, targets, and the archive filename before any data
+   moves. It has one side effect: a missing output directory is created, as it would be on a
+   real run. Exit status 2 with `dependency_missing` or `node_version_unsupported` means the
+   environment is not ready; on `dependency_missing`, relay the `remedy` command and ask
+   before running it, since it writes to the skill directory. Exit status 3 with
+   `config_invalid` means the configuration needs a fix, not the environment.
 
-5. Hand the run to the user:
+4. Hand the run to the user:
 
    ```sh
    node scripts/backup.js path/to/backup-config.local.json
