@@ -21,3 +21,4 @@ venv/
 
 # Editor and OS
 .DS_Store
+/tmp/
