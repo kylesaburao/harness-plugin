@@ -405,6 +405,8 @@ class DirectiveTests(unittest.TestCase):
 
     def test_encoding_declarations_follow_pep_263_placement(self):
         for text in ("# vim: set fileencoding=utf-8 : utilize\n", "#!/usr/bin/env python3\n# coding=utf-8 utilize\n",
+                     "# encoding: utf-8 utilize\n", "#!/usr/bin/env python\n# -*- encoding: utf-8 -*- utilize\n",
+                     "# This Python file uses the following encoding: utf-8 utilize\n",
                      "\n# -*- coding: latin-1 -*- utilize\n"):
             with self.subTest(text=text):
                 result = source_result(text, "a.py")
@@ -416,7 +418,7 @@ class DirectiveTests(unittest.TestCase):
                      "x = 1\ny = 2\n# -*- coding: utf-8 -*- utilize\n",
                      "x = 1  # -*- coding: utf-8 -*- utilize\n",
                      "x = 1\n# -*- coding: utf-8 -*- utilize\n",
-                     "# The decoding: step and encoding: step utilize it.\n"):
+                     "x = 1\ny = 2\n# The decoding: step and encoding: step utilize it.\n"):
             with self.subTest(text=text):
                 self.assertIn("unapproved_word", categories(source_result(text, "a.py")))
 

@@ -424,9 +424,9 @@ def js_comment_spans(entries: list[tuple[int, InputSpec, str]]) -> dict[int, lis
 # --- Comment prose policy ----------------------------------------------------------------
 
 PY_DIRECTIVE = re.compile(r"(?:type:\s*\S|(?i:noqa)\s*(?::|$)|(?:ruff|pylint|mypy|pyright|fmt|isort):\s*\S)")
-# PEP 263 forms such as "-*- coding: utf-8 -*-" and "vim: set fileencoding=utf-8".
-# "coding" must start a word, so "decoding:" or "encoding:" in prose stays checkable.
-PY_ENCODING = re.compile(r"#.*?(?<![A-Za-z])(?:fileen)?coding[:=][ \t]*[-\w.]+")
+# CPython's own PEP 263 pattern. Placement (encoding_declaration) keeps ordinary
+# comments that merely mention "coding:" checkable.
+PY_ENCODING = re.compile(r"#.*?coding[:=][ \t]*[-\w.]+")
 JS_DIRECTIVE = re.compile(
     r"(?:@ts-(?:check|nocheck|ignore|expect-error)(?![\w-])"
     r"|eslint-(?:disable(?:-next-line|-line)?|enable|env)(?![\w-])"
