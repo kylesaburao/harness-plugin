@@ -161,6 +161,12 @@ function runCommandPlan(plan, execute = spawnCommand, {
   return status;
 }
 
+// The gate never installs dependencies, and its prerequisite check only proves
+// that pypdfium2 imports, not which version or what else the environment holds.
+// Removing .venv after every gate means each gate runs against an environment
+// that setup has just built from requirements-dev.txt, not one left over from
+// an earlier pin or hand-installed packages. In the container this empties the
+// .venv volume, which only carries the environment from one setup to one gate.
 async function runWithVenvCleanup(repoRoot, runGate, {
   remove = fs.promises.rm,
   stderr = process.stderr,
