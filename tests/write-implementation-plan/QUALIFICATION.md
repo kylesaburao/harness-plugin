@@ -828,3 +828,108 @@ Case a1's first attempt was blocked by the evaluator's invocation. `--allowedToo
 Cost: approximately $1.00 across the four model sessions. Raw evidence (`evidence/g4-*`) remains under the disposable root and was not archived.
 
 The Claude Code session that authored the qualification plan is a separate anecdotal data point, not a controlled sample. It ran in native plan mode with the personal 3.1.16 installation and the personal CLAUDE.md activation. It loaded the skill through the Skill tool and asked the handoff Yes/No question through AskUserQuestion.
+
+## Conditional handoff offer qualification — 2026-09-27
+
+This section qualifies the change that asks the handoff question only when a handoff is plausibly useful. Earlier sections remain historical.
+
+**Superseded expectations.** The 2026-09-25 Claude cases a1 and a2 expected "Handoff workflow: unconfirmed" plus a Yes/No question for the small `greet()` greeting-parameter change. Under the new contract, a change that small should yield "not offered". Those expectations are superseded; their recorded results are left unchanged. In the 2026-09-20 Codex matrix, only the unknown-choice question steps on the same small change are superseded. Its explicit-choice, choice-switch, and later-operation cases remain consistent with the new contract.
+
+#### Candidate and static contract
+
+- Baseline HEAD: `58a55bb`. Baseline skill SHA-256: `a643d43bfd23a353709decf3d7b322af7ff68c8f019957638aec19d9a808e18c`.
+- Candidate source and `.build/harness/skills/write-implementation-plan/SKILL.md` both have SHA-256 `5cf1cc8d019e2fcba90631814920d2f98222bc7bcfe5ddd6de9f9a031e5dcd3c`.
+- Changed sections:
+  - the frontmatter `description`;
+  - the delegation paragraph;
+  - "Establish the handoff choice" (rewritten);
+  - one enumeration in "Honor pause and stop requests";
+  - one sentence in "Include the handoff contract only when selected";
+  - the handoff part of "Audit before presenting".
+- `git diff -U0` shows no hunk in any other section, and the handoff contract body is unchanged.
+- The rewritten section:
+  - defines the two applicability criteria and the four record-line forms with straight apostrophes;
+  - requires one outcome line in the user-facing reply;
+  - states the revision rule;
+  - keeps the never-implies-Yes list, the Yes authorization limits, and the omission rules (now "No or not offered").
+- The audit gains a "Not offered" case.
+- A review of every `choice`, `unresolved`, `unconfirmed` and `For No` hit found:
+  - no remaining sentence mandates the question unconditionally;
+  - none forbids assessment based on size or context.
+- `handoff choice` wording remains only in the Yes-only contract body, which was out of scope.
+- The frontmatter contains only `name` and `description`. The README catalog row changed.
+- Unchanged:
+  - `dist/`, `src/harness/package.json`, `docs/development/dependencies.md`;
+  - the activation reference (SHA-256 `6e5297afed3ac455c7e1017d15a4ab46b39c6b46492811f472429f336cdfd17e`).
+- `git diff --check` passed.
+
+#### Repository validation
+
+macOS, repo root: `npm run build` passed, then `npm run test:setup` passed. `npm test` was run with `TMPDIR` set to a realpath scratch directory, to avoid the known `/var/folders` realpath failures.
+
+- **Result: 803 passed, 1 failed, 0 skipped.** All groups except `distribution` passed, including `harness-advisor` (60/60) and `inventory` (8/8).
+- The single failure is pre-existing and environment-only: `distribution/build.test.js:207` "assembly failures and unsafe ancestors retain the prior selected artifact".
+  - On case-insensitive APFS the case-colliding fixture overwrote `media-result.ts`.
+  - Compilation therefore failed before the expected `/Case-colliding paths/` message.
+  - This is the signature recorded in `tests/claude-host/QUALIFICATION.md`.
+
+#### Host, harness, and fixture
+
+- **Host:** Claude Code 2.1.283, macOS, model `claude-opus-5-5`, personal claude.ai login.
+- **Candidate:** the fresh `.build/harness` copied to `/private/tmp/claude-qual-20260927145339/harness`.
+- **Flags on every session:** `claude -p --plugin-dir "$QROOT/harness" --add-dir "$QROOT/harness" --setting-sources '' --output-format stream-json --verbose --max-budget-usd 2`, with the prompt on stdin.
+  - Plan-mode cases used `--permission-mode plan --allowedTools "Read,Glob,Grep"`.
+  - Case G used `--permission-mode dontAsk --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git status*),Bash(git rev-parse*),Bash(cat *)"`.
+- **Activation:** none by default, matching a1. Case C2 also passed the Implementation planning and Skill discovery blocks from `activation-instructions.md` via `--append-system-prompt-file`, as in the 2026-09-25 proxy.
+- **Multi-turn:** `--no-session-persistence` was omitted from every invocation, single-turn ones included, so turn 2 could use `claude -p --resume <session_id>`. A two-turn Haiku probe confirmed that `--resume` recalls turn 1.
+- **Grading:**
+  - Headless plan mode exposes neither AskUserQuestion nor ExitPlanMode, so "asked" means an explicit Yes/No question in the final text.
+  - An unanswered first turn is also the non-interactive "no answer obtainable" case.
+  - Record lines were read from the plan file each session wrote, normalizing `’` to `'`.
+  - Reply outcome lines were read from the final `result` text.
+- **Fixture:** the CommonJS `greet(name)` repository with a passing `node --test` suite, README, and `package.json`.
+  - Seeded state: a staged `NOTES.md`, an unstaged README line, `untracked.txt`, and an ignored `ignored.log`.
+  - Each case ran in its own copy.
+  - Snapshots recorded HEAD, the raw index hash, `ls-files -s`, `status --porcelain=v2 --ignored` (via `--no-optional-locks`), and every file's mode and hash.
+- **Case G location:** it ran at `.build/conditional-handoff-qualification/g/` in this checkout, outside temporary storage, because the contract forbids temporary storage for a handoff. No build ran while it existed. It was copied to `evidence/g-final/` and removed.
+
+#### Matrix
+
+| Case | Prompt / turn | Loading | Asked? | Record line (plan file) | Reply outcome line | Fixture | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A small | a1 prompt verbatim | Skill tool | No | `not offered; assessed unnecessary (single-function change with one test file and a README line).` Finalized, not a draft | "I didn't include a workflow for pausing and resuming … since this is a single-function change with one test file." | No content change | Passed |
+| B1 multi-phase | CommonJS→ESM→TypeScript→CLI, each phase gated on passing tests | Skill tool | Yes, naming "three sequential phases" | `unconfirmed (assessed applicable: three sequential phases, each gated on passing tests, that could each run in a fresh session).` Labeled DRAFT | Question plus "recorded as unconfirmed" | No content change | Passed; also covers applicable, non-interactive |
+| B2 answered | Resume B1: "No." | (resumed) | No re-ask | `assessed applicable (three sequential phases, …); excluded at the user's request.` DRAFT label removed | "Handoff workflow: excluded at your request." | Unchanged | Passed. B1 also asked two technical questions. The model took "No" as the handoff answer and said so. |
+| C long task, no activation | Localize for ~200 CLDR locales, locale by locale | **Skill not loaded** (no Skill call) | No handoff question; asked four technical questions | None | None | Unchanged | Not a qualification of the contract: a routing miss. Recorded as observed. |
+| C2 long task, activation proxy | Same as C | Skill tool | Yes, citing ~10 locale batches that "could run longer than one session" | `unconfirmed (assessed applicable: three sequential phases, including roughly ten locale-batch rounds that could run past one session).` DRAFT | Yes | Unchanged | Passed as applicable. The reason cites both phases and length, not length alone. |
+| D1 explicit include | A + "Include a handoff workflow." | Skill tool | No | `included at the user's request.` Plan has a future-capability handoff section | Yes | Unchanged | Passed |
+| D2 explicit exclude | A + "Do not include a handoff workflow." | Skill tool | No | `excluded at the user's request.` | "Handoff workflow: left out, as you asked." | Unchanged | Passed |
+| F1 revision base | a1 prompt | Skill tool | No | `not offered; assessed unnecessary (single-function change in three small files with one test run).` | "no handoff workflow offered, since this is a single small change" | Unchanged | Passed |
+| F2 revision expands | Resume: add ESM then TypeScript as separately verified phases | (resumed) | Yes: "the plan now has 3 separate phases" | `unconfirmed (assessed applicable: three sequential, independently verified phases: greeting, ESM, TypeScript).` DRAFT | Yes | Unchanged | Passed: reassessed and asked |
+| G1 not offered, dontAsk | a1 prompt + "Use your normal planning output; do not implement." | Skill tool | No | Plan in the reply: `not offered; assessed unnecessary (small change to one function, with one test file and a README example).` | Same line | No content change | Passed |
+| G2 later pause | Resume: "Pause and create HANDOFF.md." | (resumed) | No Yes/No question | `HANDOFF.md` records "not offered; assessed unnecessary (…)" plus a one-time user-authorized handoff, with no standing schedule | Exact resume prompt emitted with real path, HEAD, and choice; then stopped | Only `HANDOFF.md` added (mode 644); index entries and all other files unchanged | Passed. Read-back was `head -5` plus a line count, not a full re-read. No handoff skill was available, so the file was written by hand. |
+
+**Raw index hash.** The raw `.git/index` hash changed in B1, D1, D2, and G1. Staged entries, porcelain status, and every file hash and mode were identical, which matches a stat-cache refresh from the model's own `git status`. It is not a content change.
+
+#### Observations and limits
+
+- **Routing.** Without activation, case C chose not to load the skill for a localization planning request. With the proxy it loaded. This is a routing observation about implicit invocation, not about the new contract. One sample each.
+- **Record in reply.** All sessions that loaded the skill stated the handoff outcome in the final reply. Most paraphrased rather than repeating the literal record string. The literal string appeared in each plan file, or in the reply for G1, whose plan was delivered in the reply.
+- **Not run.**
+  - An interactive session in which AskUserQuestion is available: all runs were headless.
+  - A long single task without phases: both long-task samples split the work into phases, so criterion b alone was not isolated.
+  - A legacy "unconfirmed" plan being revised.
+  - Delegation payloads.
+  - These are untested.
+- **Native plan files.** Plan-mode sessions wrote to the personal `~/.claude/plans/` directory. They were left for the user to remove:
+  - `plan-adding-an-optional-humming-starfish.md`
+  - `plan-migrating-this-package-sunny-koala.md`
+  - `plan-localizing-greet-for-snug-umbrella.md`
+  - `plan-localizing-greet-for-jaunty-lovelace.md`
+  - `plan-adding-an-optional-enchanted-tide.md`
+  - `plan-adding-an-optional-kind-teacup.md`
+  - `plan-adding-an-optional-stateless-waffle.md`
+- **Session transcripts.** Because `--no-session-persistence` was omitted, Claude Code also kept session transcripts in nine personal `~/.claude/projects/` directories. They are named `-private-tmp-claude-qual-20260927145339-{case-A,case-B,case-C,case-C2,case-D1,case-D2,case-F,probe}` and `-Users-kyle-Documents-harness-plugin--build-conditional-handoff-qualification-g`. They were left for the user to remove.
+- **Cost:** $3.21 total, across 9 sessions and 13 `claude -p` invocations, including the Haiku probe.
+- **Omission check.** The plan files for A, D2, and B2 (after "No"), and G1's reply, contain no resume prompt, continuation document, checkpoint, ledger, or HANDOFF requirement beyond the record line. F1's plan file was overwritten by F2, so F1 was checked only through its record line at the time.
+- **Evidence:** raw evidence (`evidence/*.jsonl`, snapshots, prompts, `run.sh`, `snap.sh`, `extract.py`) is under `/private/tmp/claude-qual-20260927145339/`. It was not archived.
