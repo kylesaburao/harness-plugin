@@ -1,30 +1,7 @@
-# Host integration and native capability gate
+# Claude Advisor gate background
 
-## User directories and instruction surfaces
-
-For Codex, use nonempty absolute `CODEX_HOME`, otherwise the target user's
-`.codex` directory. For Claude Code, use nonempty absolute `CLAUDE_CONFIG_DIR`,
-otherwise the target user's `.claude` directory. Normalize the selected directory
-to an absolute path. If a nonempty override is relative, report it as a blocker
-rather than guessing a directory or silently falling back.
-
-Codex normally loads user instructions from `AGENTS.md` in its user directory.
-A nonempty `AGENTS.override.md` shadows that file. Inspect the override and edit
-that effective surface when applicable, rather than activating a shadowed
-`AGENTS.md`. Codex uses Harness Advisor. Do not invent a native-equivalence branch.
-
-Claude Code normally uses `CLAUDE.md` in its user directory. If the selected
-host uses a different applicable user-level instruction surface, establish it
-before editing. If the effective surface cannot be established, report the
-specific blocker instead of claiming an unused file is active.
-
-For either host, use ordinary file operations to copy the bundled companion to
-`final-plan-context.md` in the resolved user directory, then contextually patch
-Advisor activation and the Final plans trigger on the effective instruction
-surface. The trigger points to that absolute installed companion path. These
-are user-level host integration files, an intentional exception to the
-runtime-data root. They contain no chosen Advisor model. Preserve host settings,
-Advisor configuration, and legacy role files.
+The installation procedure is in `SKILL.md`. This reference explains the
+session behavior of the bundled Claude activation template.
 
 ## Claude session gate
 
@@ -48,11 +25,6 @@ requests go to native. An explicit native-only request with no native capability
 reports unavailable. No Harness route, prompt, budget, carryover, cache, or peer
 review policy participates in native behavior. Do not load the Harness Skill just
 to select between the two mechanisms, and do not run both for additional review.
-
-Install the Claude gate regardless of current session availability, so a later
-session without native Advisor can use fallback. Neither host CLI is required
-for installation. Legacy role files remain untouched and are neither required
-nor explicitly selected by new Harness dispatch.
 
 Sources checked 2026-09-12:
 
