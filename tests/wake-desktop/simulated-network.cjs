@@ -6,6 +6,7 @@ const dgram = require('node:dgram');
 const cp = require('node:child_process');
 const os = require('node:os');
 const realSpawn = cp.spawn;
+let targetProbes = 0;
 const scenario = process.env.WAKE_SCENARIO;
 const trace = [];
 const record = (event, details = {}) => trace.push({ event, time: performance.now(), ...details });
@@ -78,8 +79,12 @@ cp.spawn = (_, args) => {
   };
   const target = host !== '127.0.0.1';
   const delay = target && scenario === 'late' ? 1100 : 0;
-  timer = setTimeout(() => child.emit('close',
-    scenario === 'loopback-fail' ? 1 : 0), delay);
+  // 'unresolved': the target name fails to resolve (macOS exit 68) on the
+  // first probe and answers on the next. 'loopback-exit': loopback exits 68.
+  const unresolved = target && scenario === 'unresolved' && ++targetProbes === 1;
+  const code = scenario === 'loopback-fail' ? 1
+    : unresolved || (!target && scenario === 'loopback-exit') ? 68 : 0;
+  timer = setTimeout(() => child.emit('close', code), delay);
   return child;
 };
 

@@ -26,7 +26,16 @@ export interface WakeCliOptions {
   wait: boolean; preflightOnly: boolean; json: boolean; help: boolean;
 }
 export interface ResolvedWakeRequest { mac: string; ip: string; timeoutSeconds: number }
-type PingResult = { ok: boolean; error?: unknown };
+// `error` means ping could not be run at all (spawn or kill failure).
+// `exitError` means ping ran but exited abnormally, for example with an
+// unresolvable host (iputils exit 2, macOS exit 68) or a signal.
+type PingResult = { ok: boolean; error?: unknown; exitError?: Error };
+type PingProbe = (host: string, timeoutMs: number) => Promise<PingResult>;
+interface WaitDependencies {
+  now?: () => number;
+  ping?: PingProbe;
+  sleep?: (milliseconds: number) => Promise<void>;
+}
 type WakeReport = { mac: string; ip: string; target?: string } & (
   | { status: 'ready'; timeoutSeconds: number; waitedSeconds?: never }
   | { status: 'online' | 'packet-sent'; waitedSeconds: number }
@@ -220,7 +229,7 @@ function runPing(host: string, timeoutMs = PROBE_INTERVAL_MS) {
       child.once('close', (code, signal) => {
         if (expired) finish({ ok: false });
         else if (signal || (code !== 0 && code !== 1 && !(os.platform() === 'darwin' && code === 2))) {
-          finish({ error: new Error(`ping exited with ${signal || code}`), ok: false });
+          finish({ exitError: new Error(`ping exited with ${signal || code}`), ok: false });
         } else finish({ ok: code === 0 });
       });
       timer = setTimeout(() => {
@@ -238,9 +247,10 @@ function runPing(host: string, timeoutMs = PROBE_INTERVAL_MS) {
 }
 
 function probeError(result: PingResult) {
+  const failure = result.error ?? result.exitError;
   return new StartupError(
     errorDetails(result.error).code === 'ENOENT' ? 'command_missing' : 'probe_unusable',
-    result.error ? `ping could not run: ${errorDetails(result.error).message}` : 'ping could not reach 127.0.0.1',
+    failure ? `ping could not run: ${errorDetails(failure).message}` : 'ping could not reach 127.0.0.1',
     'make ping available on PATH with ICMP permission (macOS: /sbin/ping, Linux: install iputils-ping), or use --no-wait',
   );
 }
@@ -315,23 +325,28 @@ function broadcast(packet: Buffer | null, onSent: () => void = () => {}) {
   });
 }
 
-function sleep(milliseconds: number) {
+function defaultSleep(milliseconds: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function waitForHost(config: ResolvedWakeRequest) {
-  const start = performance.now();
+// checkEnvironment has already proven ping usable against loopback, so an
+// abnormal exit here (such as a name that does not resolve until the target
+// wakes) means "not reachable yet". Only a failure to run ping is fatal.
+async function waitForHost(config: ResolvedWakeRequest, {
+  now = () => performance.now(), ping = runPing, sleep = defaultSleep,
+}: WaitDependencies = {}) {
+  const start = now();
   const deadline = start + config.timeoutSeconds * 1000;
-  while (performance.now() < deadline) {
-    const probeStart = performance.now();
+  while (now() < deadline) {
+    const probeStart = now();
     const remaining = deadline - probeStart;
     if (remaining <= 0) break;
-    const result = await runPing(config.ip, Math.min(PROBE_INTERVAL_MS, remaining));
-    const now = performance.now();
-    if (now >= deadline) break;
+    const result = await ping(config.ip, Math.min(PROBE_INTERVAL_MS, remaining));
+    const probeEnd = now();
+    if (probeEnd >= deadline) break;
     if (result.error) throw probeError(result);
-    if (result.ok) return Math.round((now - start) / 100) / 10;
-    const delay = Math.min(probeStart + PROBE_INTERVAL_MS, deadline) - now;
+    if (result.ok) return Math.round((probeEnd - start) / 100) / 10;
+    const delay = Math.min(probeStart + PROBE_INTERVAL_MS, deadline) - probeEnd;
     if (delay > 0) await sleep(delay);
   }
   throw new StartupError('host_unreachable',

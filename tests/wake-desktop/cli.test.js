@@ -94,6 +94,13 @@ test('expired real subprocess is killed and reaped without retrying', () => {
   assert.equal(result.trace.filter(x => x.event === 'kill').length, 1);
   assert.equal(result.trace.at(-1).event, 'reaped');
 });
+test('an abnormal target ping exit keeps polling, but an abnormal loopback exit is fatal', () => {
+  const result = cli('unresolved', ['--json']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).status, 'online');
+  assert.equal(result.trace.filter(x => x.event === 'ping' && x.host !== '127.0.0.1').length, 2);
+  failure(cli('loopback-exit', ['--json']), 2, 'probe_unusable');
+});
 test('a response after the deadline is not accepted', () => {
   failure(cli('late', ['--timeout=1', '--json']), 1, 'host_unreachable');
 });
