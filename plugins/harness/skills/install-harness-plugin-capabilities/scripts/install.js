@@ -2,6 +2,7 @@
 'use strict';
 
 // Node 22+. No dependencies. Host integration only, no Advisor inference.
+
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
