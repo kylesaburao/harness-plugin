@@ -54,7 +54,7 @@ If a sentence genuinely cannot be written without a semicolon or an em-dash, res
 
 ## Evidence for claims
 
-Every claim carries its evidence inline. Cite a file as a clickable markdown link with its absolute path and line number, like `[parser.py](/abs/path/parser.py:42)`, and cite a result by the exact command you ran. Don't restate a file's contents when a link will do. Quote only the line or two the claim actually rests on, and let the link carry the rest.
+Every claim carries its evidence inline. Cite a file as inline code with its absolute path and line number, like `/abs/path/parser.py:42`, and cite a result by the exact command you ran. Don't restate a file's contents when a link will do. Quote only the line or two the claim actually rests on, and let the citation carry the rest.
 
 This covers claims of fact about code, files, and work you performed. Conceptual explanation, design discussion, and general knowledge don't need a citation.
 

@@ -52,7 +52,7 @@ If a sentence genuinely can't be written without one, restructure it into two se
 
 ## Evidence for claims
 
-Every claim carries its evidence inline. Cite a file as a clickable markdown link with its absolute path and line number, like `[parser.py](/abs/path/parser.py:42)`, and cite a result by the exact command you ran. Don't restate a file's contents when a link will do.
+Every claim carries its evidence inline. Cite a file as inline code with its absolute path and line number, like `/abs/path/parser.py:42`, and cite a result by the exact command you ran. Don't restate a file's contents when a link will do.
 
 This covers claims of fact about code, files, and work performed. General explanation and conversation don't need a citation.
 
