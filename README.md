@@ -3,20 +3,24 @@
 One repository of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills), packaged as an installable plugin for both Claude Code and Codex. Skills live once, under `plugins/harness/skills/`.
 The two `.claude-plugin/` and `.codex-plugin/` directories are thin packaging layers around that same content. See [AGENTS.md](AGENTS.md) for the architecture rules.
 
+## Dependencies
+
+See [DEPENDENCIES.md](DEPENDENCIES.md) for the authoritative runtime, tool, and initialization requirements for development and for using each plugin skill.
+
 ## Plugin contents
 
 ### Skills
 
-| Skill | Purpose | Setup |
-| --- | --- | --- |
-| `back-up-directories` | Archive a directory to a dated ZIP and replicate it to configured destinations. | `npm install --omit=dev --prefix plugins/harness/skills/back-up-directories` (needs `archiver`); see its `INSTALL.md` |
-| `create-discord-emoji-gif` | Convert a clip into a looping, under-256KB, 128x128 Discord emoji GIF. | Node ≥22, `ffmpeg` built with `libvmaf`, `ffprobe`, and `gifski` or `gifsicle` |
-| `diagnose-environment` | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. | |
-| `extract-video-frames` | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. | Node ≥20.6, macOS ≥26.0, Command Line Tools, and `ffmpeg-full` with `ffprobe`, `zscale`, PNG, and TIFF |
-| `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. | |
-| `record-decision` | Capture a consequential technical decision, its constraints, and its reversibility. | |
-| `research-precedent` | Research whether a proposed approach has precedent, internally or in the wider industry. | |
-| `write-asd-ste100` | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. | `python3`, plus a locally generated reference bundle; see its `INSTALL.md` |
+| Skill | Purpose |
+| --- | --- |
+| `back-up-directories` | Archive a directory to a dated ZIP and replicate it to configured destinations. |
+| `create-discord-emoji-gif` | Convert a clip into a looping, under-256KB, 128x128 Discord emoji GIF. |
+| `diagnose-environment` | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. |
+| `extract-video-frames` | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. |
+| `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. |
+| `record-decision` | Capture a consequential technical decision, its constraints, and its reversibility. |
+| `research-precedent` | Research whether a proposed approach has precedent, internally or in the wider industry. |
+| `write-asd-ste100` | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. |
 
 ### Output styles
 

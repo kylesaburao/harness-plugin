@@ -68,7 +68,13 @@ The pre-existing in-tree location `plugins/harness/skills/write-asd-ste100/refer
 
 `README.md`'s "Plugin contents" section is the canonical, human-scannable catalog of what the plugin ships - skills and output styles, each with a one-line purpose. Adding, removing, or renaming a skill or output style requires updating that table in the same commit; `tests/inventory/readme-inventory.test.js` enforces it.
 
+## Dependency inventory
+
+[DEPENDENCIES.md](DEPENDENCIES.md) is the authoritative inventory for development and plugin-use dependencies. Read it before dependency setup or changes. When work adds, removes, upgrades, or otherwise changes a runtime, package, system tool, platform requirement, or required initialization artifact, update it in the same change. Keep the affected manifests, lockfiles, preflights, Dockerfile, and skill-local setup instructions consistent with it.
+
 ## Development container
+
+On macOS hosts, run development commands and tests directly on macOS. On Linux hosts (including WSL2), run them through the development container using `./scripts/dev exec <command> [args...]`.
 
 When building, running, or changing the development container, read [CONTAINER.md](CONTAINER.md) for launcher commands, dependency volumes, failure remedies, and platform limits. Run the full container gate with `./scripts/dev exec node scripts/run-tests.js`. Keep Git operations on the host.
 
