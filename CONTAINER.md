@@ -79,8 +79,27 @@ Docker Desktop Linux ARM64 was tested with 16 CPUs and approximately 8 GB of Doc
 | Independent checkout | Passed. Separate dependency state and source paths containing spaces, a comma, and a double quote worked without Git history. |
 | Toolchain cache after source-only edits | Passed. All toolchain layers were cached after documentation changes. |
 | Linux amd64 | Skipped. No native amd64 host available. |
-| Native Linux ARM64 | Skipped. Docker Desktop testing does not verify native Linux host integration. |
+| Native Linux ARM64 | Not available: no native Linux ARM64 host. ARM64 container verification uses Docker Desktop on Apple silicon; native Linux host integration remains untested and is not a blocking verification task. |
 | Windows through WSL2 | Skipped. No WSL2 host available. |
 | macOS HEIC execution | Skipped. Requires separate macOS validation. |
 
 The first media gate exposed missing VMAF models. Adding the builder's `xxd` dependency fixed it. The Dockerfile now exercises VMAF scoring and libx264 encoding during every uncached final-image build.
+
+## Linux amd64 verified on 2026-09-08
+
+Native Linux Docker on Ubuntu 26.04.1 LTS was tested at commit `a2a54a7a57d20bdc8a7232cd1dc0d9ee02e93de8`, with 4 CPUs and 7,392,616,448 bytes (approximately 6.9 GiB) of Docker memory. The daemon reported `linux/x86_64` and container Node reported `x64`.
+
+The agent process retained an old supplementary group list after the account was added to `docker`. Commands ran through `sg docker -c './scripts/dev ...'`, using UID 1000 and GID 983; direct Docker access from that process still failed. This exercised the normal non-root launcher with Docker group access.
+
+| Check | Result |
+|---|---|
+| Fresh image build and dependency setup | Passed. Built the amd64 toolchain from source, including the final-image VMAF/libx264 runtime check. Installed backup dependencies, pypdfium2, and the validated 2,195-row ASD reference bundle. |
+| `./scripts/dev exec node scripts/run-tests.js` | Passed in 44.632 seconds: 308 Node tests and 112 Python tests passed, none failed, and 13 macOS-specific frame-extraction tests were skipped. Both GIF preflights and real converter/VMAF tests passed. Node pool and full-search workers: 4; retained-scenario concurrency: 1. |
+| libx264 fixture encoding | Passed with a 60-second, 640×360, 30 FPS H.264 fixture. |
+| SIGTERM during each real converter's FFmpeg work | Passed. Each returned 143, published no GIF, and left no container. |
+| Launcher lifecycle | Passed against real Docker: argument quoting, stdin, separate output streams, exit 37, interactive TTY, source visibility, container-created file UID/GID, dependency isolation, cross-container persistence, active-volume setup/reset refusal, repeat setup, and reset. |
+| Setup failure | Passed. An injected npm permission failure returned 243 and stopped before Python/reference setup. Restoring permissions and rerunning setup succeeded. |
+| Host state and independent checkout | Passed. A temporary checkout without Git history, with spaces, a comma, and a double quote in its path, used separate dependency state. Host dependency markers survived setup and reset. The primary checkout's Git configuration remained unchanged; Docker created only empty host dependency mount-point directories. |
+| Minimal host PATH and toolchain cache | Passed. Repeat setup and a rebuild after a source-only change worked with no host Node or Python on PATH. All toolchain layers were cached. |
+
+Reset and failure injection used only the temporary checkout's volumes. Those three volumes and its temporary image tag were removed afterward; the primary checkout's image and initialized dependency volumes were retained. The earlier ARM64 results above remain historical results for their recorded revision. Native Linux ARM64, WSL2, and macOS HEIC execution were not verified by this run.
