@@ -161,3 +161,19 @@ test('PR GIF job runs the complete container gate on a cached image named as scr
   assert.ok(!gif[naming].run.includes('git hash-object'));
   assert.ok(workflowSteps(verification, 'verify').some(step => step.run === 'npm test -- --skip-gif'));
 });
+
+test('floors job pins the .nvmrc floor and runs every runtime-floor mode once', () =>
+{
+  const major = Number.parseInt(fs.readFileSync(path.join(root, '.nvmrc'), 'utf8'), 10);
+  assert.ok(Number.isInteger(major));
+  const start = verification.indexOf('\n  floors:\n');
+  assert.ok(start >= 0, 'Missing job: floors');
+  const job = verification.slice(start + 1).split(/\n(?=  [\w-]+:\n)/)[0];
+  assert.match(job, new RegExp(`\\n        node-version: \\['${major}\\.0\\.0'\\]\\n`));
+  const floors = workflowSteps(verification, 'floors');
+  const modes = floors.map(step => /^node tests\/distribution\/runtime-floor\.js(?: (.+))?$/.exec(step.run ?? '')).filter(Boolean).map(match => match[1] ?? '');
+  assert.deepEqual([...modes].sort(), ['', '--backup', '--frames', '--gif', '--wake']);
+  const switched = floors.findIndex(step => step.name === 'Switch to the floor runtime');
+  const first = floors.findIndex(step => step.run?.startsWith('node tests/distribution/runtime-floor.js'));
+  assert.ok(switched >= 0 && switched < first);
+});

@@ -121,10 +121,10 @@ The default build/setup/test sequence must leave all tracked files, including `d
 
 ## Runtime floors
 
-`tests/distribution/runtime-floor.js` runs the built skills on the declared Node.js runtime floor, 24.0.0. It is not a `*.test.js` file, so the gate does not run it. Run it directly after `npm run build`, with one mode per invocation:
+`tests/distribution/runtime-floor.js` runs the built skills on the declared Node.js runtime floor, the `.nvmrc` major (24.0.0). It is not a `*.test.js` file, so the gate does not run it. Run it directly after `npm run build`, with one mode per invocation:
 
 ```sh
-node tests/distribution/runtime-floor.js            # wake-desktop, random-sampler, harness-advisor
+node tests/distribution/runtime-floor.js            # random-sampler, harness-advisor
 node tests/distribution/runtime-floor.js --backup   # back-up-directories, including the lockfile install
 node tests/distribution/runtime-floor.js --wake     # wake-desktop target management and validation
 node tests/distribution/runtime-floor.js --gif      # both GIF converters: help, usage error, missing-tool preflight

@@ -7,6 +7,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const plugin = require('../helpers/plugin-paths').artifactPath('');
+// The declared floor is the repository runtime major in .nvmrc.
+const FLOOR = Number.parseInt(fs.readFileSync(path.join(__dirname, '../../.nvmrc'), 'utf8'), 10);
+assert.ok(Number.isInteger(FLOOR), '.nvmrc must start with the Node.js major version');
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'harness-floor-')));
 const env = { ...process.env, HOME: home, NODE_OPTIONS: '', NODE_PATH: '' };
 function run(relative, args, input = '') {
@@ -86,7 +89,6 @@ function qualifyFrames() {
   process.stdout.write(`Frame extraction runtime floor passed on Node ${process.versions.node}: help, usage errors and platform preflight.\n`);
 }
 function qualifyBackup() {
-  assert.ok(Number(process.versions.node.split('.')[0]) >= 24, 'Backup requires Node >=24.0.0');
   fs.writeFileSync(path.join(home, 'package.json'), '{"type":"module"}\n');
   const skill = path.join(home, 'backup installé');
   fs.cpSync(path.join(plugin, 'skills/back-up-directories'), skill, {
@@ -140,7 +142,7 @@ if (selected.length > 1 || (selected.length === 1 && !MODES.has(selected[0]))) {
 }
 const mode = selected[0];
 try {
-  assert.ok(Number(process.versions.node.split('.')[0]) >= 24, 'Runtime floor qualification requires Node >=24.0.0');
+  assert.ok(Number(process.versions.node.split('.')[0]) >= FLOOR, `Runtime floor qualification requires Node >=${FLOOR}.0.0`);
   if (mode === '--backup') qualifyBackup();
   else if (mode === '--gif') qualifyGif();
   else if (mode === '--frames') qualifyFrames();
@@ -149,8 +151,6 @@ try {
     process.stdout.write(`Wake-desktop runtime floor passed on Node ${process.versions.node}: target management and wake validation.\n`);
   }
   else {
-  assert.ok(Number(process.versions.node.split('.')[0]) >= 24, 'This Stage 2 qualification requires Node >=24');
-  qualifyWakeDesktop();
   const sampler = 'skills/random-sampler/scripts/sample.mjs';
   success(sampler, ['--help']);
   assert.equal(JSON.parse(success(sampler, ['--preflight', '--json'])).status, 'ready');
@@ -221,6 +221,6 @@ else {
     assert.equal(Object.hasOwn(report, 'observations'), false);
   }
   assert.equal(fs.readFileSync(calls, 'utf8').trim().split('\n').length, 3);
-  process.stdout.write(`Runtime floor passed on Node ${process.versions.node}: wake target management and validation, native ESM, preserved numeric tokens, routing mutations, bundled-contract preflight, tool-free consultation and removed-flag rejection.\n`);
+  process.stdout.write(`Runtime floor passed on Node ${process.versions.node}: native ESM, preserved numeric tokens, routing mutations, bundled-contract preflight, tool-free consultation and removed-flag rejection.\n`);
   }
 } finally { fs.rmSync(home, { recursive: true, force: true }); }
