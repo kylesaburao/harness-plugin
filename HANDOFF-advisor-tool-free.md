@@ -18,7 +18,9 @@ update, credential changes, or local publication output writes are inferred.
   `1de5562`; intervening commit added only the plan. No unrelated user work.
 - Protected paths `dist/` and `src/harness/package.json` initially clean and still
   unchanged. Routing code `advisor-config.ts` and `config.test.js` unchanged.
-- No implementation commits yet. Hooks configured at `.githooks`.
+- Implementation commit `bdb6f899a085e0f9ff93c51d6e64c362d8e38d10` includes all implementation and review-fix changes. Hooks configured at `.githooks`.
+- The subsequent handoff receipt commit contains only final delivery bookkeeping;
+  identify its SHA with `git log -1 -- HANDOFF-advisor-tool-free.md`.
 
 ## Current stage and next action
 
@@ -34,9 +36,14 @@ EVALUATION now records final review and validation outcomes. Exact help/removal
 symbol audit and all 18 changed-path scope checks passed. Only evidence-record
 updates follow the final full gate.
 
-Next: commit intended source/test/docs/ledger changes with fixed timestamps, record
-implementation commit here, commit final handoff receipt, push main and verify
-remote tip. Source implementation requires no further edits.
+No implementation, review, or validation work remains. Delivery branch is `main`
+on `origin`. This final ledger update is the handoff receipt following the
+implementation commit. The executor's last delivery steps are to commit this
+receipt, push both relevant commits without force, and compare `git ls-remote
+origin refs/heads/main` with `git rev-parse HEAD`. Those branch references are the
+authoritative delivery state; the user-facing completion report records the
+confirmed final pushed SHA. If resuming before they match, finish that push and
+verification rather than rerunning completed implementation work.
 
 ## Completed implementation
 
@@ -115,5 +122,5 @@ full diff from `415e948`, reconcile actual state, then resume the first unfinish
 step above. Read repository development guides before commands. Keep Git on host;
 all development commands through container. Use author AND committer timestamps
 `1999-12-31T23:59:00-08:00`. Never edit canonical package or regenerate tracked dist.
-Record actual final results before committing. Push only intended relevant changes;
+Final results are recorded above. Push only intended relevant changes;
 remote main initially contained the plan baseline, no unrelated local commits.
