@@ -9,7 +9,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { isDeepStrictEqual } = require('node:util');
 const { createHash } = require('node:crypto');
-const { assertReleaseWriteIntent } = require('./artifact-paths');
+const { assertReleaseWriteIntent, ASSET_EXTENSIONS, FORBIDDEN_ARTIFACT_COMPONENTS } = require('./artifact-paths');
 const { classify, outputPath } = require('./build');
 
 const CANONICAL_PACKAGE = 'src/harness/package.json';
@@ -44,29 +44,6 @@ const RELEVANT_EXACT_PATHS = Object.freeze([
   'package-lock.json',
   '.gitattributes',
   '.github/workflows/bump-version.yml',
-]);
-
-const ASSET_EXTENSIONS = new Set([
-  '.md',
-  '.json',
-  '.jsonl',
-  '.yaml',
-  '.yml',
-  '.py',
-  '.swift',
-]);
-
-const FORBIDDEN_ARTIFACT_COMPONENTS = new Set([
-  'node_modules',
-  '__pycache__',
-  'tests',
-  'fixtures',
-  'benchmarks',
-  'evidence',
-  '.git',
-  '.build',
-  '.venv',
-  'generated',
 ]);
 
 const OPAQUE_OVERLAYS = new Set([
@@ -1809,7 +1786,9 @@ module.exports = {
   deriveFromRange,
   findReleaseAnchor,
   findReleaseByRunId,
+  indexEntries,
   isRelevantPath,
+  readBlobs,
   releaseRange,
   validateCommittedRelease,
   validateIncomingChanges,

@@ -3,7 +3,6 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { validateArtifact, inventory, classify, outputPath } = require('./build');
 const {
   DEFAULT_TARGET,
@@ -12,120 +11,11 @@ const {
   artifactRoot,
   parseArtifactTarget,
 } = require('./artifact-paths');
-
-function git(root, args, options = {})
-{
-  const result = spawnSync('git', args, {
-    cwd: root,
-    encoding: null,
-    maxBuffer: 64 * 1024 * 1024,
-    ...options,
-  });
-  if (result.error || result.status !== 0)
-  {
-    const detail = result.error?.message || result.stderr?.toString('utf8').trim() || `exit ${result.status}`;
-    throw new Error(`Git inspection failed (${args[0]}): ${detail}`);
-  }
-  return result.stdout;
-}
-
-function readIndexEntries(root)
-{
-  const output = git(root, ['ls-files', '--stage', '-z', '--', 'dist']);
-  const entries = new Map();
-  let offset = 0;
-  while (offset < output.length)
-  {
-    const end = output.indexOf(0, offset);
-    if (end === -1)
-    {
-      throw new Error('Git index output is not NUL terminated');
-    }
-    const record = output.subarray(offset, end);
-    const separator = record.indexOf(0x09);
-    if (separator === -1)
-    {
-      throw new Error('Malformed Git index record');
-    }
-    const metadata = record.subarray(0, separator).toString('ascii');
-    const match = /^(\d{6}) ([0-9a-f]+) ([0-3])$/.exec(metadata);
-    if (!match)
-    {
-      throw new Error(`Malformed Git index metadata: ${metadata}`);
-    }
-    const name = record.subarray(separator + 1).toString('utf8');
-    if (!name)
-    {
-      throw new Error('Git index contains an empty distribution path');
-    }
-    const [, mode, objectId, stage] = match;
-    if (stage !== '0')
-    {
-      throw new Error(`Unmerged distribution path: ${name}`);
-    }
-    if (entries.has(name))
-    {
-      throw new Error(`Duplicate distribution index path: ${name}`);
-    }
-    entries.set(name, { mode, objectId });
-    offset = end + 1;
-  }
-  return entries;
-}
-
-function readIndexedBlobs(root, objectIds)
-{
-  const unique = [...new Set(objectIds)];
-  if (!unique.length)
-  {
-    return new Map();
-  }
-  const output = git(root, ['cat-file', '--batch'], {
-    input: Buffer.from(`${unique.join('\n')}\n`, 'ascii'),
-  });
-  const blobs = new Map();
-  let offset = 0;
-  for (const expected of unique)
-  {
-    const headerEnd = output.indexOf(0x0a, offset);
-    if (headerEnd === -1)
-    {
-      throw new Error(`Truncated Git blob header: ${expected}`);
-    }
-    const header = output.subarray(offset, headerEnd).toString('ascii');
-    if (header === `${expected} missing`)
-    {
-      throw new Error(`Missing indexed Git object: ${expected}`);
-    }
-    const match = /^([0-9a-f]+) (\S+) (\d+)$/.exec(header);
-    if (!match || match[1] !== expected || match[2] !== 'blob')
-    {
-      throw new Error(`Unexpected Git blob header for ${expected}: ${header}`);
-    }
-    const size = Number(match[3]);
-    if (!Number.isSafeInteger(size))
-    {
-      throw new Error(`Invalid Git blob size for ${expected}: ${match[3]}`);
-    }
-    const contentStart = headerEnd + 1;
-    const contentEnd = contentStart + size;
-    if (contentEnd >= output.length || output[contentEnd] !== 0x0a)
-    {
-      throw new Error(`Truncated indexed Git blob: ${expected}`);
-    }
-    blobs.set(expected, Buffer.from(output.subarray(contentStart, contentEnd)));
-    offset = contentEnd + 1;
-  }
-  if (offset !== output.length)
-  {
-    throw new Error('Unexpected trailing data from Git blob inspection');
-  }
-  return blobs;
-}
+const { indexEntries, readBlobs } = require('./release-policy');
 
 function validateTracked(root, files)
 {
-  const tracked = readIndexEntries(root);
+  const tracked = indexEntries(root, ['dist']);
   for (const [name, entry] of tracked)
   {
     if (!name.startsWith('dist/harness/'))
@@ -158,7 +48,7 @@ function validateTracked(root, files)
     }
   }
 
-  const blobs = readIndexedBlobs(root, [...tracked.values()].map(entry => entry.objectId));
+  const blobs = readBlobs(root, [...tracked.values()].map(entry => entry.objectId));
   for (const [name, entry] of files)
   {
     const indexed = tracked.get(`dist/harness/${name}`);
@@ -319,8 +209,6 @@ if (require.main === module)
 module.exports = {
   validate,
   validateTracked,
-  readIndexEntries,
-  readIndexedBlobs,
   parseArguments,
   main,
 };

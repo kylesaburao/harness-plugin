@@ -27,7 +27,7 @@ function createFixture()
   {
     fs.copyFileSync(path.join(repositoryRoot, name), path.join(root, name));
   }
-  for (const name of ['artifact-paths.js', 'build.js', 'validate-dist.js'])
+  for (const name of ['artifact-paths.js', 'build.js', 'release-policy.js', 'validate-dist.js'])
   {
     fs.copyFileSync(path.join(repositoryRoot, 'scripts', name), path.join(root, 'scripts', name));
   }

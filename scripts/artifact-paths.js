@@ -3,6 +3,15 @@
 const path = require('node:path');
 const DEFAULT_TARGET = 'development';
 const TARGETS = Object.freeze({ development: '.build/harness', distribution: 'dist/harness' });
+// Extensions copied into an artifact unchanged. The builder classifies source
+// with this list and every artifact check rejects anything else that is not
+// compiled JavaScript.
+const ASSET_EXTENSIONS = new Set(['.md', '.json', '.jsonl', '.yaml', '.yml', '.py', '.swift']);
+// Path components that mark development-only or local content. No artifact
+// path may contain one.
+const FORBIDDEN_ARTIFACT_COMPONENTS = new Set([
+  'node_modules', '__pycache__', 'tests', 'fixtures', 'benchmarks', 'evidence', '.git', '.build', '.venv', 'generated',
+]);
 
 class ArtifactArgumentError extends Error
 {
@@ -75,4 +84,15 @@ function assertReleaseWriteIntent(env = process.env)
   }
 }
 
-module.exports = { DEFAULT_TARGET, TARGETS, ArtifactArgumentError, validateTarget, artifactRoot, artifactPath, parseArtifactTarget, assertReleaseWriteIntent };
+module.exports = {
+  DEFAULT_TARGET,
+  TARGETS,
+  ASSET_EXTENSIONS,
+  FORBIDDEN_ARTIFACT_COMPONENTS,
+  ArtifactArgumentError,
+  validateTarget,
+  artifactRoot,
+  artifactPath,
+  parseArtifactTarget,
+  assertReleaseWriteIntent,
+};

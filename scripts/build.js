@@ -9,6 +9,8 @@ const { spawnSync } = require('node:child_process');
 const {
   TARGETS,
   DEFAULT_TARGET,
+  ASSET_EXTENSIONS,
+  FORBIDDEN_ARTIFACT_COMPONENTS,
   ArtifactArgumentError,
   validateTarget,
   artifactRoot,
@@ -16,7 +18,6 @@ const {
   assertReleaseWriteIntent,
 } = require('./artifact-paths');
 const templates = ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json'];
-const assetExtensions = new Set(['.md', '.json', '.jsonl', '.yaml', '.yml', '.py', '.swift']);
 const backupModules = 'skills/back-up-directories/node_modules';
 const pythonCache = /^skills\/write-asd-ste100\/scripts\/__pycache__$/;
 const mode = stat => stat.mode & 0o111 ? 0o755 : 0o644;
@@ -59,12 +60,12 @@ function inventory(root, { overlays = false, missing = false } = {}) {
 
 function classify(relative) {
   if (relative.endsWith('.local.json')) throw new Error(`Local configuration is not distributable: ${relative}`);
-  if (relative.split('/').some(part => ['node_modules', '__pycache__', 'tests', 'fixtures', 'benchmarks', 'evidence', '.git', '.build', '.venv', 'generated'].includes(part))) {
+  if (relative.split('/').some(part => FORBIDDEN_ARTIFACT_COMPONENTS.has(part))) {
     throw new Error(`Development/local resource is not distributable: ${relative}`);
   }
   if (templates.includes(relative)) return 'template';
   if (/\.(?:ts|mts|cts)$/.test(relative)) return 'typescript';
-  if (assetExtensions.has(path.extname(relative))) return 'asset';
+  if (ASSET_EXTENSIONS.has(path.extname(relative))) return 'asset';
   throw new Error(`Unclassified source resource: ${relative}`);
 }
 
@@ -78,8 +79,8 @@ function validatePaths(files) {
     if (relative.endsWith('.local.json')) throw new Error(`Forbidden local configuration: ${relative}`);
     if (/\.(?:js|mjs|cjs)$/.test(relative)) {
       if (!/^(?:shared\/node\/|skills\/[^/]+\/scripts\/)/.test(relative)) throw new Error(`Unexpected JavaScript: ${relative}`);
-    } else if (!assetExtensions.has(path.extname(relative))) throw new Error(`Forbidden artifact file: ${relative}`);
-    if (relative.split('/').some(part => ['node_modules', '__pycache__', 'tests', 'fixtures', 'benchmarks', 'evidence', '.git', '.build', '.venv', 'generated'].includes(part))) throw new Error(`Forbidden artifact path: ${relative}`);
+    } else if (!ASSET_EXTENSIONS.has(path.extname(relative))) throw new Error(`Forbidden artifact file: ${relative}`);
+    if (relative.split('/').some(part => FORBIDDEN_ARTIFACT_COMPONENTS.has(part))) throw new Error(`Forbidden artifact path: ${relative}`);
   }
 }
 
