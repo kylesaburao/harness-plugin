@@ -193,15 +193,18 @@ function validateInput(input) {
   try { if (!fs.statSync(input).isFile()) throw new Error(); } catch { throw new StartupError('input_unusable', `input is not a regular file: ${input}`, 'pass the path of an existing video file'); }
 }
 
+function mediaFailed(result) { return result.code !== 0 || Boolean(result.signal) || Boolean(result.stderr?.trim()); }
+function childDetails(task, result) { return { task, childExitCode: result.code, childSignal: result.signal ?? null, stderr: result.stderr }; }
+
 async function inspectInput(manager, commands, input) {
   const stream = await manager.runOwned('input-stream', commands.ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=index', '-of', 'csv=p=0', input], { stdout: 'capture', stderr: 'capture' });
-  if (stream.code !== 0) throw new StartupError('input_unusable', `ffprobe could not read input video: ${input}`, 'confirm the file is a video ffmpeg can decode');
+  if (mediaFailed(stream)) throw new StartupError('input_unusable', `ffprobe could not read input video: ${input}`, 'confirm the file is a video ffmpeg can decode', childDetails('input-stream', stream));
   if (!stream.stdout.trim()) throw new StartupError('input_unusable', `input contains no video stream: ${input}`, 'pass a file that contains video, not audio or still images only');
-  const decode = await manager.runOwned('input-decode', commands.ffmpeg, ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', input, '-map', '0:v:0', '-frames:v', '1', '-an', '-sn', '-dn', '-f', 'null', '-']);
-  if (decode.code !== 0) throw new StartupError('input_unusable', `input video does not have a decodable first frame: ${input}`, 'the file is truncated or corrupt, re-export it and try again');
+  const decode = await manager.runOwned('input-decode', commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', input, '-map', '0:v:0', '-frames:v', '1', '-an', '-sn', '-dn', '-f', 'null', '-'], { stderr: 'capture' });
+  if (mediaFailed(decode)) throw new StartupError('input_unusable', `input video does not have a decodable first frame: ${input}`, 'the file is truncated or corrupt, re-export it and try again', childDetails('input-decode', decode));
   const durationResult = await manager.runOwned('input-duration', commands.ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', input], { stdout: 'capture', stderr: 'capture' });
   const duration = durationResult.stdout.trim();
-  if (durationResult.code !== 0 || !/^[0-9]+(?:\.[0-9]+)?$/.test(duration) || Number(duration) <= 0) throw new StartupError('input_unusable', `ffprobe could not read a valid input duration: ${input}`, 'confirm the file is a complete video with a positive duration');
+  if (mediaFailed(durationResult) || !/^[0-9]+(?:\.[0-9]+)?$/.test(duration) || Number(duration) <= 0) throw new StartupError('input_unusable', `ffprobe could not read a valid input duration: ${input}`, 'confirm the file is a complete video with a positive duration', childDetails('input-duration', durationResult));
   return Number(duration) > 3 ? [{ code: 'input_duration_long', condition: `input duration is ${duration}s, which is longer than 3 seconds`, recommendation: 'trim the clip to 3 seconds or less for better quality' }] : [];
 }
 
@@ -217,22 +220,54 @@ function validateOutput(input, requested, size) {
 }
 
 function parseVmafScore(text) {
-  const matches = [...text.matchAll(/VMAF score:\s*(-?[0-9]+(?:\.[0-9]+)?)/g)];
-  if (!matches.length) throw new RunError('vmaf_nonnumeric', 'VMAF did not return a numeric score', 'reinstall an ffmpeg build with a working libvmaf filter');
-  return matches.at(-1)[1];
+  let report;
+  try { report = JSON.parse(text); } catch {}
+  const mean = report?.pooled_metrics?.vmaf?.mean;
+  if (!Array.isArray(report?.frames) || !report.frames.length || !Number.isFinite(mean)) {
+    throw new RunError('vmaf_nonnumeric', 'VMAF did not return a valid nonempty JSON score report', 'reinstall an ffmpeg build with a working libvmaf filter');
+  }
+  return { score: mean.toFixed(6), frames: report.frames.length };
 }
 
-async function scoreCandidate(manager, commands, workDir, candidate, task) {
-  const result = await manager.runOwned(`${task}-vmaf`, commands.ffmpeg, ['-hide_banner', '-nostdin', '-threads', '1', '-filter_complex_threads', '1', '-i', path.join(workDir, 'vmaf-reference.mkv'), '-i', candidate, '-lavfi', '[0:v]fps=24,setpts=PTS-STARTPTS[ref];[1:v]fps=24,setpts=PTS-STARTPTS[dist];[dist][ref]libvmaf=n_threads=1', '-f', 'null', '-'], { stderr: 'capture' });
-  if (result.code !== 0) throw subprocessError('vmaf_failed', `VMAF scoring failed for ${task}: ${result.stderr.trim()}`, 'fix the reported ffmpeg libvmaf error, then run the same conversion again', task, result);
-  return parseVmafScore(result.stderr);
+function durationTolerance(candidateFps) { return 1 / candidateFps + 1 / 24 + 0.02; }
+
+async function referenceFrameCount(state) {
+  const result = await state.manager.runOwned('reference-frames', state.commands.ffprobe, ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'default=nw=1:nk=1', path.join(state.workDir, 'vmaf-reference.mkv')], { stdout: 'capture', stderr: 'capture' });
+  if (mediaFailed(result)) throw subprocessError('reference_failed', 'could not decode the completed VMAF reference', 'fix the reported ffprobe error, then run again', 'reference-frames', result);
+  const frames = Number(result.stdout.trim());
+  if (!Number.isSafeInteger(frames) || frames <= 0) throw new RunError('reference_failed', 'VMAF reference has no valid decoded frame count', 'use an input with at least one frame at 24 FPS', childDetails('reference-frames', result));
+  return frames;
+}
+
+async function scoreCandidate(manager, commands, workDir, candidate, task, referenceFrames, candidateFps, keepWork = false) {
+  // libvmaf 3.2.0's integer ADM reads outside its buffers at 32x32.
+  // Enlarge only the scoring inputs so all four ADM stages have sufficient pixels.
+  const scoringFilters = "fps=24,setpts=PTS-STARTPTS,scale=w='max(iw,64)':h='max(ih,64)':flags=lanczos";
+  const logName = `vmaf-${crypto.randomUUID()}.json`;
+  const logPath = path.join(workDir, logName);
+  try {
+    const result = await manager.runOwned(`${task}-vmaf`, commands.ffmpeg, ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_complex_threads', '1', '-i', path.resolve(workDir, 'vmaf-reference.mkv'), '-i', path.resolve(candidate), '-lavfi', `[0:v]${scoringFilters}[ref];[1:v]${scoringFilters}[dist];[dist][ref]libvmaf=n_threads=1:log_fmt=json:log_path=${logName}`, '-f', 'null', '-'], { stderr: 'capture', cwd: workDir });
+    if (mediaFailed(result)) throw subprocessError('vmaf_failed', `VMAF scoring failed for ${task}: ${result.stderr.trim()}`, 'fix the reported ffmpeg libvmaf error, then run the same conversion again', task, result);
+    let text;
+    try { text = fs.readFileSync(logPath, 'utf8'); } catch { text = ''; }
+    let report;
+    try { report = parseVmafScore(text); } catch (error) { throw Object.assign(error, childDetails(task, result)); }
+    if (!Number.isSafeInteger(referenceFrames) || referenceFrames <= 0 || !Number.isFinite(candidateFps) || candidateFps <= 0 || Math.abs(report.frames - referenceFrames) > Math.ceil(24 * durationTolerance(candidateFps))) {
+      throw new RunError('vmaf_failed', `VMAF coverage differs from the reference: scored ${report.frames} frames, reference ${referenceFrames}`, 'use a candidate that covers the complete reference clip', childDetails(task, result));
+    }
+    const duration = await probeValue(manager, commands.ffprobe, `${task} duration`, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', candidate], 'vmaf_failed');
+    if (!Number.isFinite(Number(duration)) || Number(duration) <= 0 || Math.abs(Number(duration) - referenceFrames / 24) > durationTolerance(candidateFps)) {
+      throw new RunError('vmaf_failed', `candidate duration ${duration}s differs from reference ${referenceFrames / 24}s`, 'use a candidate that covers the complete reference clip', childDetails(task, result));
+    }
+    return report.score;
+  } finally { if (!keepWork) fs.rmSync(logPath, { force: true }); }
 }
 
 function sha256File(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
 
-async function probeValue(manager, command, task, args) {
+async function probeValue(manager, command, task, args, code = 'verification_failed') {
   const result = await manager.runOwned(task, command, args, { stdout: 'capture', stderr: 'capture' });
-  if (result.code !== 0) throw subprocessError('verification_failed', `verification failed, ffprobe could not read ${task}`, 'reinstall ffmpeg, then run the conversion again', task, result);
+  if (mediaFailed(result)) throw subprocessError(code, `verification failed, ffprobe could not read ${task}`, 'reinstall ffmpeg, then run the conversion again', task, result);
   return result.stdout.trim();
 }
 
@@ -245,15 +280,12 @@ async function verifyFinalGif(manager, commands, file, expected) {
   if (!/^[0-9]+$/.test(frames) || Number(frames) <= 1) throw new RunError('verification_failed', `verification failed, invalid frame count: ${frames || 'missing'}`, 'raise the selected FPS or use an input with more than one frame');
   const duration = await probeValue(manager, commands.ffprobe, 'output duration', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file]);
   if (!/^[0-9]+(?:\.[0-9]+)?$/.test(duration) || Number(duration) <= 0) throw new RunError('verification_failed', `verification failed, invalid duration: ${duration || 'missing'}`, 'use an input video with a positive duration and run the conversion again');
+  if (!Number.isSafeInteger(expected.referenceFrames) || expected.referenceFrames <= 0 || !Number.isFinite(expected.fps) || expected.fps <= 0 || Math.abs(Number(duration) - expected.referenceFrames / 24) > durationTolerance(expected.fps)) throw new RunError('verification_failed', `verification failed, GIF duration ${duration}s differs from reference ${expected.referenceFrames / 24}s`, 'use a candidate that covers the complete reference clip');
   const bytes = fs.statSync(file).size;
   if (bytes >= expected.maxBytes) throw new RunError('verification_failed', `verification failed, output is ${bytes} bytes, limit is strictly below ${expected.maxBytes}`, 'increase MAX_BYTES or reduce GIF_SIZE, then run the conversion again');
   if (expected.bytes !== undefined && bytes !== expected.bytes) throw new RunError('verification_failed', `verification failed, expected ${expected.bytes} bytes, got ${bytes}`, 'run the same conversion again');
   const digest = sha256File(file);
   if (expected.digest && digest !== expected.digest) throw new RunError('verification_failed', 'verification failed, output digest does not match the selected winner', 'ensure the output directory is on a reliable local filesystem, then run again');
-  if (expected.score) {
-    const score = await scoreCandidate(manager, commands, expected.workDir, file, 'final');
-    if (score !== expected.score) throw new RunError('verification_failed', `verification failed, expected VMAF ${expected.score}, got ${score}`, 'run the same conversion again');
-  }
   return { dimensions, frameCount: Number(frames), duration, bytes, digest };
 }
 
@@ -337,6 +369,7 @@ function resultPayload({ script, backend, input, output, config, winner, verifie
     { name: `dimensions are ${verified.dimensions}`, status: 'pass' },
     { name: `${verified.frameCount} frames`, status: 'pass' },
     { name: 'duration is positive', status: 'pass' },
+    { name: 'duration agrees with the decoded reference', status: 'pass' },
     { name: `${verified.bytes} bytes is below the ${config.maxBytes} limit`, status: 'pass' },
     { name: 'sha256 matches after publication', status: 'pass' },
   ];
@@ -399,4 +432,4 @@ function usage(backend, basename) {
   return `Usage: ${basename} [OPTIONS] INPUT_VIDEO [OUTPUT.gif]\n\nOptions:\n  --preflight [INPUT_VIDEO]\n                  Check the environment and optional input, convert nothing, then exit\n  --json          Report readiness and errors as JSON\n  --help, -h      Print this message\n  --              Stop option parsing\n\nEnvironment:\n  MAX_BYTES       Strict byte ceiling (default: 256000, maximum: ${MAX_EXACT_INTEGER})\n  GIF_SIZE        Square width and height (default: 128, maximum: ${MAX_EXACT_INTEGER})\n  MIN_FPS         Minimum frame rate (default: 15, maximum: ${MAX_EXACT_INTEGER})\n  MAX_FPS         Maximum frame rate (default: 24, maximum: ${maxFpsMaximum})\n  JOBS            Parallel work limit (default: logical CPUs minus 2, minimum 1, maximum: ${MAX_EXACT_INTEGER})\n${quality}  KEEP_WORK       Keep the work directory when set to 1 (default: unset)\n\nAll positive integers have an exact-value ceiling of ${MAX_EXACT_INTEGER}.\n\nExit status:\n  0    Success or passed preflight\n  1    Conversion work started and failed\n  2    Work did not start\n  129  SIGHUP\n  130  SIGINT\n  143  SIGTERM\n`;
 }
 
-module.exports = { subprocessError, errorDetails, StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, platformPolicy, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, sha256File, verifyFinalGif, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, resultPayload, emitResult, preflightError, usage };
+module.exports = { mediaFailed, referenceFrameCount, durationTolerance, subprocessError, errorDetails, StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, platformPolicy, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, sha256File, verifyFinalGif, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, resultPayload, emitResult, preflightError, usage };

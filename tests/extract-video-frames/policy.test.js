@@ -189,3 +189,24 @@ function fixtureState() {
     },
   };
 }
+
+for (const result of [
+  { code: 0, signal: null, stdout: 'frame=1\n', stderr: 'CRC mismatch\n' },
+  { code: null, signal: 'SIGSEGV', stdout: '', stderr: 'decoder crashed\n' },
+]) test(`representative decode retains child evidence for ${result.signal || 'exit zero'}`, async () => {
+  await assert.rejects(subject.representativeDecodePreflight({ run: async () => result }, fixtureState()), error => {
+    assert.equal(error.exitCode, 2);
+    assert.equal(error.task, 'input_decode_failed');
+    assert.equal(error.childExitCode, result.code);
+    assert.equal(error.childSignal, result.signal);
+    assert.equal(error.stderr, result.stderr);
+    return true;
+  });
+});
+
+test('representative decode accepts normal stdout progress', async () => {
+  await subject.representativeDecodePreflight({ run: async () => ({ code: 0, signal: null, stdout: 'frame=1\nprogress=end\n', stderr: '' }) }, fixtureState());
+  const args = subject.ffmpegArguments(fixtureState(), '/tmp/frames');
+  assert.equal(args[args.indexOf('-progress') + 1], 'pipe:1');
+  assert.ok(args.includes('-xerror'));
+});

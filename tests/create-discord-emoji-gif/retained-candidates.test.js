@@ -31,7 +31,7 @@ for (const backend of ['gifski', 'gifsicle']) {
       assert.equal(fixture.status, 0, fixture.stderr);
       const result = runEntrypoint(process.execPath, path.join(skillDir, 'scripts/node', backend === 'gifski' ? 'mov-to-gif-gifski.js' : 'mov-to-gif.js'), ['--json', input, output], {
         NODE_OPTIONS: `--require=${narrowSearch(directory)}`, TMPDIR: directory,
-        KEEP_WORK: '1', GIF_SIZE: '64', MIN_FPS: '8', MAX_FPS: '8', MIN_QUALITY: '80', MAX_QUALITY: '80', JOBS: '2', MAX_BYTES: '100000',
+        KEEP_WORK: '1', GIF_SIZE: '32', MIN_FPS: '8', MAX_FPS: '8', MIN_QUALITY: '80', MAX_QUALITY: '80', JOBS: '2', MAX_BYTES: '100000',
       });
       assert.equal(result.status, 0, result.stderr);
       const report = JSON.parse(result.stdout).result;
@@ -70,11 +70,6 @@ const shared = require(${JSON.stringify(path.join(skillDir, 'scripts/node/shared
 const backend = ${JSON.stringify(backend)};
 const scenario = ${JSON.stringify(scenario)};
 const scored = [];
-const runOwned = ProcessManager.prototype.runOwned;
-ProcessManager.prototype.runOwned = function(task, ...args) {
-  if (task === 'final-vmaf') return Promise.resolve({ code: 0, stderr: 'VMAF score: 90' });
-  return runOwned.call(this, task, ...args);
-};
 const bounded = ProcessManager.prototype.runOldestBounded;
 ProcessManager.prototype.runOldestBounded = function(items, jobs, worker) {
   const search = items.every(item => typeof item === 'number' || item.colors);

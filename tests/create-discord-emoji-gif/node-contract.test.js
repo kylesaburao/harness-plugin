@@ -145,8 +145,8 @@ test('backend selection tie-breakers and gifsicle task order are deterministic',
   ]).dither, 2);
 });
 
-test('VMAF parser uses the final numeric score', () => {
-  assert.equal(shared.parseVmafScore('VMAF score: 1.0\nVMAF score: 97.125\n'), '97.125');
+test('VMAF parser uses the pooled JSON mean', () => {
+  assert.deepEqual(shared.parseVmafScore(JSON.stringify({ frames: [{}], pooled_metrics: { vmaf: { mean: 97.125 } } })), { score: '97.125000', frames: 1 });
   assert.throws(() => shared.parseVmafScore('no score'), { code: 'vmaf_nonnumeric' });
 });
 

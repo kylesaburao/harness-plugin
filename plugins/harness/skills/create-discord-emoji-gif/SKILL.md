@@ -153,3 +153,9 @@ source. Each GIF frame uses a palette with at most 256 entries.
 - Windows: unsupported.
 
 If a result contains `cleanupFailures`, the artifact was published. Relay its report and the remaining temporary paths, then stop. If an error contains `cleanupFailures`, relay the primary error and these secondary failures. Preserve subprocess task, exit code, signal, and nested cause fields when present.
+
+Media processing fails on a child signal, a nonzero exit, or any FFmpeg/ffprobe error-level diagnostic, including exit zero.
+Capability listings are exempt. Relay captured stderr and the actual child exit code, including zero.
+VMAF scores require a valid, nonempty JSON report and coverage of the decoded 24 FPS reference.
+The final GIF duration must agree with that reference within one candidate-frame interval, one reference-frame interval, and two GIF centiseconds.
+The success report includes this duration-agreement check. Reported decode errors prevent publication and preserve an existing destination.

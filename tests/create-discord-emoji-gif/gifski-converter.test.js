@@ -438,7 +438,11 @@ case "$*" in
       *f8-q100-m100-l100.gif) score=90 ;;
       *) score=80 ;;
     esac
-    printf 'VMAF score: %s\\n' "$score" >&2
+    for argument do
+      case "$argument" in *log_path=*) log=\${argument##*log_path=} ;; esac
+    done
+    frames=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=nw=1:nk=1 vmaf-reference.mkv)
+    node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({frames: Array(Number(process.argv[2])).fill({}), pooled_metrics: {vmaf: {mean: Number(process.argv[3])}}}))' "$log" "$frames" "$score"
     exit 0
     ;;
 esac
@@ -461,7 +465,7 @@ exec "${realFfmpeg}" "$@"
     const names = fs.readdirSync(kept).filter(name => /^f8-q\d+-m\d+-l\d+[.]gif$/.test(name));
     assert.ok(names.length > 1, `expected multiple candidate files, got ${names.length}`);
     assert.deepEqual(payload.parameters, { quality: 80, motionQuality: 80, lossyQuality: 80 });
-    assert.equal(payload.vmaf, '99');
+    assert.equal(payload.vmaf, '99.000000');
     assert.ok(names.includes('f8-q80-m80-l80.gif'));
   } finally {
     fs.rmSync(kept, { recursive: true, force: true });

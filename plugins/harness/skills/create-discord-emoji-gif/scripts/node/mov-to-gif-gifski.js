@@ -45,15 +45,15 @@ function selectWinner(results) {
 
 async function prepareReference(state) {
   const target = path.join(state.workDir, 'vmaf-reference.mkv');
-  const result = await state.manager.runOwned('vmaf-reference', state.commands.ffmpeg, ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,fps=24,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'yuv420p', '-color_range', 'pc', '-f', 'matroska', target], { stderr: 'capture' });
-  if (result.code !== 0) throw shared.subprocessError('reference_failed', `could not prepare the VMAF reference${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the ffmpeg decode or filter error, then run again', 'vmaf-reference', result);
+  const result = await state.manager.runOwned('vmaf-reference', state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,fps=24,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'yuv420p', '-color_range', 'pc', '-f', 'matroska', target], { stderr: 'capture' });
+  if (shared.mediaFailed(result)) throw shared.subprocessError('reference_failed', `could not prepare the VMAF reference${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the ffmpeg decode or filter error, then run again', 'vmaf-reference', result);
 }
 
 async function prepareSourceCache(state, fps) {
   const target = path.join(state.workDir, `source-f${fps}.y4m`);
   fs.rmSync(target, { force: true });
-  const result = await state.manager.runOwned(`source-f${fps}`, state.commands.ffmpeg, ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=yuv444p,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'rawvideo', '-pix_fmt', 'yuv444p', '-f', 'yuv4mpegpipe', '-y', target], { stderr: 'capture' });
-  if (result.code !== 0) throw shared.subprocessError('source_prepare_failed', `could not prepare the source cache for ${fps} FPS${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported ffmpeg decode or filter error, then run the same conversion again', `source-f${fps}`, result);
+  const result = await state.manager.runOwned(`source-f${fps}`, state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=yuv444p,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'rawvideo', '-pix_fmt', 'yuv444p', '-f', 'yuv4mpegpipe', '-y', target], { stderr: 'capture' });
+  if (shared.mediaFailed(result)) throw shared.subprocessError('source_prepare_failed', `could not prepare the source cache for ${fps} FPS${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported ffmpeg decode or filter error, then run the same conversion again', `source-f${fps}`, result);
   return target;
 }
 
@@ -79,7 +79,7 @@ async function searchFps(state, fps) {
     const bytes = fs.statSync(target).size;
     let fit = false;
     if (bytes < state.config.maxBytes) {
-      const score = await shared.scoreCandidate(state.manager, state.commands, state.workDir, target, stem);
+      const score = await shared.scoreCandidate(state.manager, state.commands, state.workDir, target, stem, state.referenceFrames, fps, state.config.keepWork);
       const completed = { ...candidate, fps, bytes, score, path: target, digest: shared.sha256File(target) };
       const previous = state.bestCandidate;
       state.bestCandidate = selectWinner(previous ? [previous, completed] : [completed]);
@@ -101,12 +101,13 @@ async function convert(state) {
   state.rayonThreads = calculateRayonThreads(state.config, state.workers);
   if (!state.json) process.stderr.write(`Searching ${state.config.minFps}-${state.config.maxFps} FPS, gifski quality ${state.config.minQuality}-${state.config.maxQuality} under ${state.config.maxBytes} bytes at ${state.config.gifSize}x${state.config.gifSize} with ${state.workers} encoder workers and ${state.rayonThreads} gifski threads each...\n`);
   await prepareReference(state);
+  state.referenceFrames = await shared.referenceFrameCount(state);
   const fpsValues = Array.from({ length: state.config.maxFps - state.config.minFps + 1 }, (_, i) => state.config.minFps + i);
   state.bestCandidate = undefined;
   await state.manager.runOldestBounded(fpsValues, state.workers, fps => searchFps(state, fps));
   const winner = state.bestCandidate;
   if (!winner) throw new shared.RunError('no_candidate', `no candidate fit below ${state.config.maxBytes} bytes`, 'increase MAX_BYTES, reduce GIF_SIZE or the FPS range, or lower MIN_QUALITY');
-  const verified = await shared.publishVerified(winner.path, state.output, 'mov-to-gif-gifski', temporary => shared.verifyFinalGif(state.manager, state.commands, temporary, { size: state.config.gifSize, maxBytes: state.config.maxBytes, bytes: winner.bytes, digest: winner.digest }), temporary => { state.outputTemp = temporary; });
+  const verified = await shared.publishVerified(winner.path, state.output, 'mov-to-gif-gifski', temporary => shared.verifyFinalGif(state.manager, state.commands, temporary, { size: state.config.gifSize, maxBytes: state.config.maxBytes, bytes: winner.bytes, digest: winner.digest, referenceFrames: state.referenceFrames, fps: winner.fps }), temporary => { state.outputTemp = temporary; });
   const payload = shared.resultPayload({ script: state.scriptName, backend: 'gifski', input: state.input, output: state.output, config: state.config, winner, verified });
   return payload;
 }

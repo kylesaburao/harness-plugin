@@ -1,6 +1,7 @@
 ---
 name: write-asd-ste100
-description: Draft, revise, or review technical English with the ASD-STE100 Simplified Technical English Issue 9 rules and a locally generated dictionary. Use for a response that explains technical work, documentation, procedures, descriptions, comments, docstrings, release notes, and new user-facing text. Preserve programming syntax, exact identifiers, commands, paths, quotations, external diagnostics, and established project terminology.
+description: Manually draft, revise, or review technical English with ASD-STE100 Issue 9 rules and a local dictionary.
+disable-model-invocation: true
 ---
 
 # Write ASD-STE100 Technical English

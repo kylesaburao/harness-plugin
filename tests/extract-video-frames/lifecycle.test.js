@@ -231,11 +231,80 @@ test('interruption escalates and waits for an uncooperative child to close', asy
   const manager = new subject.ProcessManager({ killTimeout: 50 });
   let ready;
   const started = new Promise(resolve => { ready = resolve; });
-  const running = manager.run(process.execPath, ['-e', "process.on('SIGTERM', () => {}); process.stderr.write('ready'); setInterval(() => {}, 1000)"], { progress: ready });
+  const running = manager.run(process.execPath, ['-e', "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1000)"], { progress: ready });
   await started;
   const stopped = manager.interrupt('SIGTERM');
   const result = await running;
   await stopped;
   assert.equal(result.signal, 'SIGKILL');
   assert.equal(manager.active.size, 0);
+});
+
+for (const json of [false, true]) test(`child signal survives extraction error reporting (${json ? 'JSON' : 'plain'})`, () => {
+  const script = `
+const subject = require(${JSON.stringify(require.resolve('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js'))});
+const manager = new subject.ProcessManager();
+const state = { commands: { ffmpeg: 'unused' }, paths: { supplied: '/tmp/input' }, media: {
+  stream: { index: 0 }, firstTick: 0n, transform: { filters: [] },
+  color: { dynamicRange: 'sdr', codec: 'png', primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'tv', outputPixelFormat: 'rgb24' }
+} };
+const run = manager.run.bind(manager);
+manager.run = () => run(process.execPath, ['-e', "process.stderr.write('decoder evidence'); process.kill(process.pid, 'SIGTERM')"]);
+subject.representativeDecodePreflight(manager, state).catch(error => { subject.emitError(error, ${json}); process.exitCode = error.exitCode; });
+`;
+  const result = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+  assert.equal(result.status, 2, result.stderr);
+  if (json) {
+    const error = JSON.parse(result.stderr).error;
+    assert.equal(error.task, 'input_decode_failed');
+    assert.equal(error.childExitCode, null);
+    assert.equal(error.childSignal, 'SIGTERM');
+    assert.equal(error.stderr, 'decoder evidence');
+  } else {
+    assert.match(result.stderr, /task: "input_decode_failed"/);
+    assert.match(result.stderr, /childExitCode: null/);
+    assert.match(result.stderr, /childSignal: "SIGTERM"/);
+    assert.match(result.stderr, /stderr: "decoder evidence"/);
+  }
+});
+
+test('process manager routes stdout progress without contaminating diagnostics', async () => {
+  let progress = '';
+  const result = await new subject.ProcessManager().run(process.execPath, ['-e', "process.stdout.write('frame=1\\nprogress=end\\n')"], { progress: chunk => { progress += chunk; } });
+  assert.equal(result.code, 0);
+  assert.equal(result.stderr, '');
+  assert.equal(progress, 'frame=1\nprogress=end\n');
+});
+
+for (const json of [false, true]) test(`extraction CLI preserves crash diagnostics (${json ? 'JSON' : 'plain'})`, { skip: process.platform !== 'darwin' || !realFfmpeg }, t => {
+  const root = temporaryRoot(t);
+  const input = path.join(root, 'input.mp4');
+  const generated = spawnSync(realFfmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=24:duration=0.25', '-c:v', 'libx264', '-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv', input], { encoding: 'utf8' });
+  assert.equal(generated.status, 0, generated.stderr);
+  const preload = path.join(root, 'crash.cjs');
+  fs.writeFileSync(preload, `
+const childProcess = require('node:child_process');
+const spawn = childProcess.spawn;
+childProcess.spawn = function(command, args, options) {
+  if (args.includes('-start_number')) return spawn(process.execPath, ['-e', "process.stderr.write('extraction crash'); process.kill(process.pid, 'SIGTERM')"], options);
+  return spawn(command, args, options);
+};`);
+  const script = require.resolve('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
+  const result = spawnSync(process.execPath, ['--require', preload, script, ...(json ? ['--json'] : []), input], { encoding: 'utf8' });
+  assert.equal(result.status, 1, result.stderr);
+  if (json) {
+    const error = JSON.parse(result.stderr).error;
+    assert.equal(error.code, 'extraction_failed');
+    assert.equal(error.task, 'extraction');
+    assert.equal(error.childExitCode, null);
+    assert.equal(error.childSignal, 'SIGTERM');
+    assert.equal(error.stderr, 'extraction crash');
+  } else {
+    assert.match(result.stderr, /ERROR \[extraction_failed\]/);
+    assert.match(result.stderr, /childExitCode: null/);
+    assert.match(result.stderr, /childSignal: "SIGTERM"/);
+    assert.match(result.stderr, /stderr: "extraction crash"/);
+  }
+  assert.equal(fs.existsSync(path.join(root, 'input-frames')), false);
+  assert.equal(fs.readdirSync(root).some(name => name.includes('.partial-')), false);
 });

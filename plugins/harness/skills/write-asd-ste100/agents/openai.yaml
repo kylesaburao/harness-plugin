@@ -3,4 +3,4 @@ interface:
   short_description: "Write clear technical English with STE"
   default_prompt: "Use $write-asd-ste100 to revise this technical text in ASD-STE100 style."
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false
