@@ -89,13 +89,56 @@ try {
   const selected = JSON.parse(success(config, ['resolve', '--host', 'codex', '--primary', 'sol', '--json']));
   assert.equal(selected.advisor_family, 'terra'); assert.equal(selected.reasoning_effort, 'medium'); assert.equal(selected.route_source, 'user-route');
   const bin = path.join(home, 'bin'); fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\n[ "$1" = "--version" ] || exit 99\necho floor-fixture\n', { mode: 0o755 });
+  const calls = path.join(home, 'claude-calls');
+  fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.ADVISOR_FLOOR_CALLS, JSON.stringify(args) + '\\n');
+if (args[0] === '--version') process.stdout.write('floor-fixture');
+else {
+  const assert = require('node:assert/strict');
+  const option = name => args[args.indexOf(name) + 1];
+  assert.equal(option('--tools'), '');
+  assert.equal(option('--disallowedTools'), 'mcp__*');
+  assert.ok(args.includes('--strict-mcp-config'));
+  assert.equal(option('--mcp-config'), '{"mcpServers":{}}');
+  assert.equal(option('--output-format'), 'json');
+  assert.equal(option('--system-prompt'), fs.readFileSync(process.env.ADVISOR_FLOOR_CONTRACT, 'utf8'));
+  assert.equal(fs.readFileSync(0, 'utf8'), 'Supplied evidence only\\n');
+  process.stdout.write(JSON.stringify({ result: 'Floor advice.' }));
+}
+`, { mode: 0o755 });
   env.PATH = bin;
-  const prompt = path.join(home, 'prompt'); fs.writeFileSync(prompt, 'Preflight only');
+  env.ADVISOR_FLOOR_CALLS = calls;
+  env.ADVISOR_FLOOR_CONTRACT = path.join(plugin, 'skills/harness-advisor/references/contract.md');
+  const prompt = path.join(home, 'prompt'); fs.writeFileSync(prompt, 'Supplied evidence only\n');
   const adapter = 'skills/harness-advisor/scripts/claude-advisor.js';
-  const preflight = JSON.parse(success(adapter, ['--native-absent', '--model', 'opus', '--reasoning-effort', 'high', '--prompt', prompt, '--preflight', '--json']));
-  assert.equal(preflight.status, 'preflight_passed'); assert.equal(preflight.runtime_controls, 'unverified');
+  const removed = run(adapter, ['--workspace', home, '--help', '--json']);
+  assert.equal(removed.status, 2, removed.stderr);
+  assert.equal(removed.stdout, '');
+  assert.equal(JSON.parse(removed.stderr).error.code, 'usage_error');
+  assert.equal(JSON.parse(removed.stderr).error.condition, '--workspace is no longer supported; Harness Advisor uses executor-supplied evidence only.');
+  assert.equal(fs.existsSync(calls), false);
+  const args = ['--native-absent', '--model', 'opus', '--reasoning-effort', 'high', '--prompt', prompt, '--json'];
+  const preflight = JSON.parse(success(adapter, [...args, '--preflight']));
+  assert.equal(preflight.status, 'preflight_passed');
   assert.ok(preflight.checks.includes('advisor_contract_readable_nonempty'));
-  process.stdout.write(`Stage 2 runtime floor passed on Node ${process.versions.node}: native ESM, preserved numeric tokens, routing mutations, and bundled-contract preflight.\n`);
+  const consulted = JSON.parse(success(adapter, args));
+  assert.equal(consulted.status, 'consulted');
+  assert.equal(consulted.advice, 'Floor advice.');
+  assert.equal(consulted.usage, null);
+  assert.equal(consulted.model_usage, null);
+  for (const report of [preflight, consulted]) {
+    assert.equal(report.model, 'opus');
+    assert.equal(report.reasoning_effort, 'high');
+    assert.equal(report.mechanism, 'claude-cli');
+    assert.equal(report.context_mode, 'fresh');
+    assert.equal(report.runtime_controls, 'unverified');
+    assert.deepEqual(report.tools, []);
+    assert.equal(Object.hasOwn(report, 'workspace'), false);
+    assert.equal(Object.hasOwn(report, 'observations'), false);
+  }
+  assert.equal(fs.readFileSync(calls, 'utf8').trim().split('\n').length, 3);
+  process.stdout.write(`Runtime floor passed on Node ${process.versions.node}: native ESM, preserved numeric tokens, routing mutations, bundled-contract preflight, tool-free consultation and removed-flag rejection.\n`);
   }
 } finally { fs.rmSync(home, { recursive: true, force: true }); }

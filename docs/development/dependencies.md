@@ -92,10 +92,16 @@ The reference bundle lives under `~/.harness-plugin/write-asd-ste100/bundles/<so
 
 Skill commands perform their own preflight on normal execution. Follow each skill's dispatch contract and relay its exact failure diagnosis and remedy. A standalone preflight is for an explicit readiness check or a skill-specific requirement, not an automatic extra step before every run.
 
-### Advisor workspace inspection
+### Advisor evidence-only execution
 
-The optional Claude fallback workspace branch requires Claude Code restricted-mode
-support (2.1.248+) and safe mode, with the selected control combination supported
-by host policy. Local development checked 2.1.270 help, not live enforcement.
-Evidence-only fallback retains its existing CLI requirements. No new package or
-persisted initialization data is required. See the [host contract](../../src/harness/skills/harness-advisor/references/host-claude.md).
+Harness Advisor receives executor-supplied evidence and makes no tool calls.
+Claude fallback requires a local authenticated Claude Code CLI that supports the
+complete retained evidence-only invocation. There is no workspace inspection
+option, restricted-mode threshold, new package, or persisted initialization data
+for Advisor. Preflight checks startup availability, not account access or runtime
+enforcement. See the [host contract](../../dist/harness/skills/harness-advisor/references/host-claude.md).
+
+Ordinary Codex children may inherit tools. Use actual per-child tool-disable
+controls when exposed; otherwise the no-tools rule is instruction-bound, not a
+mechanical guarantee. No named agent installation, Codex adapter, or parent
+permission change is required. See the [human guide](../skills/harness-advisor.md).

@@ -1,3 +1,103 @@
+# Tool-free Advisor pivot, 2026-09-15
+
+## State and scope
+
+Starting HEAD: `415e9485eabb5777ad0a7c7d5a9e8c595c8278e2` on `main`, with clean
+index and worktree. Advisor source/tests/docs matched the plan's pinned
+`1de5562` baseline; the intervening commit added only the implementation plan.
+The authoritative specification is `harness-advisor-tool-free-implementation-plan.md`.
+The task handoff is `HANDOFF-advisor-tool-free.md`.
+
+Implemented policy **4**, retaining routing schema **1**, configuration/locks,
+family/effort routing and consultation accounting. Advisor now reasons only over
+executor-supplied evidence. Updated shared skill, canonical contract, both host
+guides, human guide, capabilities templates, dependency section and README row.
+Removed Claude workspace/inspection parsing, exports, settings and report fields;
+old `--workspace` forms fail with the specified usage diagnosis before I/O/probing.
+Retained evidence-only invocation, JSON acceptance, null-envelope diagnosis,
+cleanup, environment isolation and unverified-control reporting.
+
+Replaced inspection tests with the A01–A22/P01–P12 deterministic coverage and
+extended isolated-install/runtime-floor checks. Replaced the executable workspace
+fixture with the static six-case packet and policy-4 qualification procedure.
+No production file, dependency, routing migration, user integration update or
+local publication change was introduced. Literal V1–V11 and bounded replacement
+comparisons passed; unrelated Final plans/Skill discovery templates are unchanged.
+`advisor-config.ts`, `config.test.js`, `dist/` and `src/harness/package.json` retain
+baseline bytes. This evaluates `.build/harness`, not the older published `dist`.
+
+## Deterministic execution
+
+Linux development container, Node **26.8.2**. All development commands below use
+`./scripts/dev exec`; Git and source/literal comparisons ran on the host.
+Initial sandbox invocation could not access the Docker socket. The authorized
+host-access retry succeeded; this was an environment restriction, not a test failure.
+
+- `npm ci --include=dev`: passed, four packages installed, zero vulnerabilities.
+- `npm run typecheck`: passed.
+- `npm run build`: passed, development artifact only.
+- `sh -c 'node --test tests/harness-advisor/*.test.js tests/inventory/*.test.js tests/distribution/installation.test.js'`:
+  initial run 68 passed/1 failed because the new fake CLI used CommonJS under an
+  ESM parent. Corrected the test fixture to ESM. Rerun **69 passed, 0 failed, 0 skipped**.
+- `node tests/distribution/runtime-floor.js`: passed on **26.8.2**, including
+  retained fake-CLI success and removed-option rejection. This is not Node 22.0.0
+  qualification. No exact-floor executable was found in inspected host/container
+  runtime locations or local image inventory; no replacement runtime was installed.
+- Full setup/gate: `sh -c 'set -eu; validation_home=$(mktemp -d "$PWD/.build/advisor-validation-home.XXXXXX"); env HOME="$validation_home" node scripts/setup-tests.js; env HOME="$validation_home" node scripts/run-tests.js'`:
+  setup passed; full gate exit 0, **721 passed, 0 failed, 60 skipped**. No
+  `--skip-gif` exclusion. macOS-only execution remains unqualified on Linux.
+  Logs are task-local ignored `.build/advisor-setup.log` and `.build/advisor-full.log`.
+- `npm run build:check`: passed. `node scripts/validate-dist.js --target development`:
+  passed, 87 files. Host `git diff --check` and `git diff --cached --check`: passed.
+- Supplemental skill-creator `quick_validate.py`, piped into container Python:
+  could not run because PyYAML is absent. No new dependency was added for this
+  optional validator; required repository inventory/policy checks passed.
+
+## Independent implementation review
+
+User-requested repository reviewer pass 1 found no major issue and one minor test
+coverage issue: unreadable contract data was whitespace, which also exercised
+empty-content rejection. The review-fixer changed that fixture to nonempty
+canonical contract content. `node --test tests/harness-advisor/claude-adapter.test.js`
+then passed **41/41**, no skips. Reviewer pass 2 re-examined the complete diff,
+including the evaluation/history and fix, and reported **no remaining valid major
+or minor findings**. No rejected findings or unresolved trivial observations.
+
+Final post-convergence validation repeated typecheck, build, isolated-home setup,
+the complete gate, runtime harness, build freshness and artifact validation. All
+passed (exit 0): **721 passed, 0 failed, 60 macOS-only skips**, no excluded groups;
+87 artifact files validated. Runtime harness again ran on Node 26.8.2, without
+claiming exact-floor qualification. Logs: `.build/advisor-final-setup.log` and
+`.build/advisor-final-full.log`. Final scope audit matched the 17 plan edit targets
+plus the requested handoff ledger; protected paths and routing remained unchanged.
+Only evaluation and handoff result recording changed after this final gate.
+These implementation-review agents are not Harness fallback qualification calls.
+
+## Live host and minimum-runtime qualification
+
+Static packet: `tests/harness-advisor/tool-free-packet.md`, SHA-256
+`96b36757d35ab9c076f6a65ab9ab8e2f558604ee7f498c395ed735e863e1e446`.
+
+| Surface | Actual outcome |
+| --- | --- |
+| Codex fallback | **Not run / unqualified**: no separately authorized live qualification call. Preparation/transport, A–F reasoning, tool adherence and enforcement have no new live result. Ordinary route remains instruction-bound where no child tool-disable selector exists. |
+| Claude fallback | **Not run / unqualified**: no separately authorized live qualification call or verified native-absent live host/account. Fake CLI tests establish requested arguments and transport only. |
+| Native Claude comparison | **Not run**: outside this fallback implementation task. |
+| Node 22.0.0 | **Not run / unqualified**: exact executable unavailable in inspected locations. Node 26.8.2 results do not establish the minimum. |
+
+No claims of live model/effort enforcement, zero observed tool attempts,
+authentication, cache performance, or independently reproduced Advisor verification
+follow from deterministic adapter success. No design deviation was needed.
+
+---
+
+# Historical records — older implementations
+
+The following records are preserved byte-for-byte. They concern earlier Advisor
+implementations and do not qualify the tool-free pivot. Historical failed Codex
+mutation qualification remains a failure; old inspection procedures and counts
+are not current acceptance evidence.
+
 # Codex inspection correction, 2026-09-14
 
 ## Starting state and delivery

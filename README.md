@@ -28,7 +28,7 @@ Some skills retain configuration or generated data under `~/.harness-plugin/`, s
 
 | Skill | Purpose |
 | --- | --- |
-| [harness-advisor](dist/harness/skills/harness-advisor/SKILL.md) | Consult a read-only advisor for consequential decisions and reviews. [Guide](docs/skills/harness-advisor.md). |
+| [harness-advisor](dist/harness/skills/harness-advisor/SKILL.md) | Get a tool-free reasoning review of executor-supplied evidence. [Guide](docs/skills/harness-advisor.md). |
 | [back-up-directories](dist/harness/skills/back-up-directories/SKILL.md) | Archive a directory to a dated ZIP and replicate it to configured destinations. |
 | [create-discord-emoji-gif](dist/harness/skills/create-discord-emoji-gif/SKILL.md) | Convert a clip into a looping, under-256KB, 128x128 Discord emoji GIF. |
 | [diagnose-environment](dist/harness/skills/diagnose-environment/SKILL.md) | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. |
