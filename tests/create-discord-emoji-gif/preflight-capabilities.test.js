@@ -127,3 +127,11 @@ esac
     { code: 'gifsicle_capability_missing', condition: 'gifsicle is missing required option: --optimize', remedy: gifsicleUpgrade },
   ]);
 });
+
+test('Node gifsicle preflight does not require PNG or image2 support from ffmpeg', { skip: !require('node:child_process').spawnSync('sh', ['-c', 'command -v ffmpeg']).stdout.length }, () => {
+  const realFfmpeg = require('node:child_process').spawnSync('sh', ['-c', 'command -v ffmpeg'], { encoding: 'utf8' }).stdout.trim();
+  // Hide every listing line that names png or image2, leaving the rest of the real build.
+  const fake = `#!/bin/sh\n${JSON.stringify(realFfmpeg)} "$@" | grep -v -w -E 'png|image2'\n`;
+  const result = runWithFake(gifsicle, 'ffmpeg', fake);
+  if (result.status !== 0) assert.deepEqual(failuresWithCode(result, 'ffmpeg_capability_missing'), []);
+});

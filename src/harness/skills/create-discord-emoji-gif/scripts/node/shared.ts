@@ -155,7 +155,7 @@ async function referenceFrameCount(state: Pick<ScoringState, 'manager' | 'comman
   return frames;
 }
 
-async function scoreCandidate(manager: ProcessManager, commands: Pick<ReadyCommands, 'ffmpeg' | 'ffprobe'>, workDir: string, candidate: string, task: string, referenceFrames: number, candidateFps: number, keepWork = false) {
+async function scoreCandidate(manager: ProcessManager, commands: Pick<ReadyCommands, 'ffmpeg'>, workDir: string, candidate: string, task: string, referenceFrames: number, candidateFps: number, keepWork = false) {
   // libvmaf 3.2.0's integer ADM reads outside its buffers at 32x32.
   // Enlarge only the scoring inputs so all four ADM stages have sufficient pixels.
   const scoringFilters = "fps=24,setpts=PTS-STARTPTS,scale=w='max(iw,64)':h='max(ih,64)':flags=lanczos";

@@ -76,10 +76,10 @@ async function checkCommonPreflight(manager: ProcessManager, backend: GifBackend
   if (commands.ffmpeg) {
     const groups: Array<[string, string[]]> = [
       ['filter', backend === 'gifski' ? ['fps', 'scale', 'format', 'setpts', 'libvmaf'] : ['fps', 'scale', 'format', 'palettegen', 'paletteuse', 'setpts', 'libvmaf']],
-      ['encoder', backend === 'gifski' ? ['rawvideo', 'ffv1'] : ['rawvideo', 'ffv1', 'png', 'gif']],
-      ['decoder', backend === 'gifski' ? ['rawvideo', 'ffv1', 'gif'] : ['rawvideo', 'ffv1', 'gif', 'png']],
-      ['muxer', backend === 'gifski' ? ['yuv4mpegpipe', 'matroska', 'null'] : ['nut', 'matroska', 'image2', 'gif', 'null']],
-      ['demuxer', backend === 'gifski' ? ['yuv4mpegpipe', 'matroska', 'gif'] : ['nut', 'matroska', 'image2', 'gif']],
+      ['encoder', backend === 'gifski' ? ['rawvideo', 'ffv1'] : ['rawvideo', 'ffv1', 'gif']],
+      ['decoder', backend === 'gifski' ? ['rawvideo', 'ffv1', 'gif'] : ['rawvideo', 'ffv1', 'gif']],
+      ['muxer', backend === 'gifski' ? ['yuv4mpegpipe', 'matroska', 'null'] : ['nut', 'matroska', 'gif', 'null']],
+      ['demuxer', backend === 'gifski' ? ['yuv4mpegpipe', 'matroska', 'gif'] : ['nut', 'matroska', 'gif']],
     ];
     for (const [kind, capabilities] of groups) {
       const result = await probe(manager, `ffmpeg-${kind}s`, commands.ffmpeg, ['-hide_banner', `-${kind}s`]);

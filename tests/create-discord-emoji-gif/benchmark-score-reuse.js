@@ -28,13 +28,13 @@ function instrument(root, label) {
 const fs=require('node:fs');
 const shared=require(${JSON.stringify(path.join(root,relative,'shared'))});
 const {ProcessManager}=require(${JSON.stringify(path.join(root,relative,'process-manager'))});
-let evaluations=0,candidateEvaluations=0,vmaf=0,duration=0;const keys=new Set();
+let evaluations=0,candidateEvaluations=0,vmaf=0;const keys=new Set();
 const record=(file,fps,digest)=>{evaluations++;keys.add(JSON.stringify([fps,digest||shared.sha256File(file)]));};
 if(shared.createCandidateScorer){const original=shared.createCandidateScorer;shared.createCandidateScorer=state=>{const score=original(state);return(file,task,fps,digest)=>{record(file,fps,digest);return score(file,task,fps,digest);};};}
 else {const original=shared.scoreCandidate;shared.scoreCandidate=(...args)=>{record(args[3],args[6]);return original(...args);};}
 const run=ProcessManager.prototype.runOwned;
-ProcessManager.prototype.runOwned=function(task,...args){if(/^f[0-9]+-(?:c[0-9]+-d[0-9]+-optimize|q[0-9]+-m[0-9]+-l[0-9]+)$/.test(task))candidateEvaluations++;if(task.endsWith('-vmaf'))vmaf++;if(/^f[0-9].* duration$/.test(task))duration++;return run.call(this,task,...args);};
-process.on('exit',()=>fs.writeFileSync(${JSON.stringify(data)},JSON.stringify({candidateEvaluations,evaluations,uniqueKeys:keys.size,vmaf,duration})));
+ProcessManager.prototype.runOwned=function(task,...args){if(/^f[0-9]+-(?:c[0-9]+-d[0-9]+-optimize|q[0-9]+-m[0-9]+-l[0-9]+)$/.test(task))candidateEvaluations++;if(task.endsWith('-vmaf'))vmaf++;return run.call(this,task,...args);};
+process.on('exit',()=>fs.writeFileSync(${JSON.stringify(data)},JSON.stringify({candidateEvaluations,evaluations,uniqueKeys:keys.size,vmaf})));
 `);
   return { file,data };
 }

@@ -115,7 +115,7 @@ Install the plugin into Codex or Claude Code using the [README installation inst
 
 FFmpeg, gifski, and gifsicle do not have a numeric minimum enforced by the converters. Their executable preflights check required capabilities. The container versions above are a verified combination, not a replacement for those checks.
 
-For both GIF backends, FFmpeg needs `fps`, `scale`, `format`, `setpts`, and `libvmaf`, plus rawvideo, FFV1, GIF decoding, Matroska, and null output. The gifski path also needs YUV4MPEG pipe support. The gifsicle path adds `palettegen`, `paletteuse`, PNG/GIF encoding, PNG decoding, NUT, and image2 support. Input-specific codecs must also be available. `ffprobe` must support JSON output, stream selection, entry selection, and frame counting. The backend tools must expose the options checked by [preflight.js](../../dist/harness/skills/create-discord-emoji-gif/scripts/node/preflight.js).
+For both GIF backends, FFmpeg needs `fps`, `scale`, `format`, `setpts`, and `libvmaf`, plus rawvideo, FFV1, GIF decoding, Matroska, and null output. The gifski path also needs YUV4MPEG pipe support. The gifsicle path adds `palettegen`, `paletteuse`, GIF encoding and muxing, and NUT support. Input-specific codecs must also be available. `ffprobe` must support JSON output, stream selection, entry selection, and frame counting. The backend tools must expose the options checked by [preflight.js](../../dist/harness/skills/create-discord-emoji-gif/scripts/node/preflight.js).
 
 Frame extraction requires FFprobe pixel-format descriptors (`-show_pixel_formats -of json`) for authoritative alpha and component depth. The native HEIC10 path rejects HDR inputs with alpha.
 
