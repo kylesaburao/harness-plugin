@@ -109,7 +109,7 @@ class ProcessManager {
       const outcome = await Promise.race([...pending].map(entry => entry.promise));
       pending.delete(outcome.entry);
       if (!outcome.ok) {
-        await this.cancel('SIGTERM');
+        try { await this.cancel('SIGTERM'); } catch {}
         await Promise.all([...pending].map(entry => entry.promise));
         throw outcome.error;
       }

@@ -60,7 +60,7 @@ async function runConverter({
     return 0;
   } catch (error) {
     if (state) {
-      await state.manager.cancel('SIGTERM');
+      try { await state.manager.cancel('SIGTERM'); } catch {}
       shared.cleanupArtifacts(state);
     }
     shared.emitError(error, parsed.json || error.json);

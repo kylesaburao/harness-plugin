@@ -38,6 +38,36 @@ test('an oldest worker failure stops queued work and preserves the original erro
   assert.equal(manager.cancelling, true);
 });
 
+test('a cancel() failure while cancelling siblings does not mask the original error or skip awaiting pending work', { skip: process.platform === 'win32' }, async () => {
+  const directory = temporaryDirectory('runOldestBounded-cancel-failure.');
+  const fixture = path.join(directory, 'self-exit.js');
+  makeExecutable(fixture, `#!/usr/bin/env node\nsetTimeout(() => process.exit(0), 100);\n`);
+  const manager = new ProcessManager();
+  const original = Object.assign(new Error('original failure'), { code: 'original_failure' });
+  const realSignalChild = manager.signalChild.bind(manager);
+  let signalChildCalled = false;
+  manager.signalChild = () => {
+    signalChildCalled = true;
+    throw Object.assign(new Error('simulated EPERM'), { code: 'EPERM' });
+  };
+  let survivorSettled = false;
+  try {
+    await assert.rejects(manager.runOldestBounded([1, 2], 2, async item => {
+      if (item === 1) {
+        await manager.runOwned('survivor', fixture, []);
+        survivorSettled = true;
+        return;
+      }
+      throw original;
+    }), error => error === original);
+  } finally {
+    manager.signalChild = realSignalChild;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+  assert.equal(signalChildCalled, true);
+  assert.equal(survivorSettled, true);
+});
+
 test('a younger worker failure is prompt and leaves the next queued worker unstarted', async () => {
   const directory = temporaryDirectory('younger-worker-failure.');
   const fixture = path.join(directory, 'delayed.js');
