@@ -1,0 +1,13 @@
+{
+  "name": "harness-plugin",
+  "owner": {
+    "name": "Kyle Saburao"
+  },
+  "plugins": [
+    {
+      "name": "harness",
+      "source": "./plugins/harness",
+      "description": "Shared Agent Skills, packaged for Claude Code and Codex from one canonical implementation."
+    }
+  ]
+}
