@@ -25,7 +25,7 @@ Registration saves addresses without waking anything. Ask to “register and wak
 
 ## Direct CLI quick start
 
-Set `wake_skill` to the absolute installed skill directory shown by your harness. In a repository checkout, you can use the absolute path to `plugins/harness/skills/wake-desktop`. Resolve the installed path again after upgrades.
+Set `wake_skill` to the absolute installed skill directory shown by your harness. In a repository checkout, you can use the absolute path to `dist/harness/skills/wake-desktop`. Resolve the installed path again after upgrades.
 
 ```sh
 wake_skill="/absolute/path/to/skills/wake-desktop"
@@ -52,4 +52,4 @@ Use `--help` for options or `--preflight` for an explicit readiness check withou
 
 A ping response proves network reachability, not desktop or application readiness. A timeout does not prove the computer stayed asleep: it may still be booting or blocking ICMP. Check LAN access, firmware/adapter settings, and ICMP filtering when investigating. Command errors include a diagnosis and remedy.
 
-The [complete skill contract](../../plugins/harness/skills/wake-desktop/SKILL.md) defines validation, address precedence, result fields, and stopping behavior.
+The [complete skill contract](../../dist/harness/skills/wake-desktop/SKILL.md) defines validation, address precedence, result fields, and stopping behavior.

@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { mediaFailed, childDetails } = require('../../plugins/harness/shared/node/media-result');
+const { mediaFailed, childDetails } = require('../../dist/harness/shared/node/media-result');
 
 for (const [label, result, expected] of [
   ['empty stderr', { code: 0, signal: null, stderr: '' }, false],

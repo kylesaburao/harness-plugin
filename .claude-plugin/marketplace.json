@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "harness",
-      "source": "./plugins/harness",
+      "source": "./dist/harness",
       "description": "Shared Agent Skills, packaged for Claude Code and Codex from one canonical implementation."
     }
   ]

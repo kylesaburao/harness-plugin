@@ -1,0 +1,21 @@
+{
+  "name": "harness-plugin-development",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "compile": "tsc -p tsconfig.json",
+    "build": "node scripts/build.js",
+    "build:check": "node scripts/build.js --check",
+    "validate:dist": "node scripts/validate-dist.js",
+    "test:setup": "node scripts/setup-tests.js",
+    "test": "node scripts/run-tests.js"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "typescript": "7.0.2"
+  }
+}

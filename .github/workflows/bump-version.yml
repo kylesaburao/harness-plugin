@@ -38,7 +38,9 @@ jobs:
         run: node scripts/setup-tests.js
 
       - name: Run hosted test gate
-        run: node scripts/run-tests.js --skip-gif
+        run: |
+          node scripts/validate-dist.js --tracked
+          node scripts/run-tests.js --skip-gif
 
   bump:
     needs: test
@@ -88,6 +90,7 @@ jobs:
           for attempt in 1 2 3; do
             git fetch origin main
             git reset --hard origin/main
+            npm ci --include=dev
 
             if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
               # A human picked this explicitly via the choice input; no derivation needed.
@@ -99,12 +102,12 @@ jobs:
               # caught up by whichever run executes next. That catch-up is also why the
               # "did anything worth bumping change?" test lives in the script rather than in an
               # `on: push: paths:` filter up top: a docs-only push still runs, still sees an
-              # earlier un-bumped plugins/ commit in the range, and still bumps it. A paths:
+              # earlier un-bumped dist/ commit in the range, and still bumps it. A paths:
               # filter would skip that run and strand the bump.
               #
               # The script selects the first-parent anchor and reads each commit's files.
               # Its --no-renames matters because
-              # with git's default rename detection a file moved out of plugins/ shows only its
+              # with git's default rename detection a file moved out of dist/ shows only its
               # destination path, so deleting something that ships would read as irrelevant.
               level="$(node scripts/derive-bump-level.js)"
             fi
@@ -115,11 +118,16 @@ jobs:
             fi
 
             node scripts/setup-tests.js
+            node scripts/validate-dist.js --tracked
             node scripts/run-tests.js --skip-gif
             node scripts/bump-version.js "--bump-${level}" --json | tee /tmp/bump.json
             next="$(jq -r .next /tmp/bump.json)"
+            npm run build
+            node scripts/setup-tests.js
+            node scripts/run-tests.js --skip-gif
 
-            git add plugins/harness/.codex-plugin/plugin.json plugins/harness/.claude-plugin/plugin.json
+            git add src/harness/package.json dist/harness
+            node scripts/validate-dist.js --tracked
             git commit -m "chore: bump version to ${next}"
 
             if git push origin HEAD:main; then

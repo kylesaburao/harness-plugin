@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const script = path.resolve(__dirname, '../../plugins/harness/skills/harness-advisor/scripts/claude-advisor.js');
+const script = path.resolve(__dirname, '../../dist/harness/skills/harness-advisor/scripts/claude-advisor.js');
 const contract = fs.readFileSync(path.resolve(path.dirname(script), '../references/contract.md'), 'utf8');
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-advisor-test-'));

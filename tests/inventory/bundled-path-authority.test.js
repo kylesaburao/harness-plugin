@@ -7,7 +7,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
-const SKILLS_PREFIX = 'plugins/harness/skills/';
+const SKILLS_PREFIX = 'src/harness/skills/';
 const HEADING = '## Bundled path authority';
 const AUTHORITY_TEXT = `Use the current host’s path for this loaded \`SKILL.md\`. Claude Code supplies this path through \`\${CLAUDE_SKILL_DIR}\`. Expand any catalog root alias using its supplied mapping. Set \`<SKILL_DIR>\` to the absolute directory containing that exact file and retain it for this invocation. Replace \`<SKILL_DIR>\` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
 
@@ -18,7 +18,7 @@ function normalizeWhitespace(value) {
 }
 
 function trackedResourceBearingSkills() {
-  const tracked = execFileSync('git', ['ls-files', '--', 'plugins/harness/skills'], {
+  const tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', 'src/harness/skills'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
   }).trim().split('\n').filter(Boolean);
@@ -92,7 +92,12 @@ test('every tracked resource-bearing skill has the shared bundled-path authority
   assert.ok(skills.length > 0, 'resource-bearing skill discovery returned no skills');
   for (const skill of skills) {
     const skillPath = path.join(REPO_ROOT, SKILLS_PREFIX, skill, 'SKILL.md');
-    assertAuthority(fs.readFileSync(skillPath, 'utf8'), skillPath);
+    const source = fs.readFileSync(skillPath, 'utf8');
+    assertAuthority(source, skillPath);
+    const installedPath = path.join(REPO_ROOT, 'dist/harness/skills', skill, 'SKILL.md');
+    const installed = fs.readFileSync(installedPath, 'utf8');
+    assert.equal(installed, source, installedPath);
+    assertAuthority(installed, installedPath);
   }
 });
 

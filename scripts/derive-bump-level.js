@@ -14,7 +14,7 @@ const BUMP_COMMIT_PATTERN = /^chore: bump version to \d+\.\d+\.\d+$/;
 // worth a version bump. Prefixes rather than exact filenames, so a file added to one of these
 // directories later is covered without editing this list.
 //
-//   plugins/          installing a plugin copies the whole directory into the harness's plugin
+//   dist/             installing a plugin copies the whole directory into the harness's plugin
 //                     cache, so everything under here ships to every install (see AGENTS.md).
 //   .claude-plugin/   root marketplace manifest, read when someone adds the marketplace.
 //   .agents/plugins/  the Codex-side equivalent of the same.
@@ -22,7 +22,7 @@ const BUMP_COMMIT_PATTERN = /^chore: bump version to \d+\.\d+\.\d+$/;
 // Everything else - tests/, scripts/, .github/, .githooks/, AGENTS.md, README.md, LICENSE - only
 // exists to develop this repository and never reaches an install.
 const RELEVANT_PATH_PREFIXES = Object.freeze([
-  'plugins/',
+  'dist/',
   '.claude-plugin/',
   '.agents/plugins/',
 ]);

@@ -13,7 +13,7 @@ const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
 // ordering, and additional guide links are presentation choices.
 for (const kind of ['skills', 'output-styles']) {
   test(`README links to exactly the shipped ${kind}, using their public names`, () => {
-    const directory = `plugins/harness/${kind}`;
+    const directory = `dist/harness/${kind}`;
     const expected = fs.readdirSync(path.join(ROOT, directory), { withFileTypes: true })
       .filter(entry => kind === 'skills' ? entry.isDirectory() : entry.isFile() && entry.name.endsWith('.md'))
       .map(entry => `${directory}/${entry.name}${kind === 'skills' ? '/SKILL.md' : ''}`)
@@ -32,3 +32,9 @@ for (const kind of ['skills', 'output-styles']) {
     }
   });
 }
+
+test('source and distribution expose the same components', () => {
+  for (const kind of ['skills', 'output-styles']) {
+    assert.deepEqual(fs.readdirSync(path.join(ROOT, 'src/harness', kind)).sort(), fs.readdirSync(path.join(ROOT, 'dist/harness', kind)).sort());
+  }
+});

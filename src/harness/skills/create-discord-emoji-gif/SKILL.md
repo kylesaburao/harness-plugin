@@ -1,0 +1,172 @@
+---
+name: create-discord-emoji-gif
+description: "Create an animated Discord emoji GIF from a video, at 128x128 and under 256000 bytes (256 KB). Use for Discord emoji requests or GIFs with those same limits. Not for general video-to-GIF conversion with other size targets."
+compatibility: Requires Node.js 22.0.0 or newer, ffmpeg built with libvmaf, ffprobe, and either gifski or gifsicle.
+---
+
+# Create a Discord emoji GIF
+
+Create a looping 128x128 GIF with fewer than 256000 bytes. Clips of
+3 seconds or less usually produce better quality within that limit. If the user asks what
+this skill is or why it exists, state both the Discord size target and this duration
+guidance.
+
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
+## Runtime requirements
+
+The Node.js entrypoints are the only supported executable paths. They search their
+respective backends, score candidates with VMAF, retain the winner, verify it, and
+publish it atomically. Use gifski by default. Use FFmpeg and gifsicle as the defined
+fallback.
+
+Both backends need `ffmpeg` built with `libvmaf` and `ffprobe`. The default backend also
+needs `gifski`. The fallback needs `gifsicle`. Each converter reports all missing or
+unsuitable tools and gives platform-specific remedies.
+
+## Select an entrypoint
+
+| Request | Entrypoint |
+| --- | --- |
+| Default | `node "<SKILL_DIR>/scripts/node/mov-to-gif-gifski.js"` |
+| Explicit gifsicle | `node "<SKILL_DIR>/scripts/node/mov-to-gif.js"` |
+
+Use this procedure:
+
+1. Dispatch the matching entrypoint directly. Do not probe `node --version` first: the
+   entrypoint validates its own runtime as part of the one dispatch.
+2. If the shell reports the `node` command itself as not found, that is a shell error,
+   not a `code`/`condition`/`remedy` triple from the script. Tell the user Node.js
+   22.0.0 or newer must be installed and stop there. Do not invent a remedy.
+3. If `node` exists but is older than 22, the script itself exits 2 with
+   `node_version_unsupported` and a remedy. Relay it like any other failure.
+4. A default gifski attempt that fails before work starts (exit 2) can fall through to
+   gifsicle only for `command_missing` for gifski, `gifski_probe_failed`, or
+   `gifski_capability_missing`.
+5. Do not fall through on argument, input, output, FFmpeg, ffprobe, platform, or work
+   directory failures.
+6. After conversion work starts, fall through only from gifski `no_candidate` to
+   gifsicle. Never fall from a started run to the other backend.
+7. For an explicit backend comparison, dispatch both entrypoints.
+
+Node.js 22.0.0 is the supported runtime floor.
+
+## Workflow
+
+1. Warn the user before a broad search because it can take several minutes and use
+   most CPU cores. Narrow the search with environment variables when the user wants a
+   faster result.
+
+2. One dispatch searches and scores candidates with VMAF, retains the selected file,
+   verifies it, and publishes it atomically. After a **successful** dispatch, do
+   not run any further command against the input or the output, and do not open the
+   GIF. This includes `ffprobe`, `ffmpeg`, `gifsicle`, `file`, `stat`, `ls`, `wc`, `du`,
+   `shasum`, an image viewer, or any other inspection tool. The dispatch's own report
+   already measured the published file's codec, dimensions, frame count, duration, byte
+   count, and digest, and confirmed the digest after the atomic rename. Relay those
+   fields from the report instead of deriving them again.
+
+3. Convert with the selected entrypoint:
+
+   ```sh
+   node "<SKILL_DIR>/scripts/node/mov-to-gif-gifski.js" INPUT_VIDEO [OUTPUT.gif]
+   node "<SKILL_DIR>/scripts/node/mov-to-gif.js" INPUT_VIDEO [OUTPUT.gif]
+   ```
+
+   The converter validates the environment and the video before doing any conversion
+   work, so this one dispatch also serves as the readiness check. It reports a nonfatal
+   `input_duration_long` warning on stderr when the clip is longer than 3 seconds.
+   Without an output path, every converter writes
+   `<input-basename>_<size>x<size>.gif` next to the input. Progress and warnings go to
+   stderr. The result summary and report go to stdout. A long-input warning does not
+   reject, trim, or modify the input.
+
+4. Relay a failure diagnosis verbatim, including each stable `code`, `condition`, and
+   `remedy`. Do not independently replace its remedy. Ask the user before running an
+   installation command because it changes the machine.
+
+   Run `--preflight` as its own dispatch only when a check is wanted without attempting
+   a conversion, for example confirming the environment before the user hands over a
+   video. `--preflight` without an input checks only the environment. With an input, it
+   also validates the video.
+
+   ```sh
+   node "<SKILL_DIR>/scripts/node/mov-to-gif-gifski.js" --preflight --json INPUT_VIDEO
+   ```
+
+## Tuning
+
+Set these environment variables, not command flags:
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `MAX_BYTES` | 256000 | Strict byte ceiling. The output must be smaller. |
+| `GIF_SIZE` | 128 | Square output width and height in pixels |
+| `MIN_FPS` / `MAX_FPS` | 15 / 24 | Frame-rate range. Gifski accepts at most 100 FPS. |
+| `JOBS` | logical CPUs minus 2, minimum 1 | Parallel work limit |
+| `KEEP_WORK` | unset | Set to `1` to keep the intermediate work directory |
+
+All positive integer values must be no greater than `9007199254740991`, the largest
+integer that Node.js represents exactly. Backend-specific limits, such as gifski's
+100 FPS and quality maximums, still apply.
+
+The gifski backend also accepts:
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `MIN_QUALITY` / `MAX_QUALITY` | 1 / 100 | Gifski quality search bounds |
+
+Both backends prepare all FPS caches in one FFmpeg process, with the VMAF reference
+prepared separately within `JOBS`. Caches remain available throughout the search.
+The gifski backend evaluates coarse candidates, then refinement candidates, in two
+bounded waves across all FPS values. Each nonempty wave uses
+`min(candidate count, max(1, floor(JOBS / 2)))` simultaneous candidate workers.
+Each gifski child receives
+`RAYON_NUM_THREADS = clamp(floor(JOBS / candidate workers), 2, 8)`, using that wave's
+actual worker count.
+
+To reduce runtime, pin the frame rate with `MIN_FPS=15 MAX_FPS=15`.
+
+## Read the result
+
+- Exit `0` means the preflight passed or the conversion succeeded.
+- Exit `2` means work did not start because of usage, runtime, environment, input, or
+  output validation. Relay the reported remedy.
+- Exit `1` means conversion work started and failed, or publication succeeded but cleanup failed. Apply only the backend fallback
+  rules above.
+- `SIGHUP`, `SIGINT`, and `SIGTERM` exit with `129`, `130`, and `143` after tracked
+  child processes close and cleanup finishes.
+
+A successful run prints `Selected:`, `Output:`, and `Verified:` lines, then a `Report:`
+block with the source and output paths, dimensions, frame count, duration, frame rate,
+byte count against `MAX_BYTES` with the remaining headroom, loop mode, the winning
+backend parameters, the VMAF score, and a SHA-256 digest of the published file. It then
+prints one `Check: PASS ...` line per assertion and a closing `Verification: complete`
+line. Pass `--json` to get the same fields as a `result` object, for example when
+relaying structured data or piping to another tool.
+
+Tell the user the output path, the byte count against the limit, and the VMAF score,
+then stop. The full report is already in the terminal if they want the rest. Do not
+describe the GIF as visually identical to the source. Its frame rate can differ from the
+source. Each GIF frame uses a palette with at most 256 entries.
+
+## Platform verification
+
+- macOS: both Node entrypoints are verified with a real generated fixture.
+- Ubuntu Linux: supported, but a disposable real-toolchain run is not yet verified.
+- WSL2: supported by design through the Linux branch. Signal, process-group, mounted
+  filesystem, and real-conversion verification are blocked until an actual WSL2 host is
+  available. Do not describe WSL2 as verified from Docker or mocked platform tests.
+- Windows: unsupported.
+
+If a result contains `cleanupFailures`, the artifact was published. Relay its report and the remaining temporary paths, then stop. If an error contains `cleanupFailures`, relay the primary error and these secondary failures. Preserve subprocess task, exit code, signal, and nested cause fields when present.
+
+Media processing fails on a child signal, a nonzero exit, or any FFmpeg/ffprobe error-level diagnostic, including exit zero.
+Capability listings are exempt. Relay captured stderr and the actual child exit code, including zero.
+VMAF scores require a valid, nonempty JSON report and coverage of the decoded 24 FPS reference.
+The final GIF duration must agree with that reference within one candidate-frame interval, one reference-frame interval, and two GIF centiseconds.
+The success report includes this duration-agreement check. Reported decode errors prevent publication and preserve an existing destination.

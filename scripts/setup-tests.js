@@ -8,9 +8,14 @@ const { spawnSync } = require('node:child_process');
 const { buildSetupPlan, runCommandPlan } = require('./run-tests');
 
 function checkPrerequisites(root) {
+  if (!fs.existsSync(path.join(root, 'node_modules/.bin/tsc'))) throw new Error('Local TypeScript compiler is missing');
   const python = path.join(root, '.venv/bin/python');
   if (!fs.existsSync(python)) throw new Error(`Python environment is missing: ${python}`);
-  createRequire(path.join(root, 'plugins/harness/skills/back-up-directories/package.json'))('archiver');
+  const backupRoot = path.join(root, 'dist/harness/skills/back-up-directories');
+  const backupRequire = createRequire(path.join(backupRoot, 'package.json'));
+  const dependency = backupRequire.resolve('archiver');
+  if (!dependency.startsWith(path.join(backupRoot, 'node_modules') + path.sep)) throw new Error('archiver must be installed in the distribution backup skill');
+  backupRequire('archiver');
   const probe = spawnSync(python, ['-c', 'import pypdfium2'], { encoding: 'utf8' });
   if (probe.status !== 0) throw new Error('pypdfium2 is missing from the Python environment');
 }

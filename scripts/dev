@@ -31,6 +31,7 @@ name=harness-dev-$key
 image=$name:latest
 venv=$name-venv
 modules=$name-node-modules
+root_modules=$name-root-node-modules
 home=$name-home
 label=dev.harness.checkout=$name
 
@@ -41,14 +42,14 @@ fi
 
 # Include stopped containers: Docker also refuses to remove their volumes.
 require_idle() {
-    for volume in "$venv" "$modules" "$home"; do
+    for volume in "$venv" "$modules" "$root_modules" "$home"; do
         users=$(docker ps -aq --filter "volume=$volume")
         [ -z "$users" ] || fail "Development volume is in use: $volume ($users)." 'Finish development commands and remove any stopped containers using these volumes, then retry.'
     done
 }
 if [ "$action" = reset ]; then
     require_idle
-    for volume in "$venv" "$modules" "$home"; do
+    for volume in "$venv" "$modules" "$root_modules" "$home"; do
         if docker volume inspect "$volume" >/dev/null 2>&1; then
             docker volume rm "$volume"
         fi
@@ -59,18 +60,19 @@ fi
 docker image inspect "$image" >/dev/null 2>&1 || fail "Development image is missing: $image." './scripts/dev build'
 if [ "$action" = setup ]; then
     require_idle
-    for volume in "$venv" "$modules" "$home"; do
+    for volume in "$venv" "$modules" "$root_modules" "$home"; do
         docker volume create "$volume" >/dev/null
     done
     # Root can access only dependency volumes, never the host checkout.
     docker run --rm --init --user 0:0 \
         --mount "type=volume,source=$venv,target=/vol/venv,volume-nocopy" \
         --mount "type=volume,source=$modules,target=/vol/modules,volume-nocopy" \
+        --mount "type=volume,source=$root_modules,target=/vol/root-modules,volume-nocopy" \
         --mount "type=volume,source=$home,target=/vol/home,volume-nocopy" \
-        "$image" chown "$uid:$gid" /vol/venv /vol/modules /vol/home
+        "$image" chown "$uid:$gid" /vol/venv /vol/modules /vol/root-modules /vol/home
     set -- node scripts/setup-tests.js
 else
-    for volume in "$venv" "$modules" "$home"; do
+    for volume in "$venv" "$modules" "$root_modules" "$home"; do
         docker volume inspect "$volume" >/dev/null 2>&1 || fail "Dependency volume is missing: $volume." './scripts/dev setup'
     done
 fi
@@ -86,6 +88,7 @@ exec docker run --rm --init --sig-proxy=true --label "$label" \
     --user "$uid:$gid" --env HOME=/home/node --workdir /workspace/harness-plugin \
     --mount "type=bind,\"$source_field\",target=/workspace/harness-plugin" \
     --mount "type=volume,source=$venv,target=/workspace/harness-plugin/.venv,volume-nocopy" \
-    --mount "type=volume,source=$modules,target=/workspace/harness-plugin/plugins/harness/skills/back-up-directories/node_modules,volume-nocopy" \
+    --mount "type=volume,source=$modules,target=/workspace/harness-plugin/dist/harness/skills/back-up-directories/node_modules,volume-nocopy" \
+    --mount "type=volume,source=$root_modules,target=/workspace/harness-plugin/node_modules,volume-nocopy" \
     --mount "type=volume,source=$home,target=/home/node,volume-nocopy" \
     "$@"

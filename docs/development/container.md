@@ -16,7 +16,7 @@ Use a normal non-root account with local Docker, a POSIX shell, Git, and the che
 ./scripts/dev exec node scripts/run-tests.js
 ```
 
-Build creates the toolchain image. Setup explicitly reinstalls the backup skill's npm dependencies with `npm ci`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references through `node scripts/setup-tests.js`. Initial build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
+Build creates the toolchain image. Setup installs the root build toolchain, verifies the tracked distribution, and explicitly reinstalls the backup skill's npm dependencies with `npm ci`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references through `node scripts/setup-tests.js`. Initial build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
 
 Run a focused test or open a shell with the same source and dependency mounts:
 
@@ -27,13 +27,13 @@ Run a focused test or open a shell with the same source and dependency mounts:
 
 `exec` preserves argument boundaries, stdin, stdout, stderr, and command exit status without allocating a TTY. Use `sh -c '...'` explicitly when a command needs shell expansion. `shell` allocates an interactive TTY. Both use attached `docker run --rm --init --sig-proxy=true`, with Docker's [signal forwarding](https://docs.docker.com/reference/cli/docker/container/run/). Containers are removed when commands exit.
 
-Ordinary commands never build or install implicitly. Source edits need no preparation. Run `setup` before each gate. Run setup and reset only when no development commands are active. The launcher checks for containers using the volumes, but does not lock out concurrent launches.
+Ordinary commands never build or install implicitly. After source edits, run `./scripts/dev exec npm run build`. Builds preserve the mounted backup dependency directory. Run `setup` before each gate. Run setup and reset only when no development commands are active. The launcher checks for containers using the volumes, but does not lock out concurrent launches.
 
 ## Persistence and reset
 
-The checkout is bind-mounted at `/workspace/harness-plugin`. Three named volumes mask `.venv`, `plugins/harness/skills/back-up-directories/node_modules`, and `/home/node`. All use `volume-nocopy`, so host dependencies and image home contents are not imported. The `.venv` volume hands the Python environment from setup to one gate, then the gate empties it. The other volumes retain backup dependencies, generated references, and caches. Host dependency directories remain untouched. Docker may create empty mount-point directories if they do not exist.
+The checkout is bind-mounted at `/workspace/harness-plugin`. Four named volumes mask root `node_modules`, `.venv`, `dist/harness/skills/back-up-directories/node_modules`, and `/home/node`. All use `volume-nocopy`, so host dependencies and image home contents are not imported. The `.venv` volume hands the Python environment from setup to one gate, then the gate empties it. The other volumes retain backup dependencies, generated references, and caches. Host dependency directories remain untouched. Docker may create empty mount-point directories if they do not exist.
 
-The home volume stores generated references under `/home/node/.harness-plugin/` and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the three volumes. The source checkout is never mounted into that root container.
+The home volume stores generated references under `/home/node/.harness-plugin/` and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the four volumes. The source checkout is never mounted into that root container.
 
 Image and volume names use a hash of the checkout's canonical path and invoking UID/GID. Independent checkouts and users have separate dependency state. Moving a checkout or changing UID/GID selects new names and leaves the old resources in Docker. Symlink paths to the same checkout reuse its state.
 
@@ -45,7 +45,7 @@ After incompatible runtime changes, or to reproduce from empty dependency state:
 ./scripts/dev setup
 ```
 
-Reset removes only this checkout/user's three volumes, including cached dependencies and generated references. Source and image remain. It refuses removal while any container references those volumes, including a stopped container. Finish active commands and remove stopped containers using the volumes before retrying.
+Reset removes only this checkout/user's four volumes, including cached dependencies and generated references. Source and image remain. It refuses removal while any container references those volumes, including a stopped container. Finish active commands and remove stopped containers using the volumes before retrying.
 
 ## Toolchain and limits
 

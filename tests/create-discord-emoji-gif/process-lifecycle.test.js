@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { ProcessManager } = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/process-manager');
+const { ProcessManager } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/process-manager');
 const { temporaryDirectory, makeExecutable } = require('./test-helpers');
 
 test('runOldestBounded launches in order and honors its bound', async () => {
@@ -239,7 +239,7 @@ for (const [entry, preflight, signal, phase] of [
 ]) test(`${entry} owns ${phase} interruption during ${preflight ? 'preflight' : 'startup'}`, { timeout: 15000 }, async t => {
   const { spawn } = require('node:child_process');
   const root = temporaryDirectory('early-signal.');
-  const base = path.resolve(__dirname, '../../plugins/harness/skills/create-discord-emoji-gif/scripts/node');
+  const base = path.resolve(__dirname, '../../dist/harness/skills/create-discord-emoji-gif/scripts/node');
   const preload = path.join(root, 'preload.cjs');
   const ready = path.join(root, 'ready');
   const pidFile = path.join(root, 'pid');

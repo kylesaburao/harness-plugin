@@ -1,0 +1,104 @@
+---
+name: back-up-directories
+description: "Back up a folder as a dated ZIP copied to external drives or cloud-synced directories. Use for a new dated ZIP backup or a repeat of a configured backup. Not for incremental backups, versioned backup systems, restoring archives, or snapshots of files being written."
+---
+
+# Back up directories
+
+Creates `<folder>_Backup_<Month><DD><YYYY>.zip` from a source directory, then copies it to
+every configured target. Configuration is a JSON file, not command-line flags.
+
+## Bundled path authority
+
+Use the current host’s path for this loaded `SKILL.md`. Claude Code supplies this path through `${CLAUDE_SKILL_DIR}`. Expand any catalog root alias using its supplied mapping. Set `<SKILL_DIR>` to the absolute directory containing that exact file and retain it for this invocation. Replace `<SKILL_DIR>` in commands with that directory, keeping paths quoted. Resolve bundled scripts and skill-root resource paths from this directory. Resolve Markdown-relative links from the file containing the link, within the same installed skill instance. Preserve the caller’s working directory and existing input/output path semantics.
+
+If the host-provided path is unavailable or a bundled file is missing, report the supplied skill path, attempted resource path, and actual failure. Other installations may be inspected for diagnosis, but use a replacement only when the host or user explicitly selects it. Do not infer the skill directory from conventional locations or select another copy by version, timestamp, or search order.
+
+## Dependency
+
+This skill needs one npm package. Read [INSTALL.md](INSTALL.md) if the preflight reports
+`dependency_missing`.
+
+## This tool is interactive
+
+The utility prints a preview and then asks `Proceed? [y/N]`. It creates nothing unless the
+answer is exactly `y`, `Y`, or `yes`.
+
+That prompt is the user's decision, not yours. Do not pipe an answer into it, do not run
+the command with input redirected, and do not answer on the user's behalf. Show them the
+preview, then let them run the command or confirm it themselves. Backups overwrite files
+at every target.
+
+## Workflow
+
+1. Build the configuration. Copy `references/backup-config.json` to a local file the user
+   owns, then edit it:
+
+   ```json
+   {
+     "sourceDirectory": "./Documents",
+     "targetDirectories": ["/Volumes/Backup", "/Users/me/Dropbox"],
+     "outputDirectory": "./generated-backups"
+   }
+   ```
+
+   `sourceDirectory` and a non-empty `targetDirectories` are required. `outputDirectory` is
+   optional and defaults to the system temporary directory. Relative paths resolve from the
+   configuration file's own directory. Name the local copy something matching
+   `*.local.json`, which the repository ignores, because these paths are machine-specific.
+
+2. Validate the configuration without backing anything up. This is a separate dispatch
+   because the real run is interactive and the agent must never invoke or answer its
+   `Proceed? [y/N]` prompt (see "This tool is interactive" above), so this preflight is how
+   the agent shows the user a safe preview before handing off a command it will not run
+   itself:
+
+   ```sh
+   node "<SKILL_DIR>/scripts/backup.js" --preflight --json path/to/backup-config.local.json
+   ```
+
+   This runs exactly the validation a real run does, including the environment check, so it
+   reports the resolved source, output, targets, and the archive filename before any data
+   moves. It has one side effect: a missing output directory is created, as it would be on a
+   real run. Exit status 2 with `dependency_missing` or `node_version_unsupported` means the
+   environment is not ready; on `dependency_missing`, relay the `remedy` command and ask
+   before running it, since it writes to the skill directory. Exit status 3 with
+   `config_invalid` means the configuration needs a fix, not the environment.
+
+3. Hand the run to the user:
+
+   ```sh
+   node "<SKILL_DIR>/scripts/backup.js" path/to/backup-config.local.json
+   ```
+
+## Reading the result
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | The archive was created and every copy was installed, or the user answered no at the prompt |
+| `2` | Did not start: `usage_error`, `dependency_missing`, or `node_version_unsupported` |
+| `3` | Did not start: `config_invalid`. Nothing was archived or copied |
+| `4` | Archive creation failed |
+| `5` | A copy failed. Copies installed before it remain in place |
+| `130` / `143` | Interrupted. Temporary artifacts were cleaned up |
+
+Exit `0` covers a cancelled run as well as a completed one, so read stdout to tell them
+apart: a cancellation prints `CANCELLED`. Copies are serial and stop at the first failure,
+so on exit `5` say which targets did get a copy rather than describing the backup as
+failed outright.
+
+## Before claiming a backup is safe
+
+Read [references/backup-usage.md](references/backup-usage.md) before answering questions
+about guarantees. Points that change what you should tell the user:
+
+- The source is archived live. There is no snapshot and no detection of a file changing
+  mid-archive, so a valid ZIP can still hold a mixed point-in-time view. When consistency
+  matters, the source has to be quiesced first.
+- One run lock lives at `.backup-tool.lock` in the invoking user's home directory. A
+  `SIGKILL` or power loss leaves it behind, and the next run reports the path. Removing it
+  is the operator's call after confirming no backup is running. Do not delete it for them.
+- The tool is a same-user interactive utility. Its configuration and directory paths are
+  trusted input, so it is not suitable for privileged services or cross-user operation.
+
+With `--json`, completion reports the source, retained archive (or `null`), staging removal, copy paths, and archive bytes. Relay these fields. The preview, confirmation prompt, and progress use stderr. The confirmation requirement still applies.

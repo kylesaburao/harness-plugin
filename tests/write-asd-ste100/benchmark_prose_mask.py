@@ -17,7 +17,7 @@ parser.add_argument('--repeats', type=int, default=3)
 args = parser.parse_args()
 if not 1 <= args.repeats <= 10:
     parser.error('--repeats must be 1..10')
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'plugins/harness/skills/write-asd-ste100/scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'dist/harness/skills/write-asd-ste100/scripts'))
 if args.variant == 'baseline':
     from prose_mask_baseline import protect_markdown
 else:

@@ -124,7 +124,7 @@ test('help reports the sibling interface and quality controls', () => {
 test('skill instructions define the Discord target and fallback rules', () => {
   const skill = fs.readFileSync(path.join(
     REPO_ROOT,
-    'plugins/harness/skills/create-discord-emoji-gif/SKILL.md',
+    'dist/harness/skills/create-discord-emoji-gif/SKILL.md',
   ), 'utf8');
   assert.match(skill, /^name: create-discord-emoji-gif$/m);
   assert.match(skill, /Discord emoji/);
@@ -144,7 +144,7 @@ test('skill instructions define the Discord target and fallback rules', () => {
 
   const agentMetadata = fs.readFileSync(path.join(
     REPO_ROOT,
-    'plugins/harness/skills/create-discord-emoji-gif/agents/openai.yaml',
+    'dist/harness/skills/create-discord-emoji-gif/agents/openai.yaml',
   ), 'utf8');
   assert.match(agentMetadata, /display_name: "Discord Emoji GIF"/);
   assert.match(agentMetadata, /\$create-discord-emoji-gif/);

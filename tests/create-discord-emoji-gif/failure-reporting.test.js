@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const base = path.resolve(__dirname, '../../plugins/harness/skills/create-discord-emoji-gif/scripts/node');
+const base = path.resolve(__dirname, '../../dist/harness/skills/create-discord-emoji-gif/scripts/node');
 
 for (const failed of [false, true]) {
   test(`runner preserves ${failed ? 'conversion failure' : 'published result'} when cleanup fails`, t => {

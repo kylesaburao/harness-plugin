@@ -5,7 +5,7 @@ const { spawnSync } = require('node:child_process');
 const { mkdtempSync, readFileSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
-const script = path.resolve(__dirname, '../../plugins/harness/skills/wake-desktop/scripts/wake-desktop.js');
+const script = path.resolve(__dirname, '../../dist/harness/skills/wake-desktop/scripts/wake-desktop.js');
 const fixture = path.join(__dirname, 'simulated-network.cjs');
 const base = ['--mac', '02:00:00:00:00:01', '--ip', 'desktop.invalid'];
 function cli(scenario, args = [], target = base) {

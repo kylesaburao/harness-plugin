@@ -32,3 +32,25 @@ test('repository entry points and human guides have valid local links and headin
   }
   assert.deepEqual(failures, []);
 });
+
+test('source skill links resolve against the emitted installed resource paths', () => {
+  const sourceRoot = path.join(ROOT, 'src/harness');
+  const installedRoot = path.join(ROOT, 'dist/harness');
+  const failures = [];
+  for (const file of markdownFiles(sourceRoot)) {
+    for (const { target } of links(fs.readFileSync(file, 'utf8'))) {
+      if (/^(?:https?:|mailto:)/i.test(target)) continue;
+      const [relative, fragment] = decodeURIComponent(target).split('#');
+      const sourceDestination = relative ? path.resolve(path.dirname(file), relative) : file;
+      const resource = path.relative(sourceRoot, sourceDestination);
+      if (resource.startsWith('..') || path.isAbsolute(resource)) {
+        failures.push(`Source link escapes installed tree: ${file} -> ${target}`);
+        continue;
+      }
+      const destination = path.join(installedRoot, resource);
+      if (!fs.existsSync(destination)) failures.push(`Missing installed resource: ${file} -> ${target}`);
+      else if (fragment && destination.endsWith('.md') && !anchors(fs.readFileSync(destination, 'utf8')).has(fragment)) failures.push(`Missing installed heading: ${file} -> ${target}`);
+    }
+  }
+  assert.deepEqual(failures, []);
+});

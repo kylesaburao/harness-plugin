@@ -10,7 +10,7 @@ const { spawnSync } = require('node:child_process');
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const SKILL_DIR = path.join(
   REPO_ROOT,
-  'plugins/harness/skills/create-discord-emoji-gif',
+  'dist/harness/skills/create-discord-emoji-gif',
 );
 const RUNNER = { name: 'Node gifski', command: process.execPath, file: 'scripts/node/mov-to-gif-gifski.js' };
 const suiteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'discord-emoji-preflight.'));

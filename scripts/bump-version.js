@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// Bumps the plugin version in both manifests, deterministically.
+// Bumps the plugin version in the canonical source package, deterministically.
 //
-// Repo tooling, not a skill script: it never ships inside plugins/harness/, so it does not
+// Repo tooling, not a skill script: it never ships inside dist/harness/, so it does not
 // follow the --preflight contract documented in AGENTS.md (that contract is scoped to scripts a
 // skill runs). It still matches the house exit-code and error shape used everywhere else.
 //
@@ -30,15 +30,14 @@ const EXIT = Object.freeze({
 });
 
 const MANIFEST_RELATIVE_PATHS = Object.freeze([
-  'plugins/harness/.codex-plugin/plugin.json',
-  'plugins/harness/.claude-plugin/plugin.json',
+  'src/harness/package.json',
 ]);
 
 const SEMVER_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
 
 const USAGE = `Usage: bump-version.js (--bump-major | --bump-minor | --bump-patch) [OPTIONS]
 
-Bumps the "version" field in both plugin manifests by the same amount, keeping them identical:
+Bumps the canonical source "version". Run npm run build afterward to regenerate host manifests:
   ${MANIFEST_RELATIVE_PATHS.join('\n  ')}
 
 Bump semantics: bumping a higher-priority value resets the lower-priority values to 0.
@@ -47,7 +46,7 @@ Bump semantics: bumping a higher-priority value resets the lower-priority values
   --bump-major   1.2.3 -> 2.0.0
 
 Options:
-  --repo-root DIR  Repository root containing the manifests (default: two levels up from this script)
+  --repo-root DIR  Repository root containing the source package (default: parent of this script directory)
   --json           Report the result, or any error, as JSON
   -h, --help       Print this message
 
@@ -146,7 +145,7 @@ function readManifest(absolutePath) {
       throw new StartupError(
         'MANIFEST_MISSING',
         `manifest not found: ${absolutePath}`,
-        'run from a checkout that contains plugins/harness/, or pass --repo-root',
+        'run from a checkout that contains src/harness/, or pass --repo-root',
       );
     }
     throw new StartupError(
@@ -201,15 +200,6 @@ function run(argv) {
     : path.resolve(__dirname, '..');
   const manifestPaths = MANIFEST_RELATIVE_PATHS.map((relative) => path.join(repoRoot, relative));
   const manifests = manifestPaths.map(readManifest);
-
-  const versions = new Set(manifests.map((entry) => entry.manifest.version));
-  if (versions.size > 1) {
-    throw new StartupError(
-      'VERSION_MISMATCH',
-      `manifests disagree on version: ${manifests.map((entry) => `${entry.manifest.version} (${entry.absolutePath})`).join(', ')}`,
-      'set both manifests to the same "version" by hand, then re-run',
-    );
-  }
 
   const previous = manifests[0].manifest.version;
   const next = bumpVersion(previous, options.level);

@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src",
+    "outDir": ".build/tsc",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmitOnError": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": false,
+    "allowJs": false,
+    "resolveJsonModule": false,
+    "declaration": false,
+    "sourceMap": false,
+    "inlineSourceMap": false,
+    "incremental": false,
+    "skipLibCheck": false,
+    "newLine": "lf"
+  },
+  "include": [
+    "src/harness/**/*.ts",
+    "src/harness/**/*.mts",
+    "src/harness/**/*.cts"
+  ],
+  "exclude": [
+    "src/harness/**/node_modules",
+    "dist",
+    "tests",
+    ".build"
+  ]
+}

@@ -13,7 +13,7 @@ if (!baselineRoot || !evidenceArg) throw new Error('Usage: benchmark-score-reuse
 const evidence = path.resolve(evidenceArg);
 fs.mkdirSync(evidence, { recursive:true });
 const repo = path.resolve(__dirname,'../..');
-const relative = 'plugins/harness/skills/create-discord-emoji-gif/scripts/node';
+const relative = 'dist/harness/skills/create-discord-emoji-gif/scripts/node';
 const roots = { baseline:path.resolve(baselineRoot), current:repo };
 const output = path.join(evidence,'benchmark.gif');
 const work = path.join(evidence,'gif-work');

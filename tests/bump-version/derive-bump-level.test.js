@@ -12,7 +12,7 @@ const {
 
 // Most cases here are about subjects, not paths, so give them a relevant path by default and let
 // the path-gate cases pass one explicitly.
-function commit(subject, paths = ['plugins/harness/skills/foo/SKILL.md']) {
+function commit(subject, paths = ['dist/harness/skills/foo/SKILL.md']) {
   return { hash: subject.slice(0, 7), subject, paths };
 }
 
@@ -115,7 +115,7 @@ test('deriveFromRange: changes to this repo\'s own tooling are "none"', () => {
 test('deriveFromRange: one relevant commit among docs commits still bumps', () => {
   const entries = [
     commit('fix a README typo', ['README.md']),
-    commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
+    commit('add the natural-style skill', ['dist/harness/skills/natural-style/SKILL.md']),
     commit('rework the test layout', ['tests/bump-version/derive-bump-level.test.js']),
   ];
   assert.equal(deriveFromRange(range(entries)), 'patch');
@@ -126,7 +126,7 @@ test('deriveFromRange: a tag on an irrelevant commit is honored when the range i
   // commit, but the range contains a real plugin change, so the human signal stands.
   const entries = [
     commit('note the new skill in the readme [bump:minor]', ['README.md']),
-    commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
+    commit('add the natural-style skill', ['dist/harness/skills/natural-style/SKILL.md']),
   ];
   assert.equal(deriveFromRange(range(entries)), 'minor');
 });
@@ -157,16 +157,16 @@ test('deriveFromRange: an empty merge diff relies on the merged commits', () => 
   assert.equal(deriveFromRange(range([commit('Merge pull request #7 from foo/bar', [])])), 'none');
   const withMergedCommits = [
     commit('Merge pull request #7 from foo/bar', []),
-    commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
+    commit('add the natural-style skill', ['dist/harness/skills/natural-style/SKILL.md']),
   ];
   assert.equal(deriveFromRange(range(withMergedCommits)), 'patch');
 });
 
 test('isRelevantPath: everything shipped inside the plugin tree counts', () => {
-  assert.equal(isRelevantPath('plugins/harness/skills/natural-style/SKILL.md'), true);
-  assert.equal(isRelevantPath('plugins/harness/.claude-plugin/plugin.json'), true);
-  assert.equal(isRelevantPath('plugins/harness/.codex-plugin/plugin.json'), true);
-  assert.equal(isRelevantPath('plugins/harness/output-styles/natural.md'), true);
+  assert.equal(isRelevantPath('dist/harness/skills/natural-style/SKILL.md'), true);
+  assert.equal(isRelevantPath('dist/harness/.claude-plugin/plugin.json'), true);
+  assert.equal(isRelevantPath('dist/harness/.codex-plugin/plugin.json'), true);
+  assert.equal(isRelevantPath('dist/harness/output-styles/natural.md'), true);
 });
 
 test('isRelevantPath: both marketplace manifests count', () => {
@@ -222,7 +222,7 @@ test('CLI release range includes features created before the release and merged 
   const { git, commitFile, level } = repository(t);
   commitFile('README.md','initial','initial');
   git('checkout','-b','feature');
-  commitFile('plugins/new','feature','feature [bump:minor]');
+  commitFile('dist/new','feature','feature [bump:minor]');
   git('commit','--allow-empty','-m','chore: bump version to 99.0.0');
   git('checkout','main');
   commitFile('README.md','release','chore: bump version to 1.0.1');
@@ -232,17 +232,17 @@ test('CLI release range includes features created before the release and merged 
 
 test('CLI handles no anchor, anchor HEAD, docs, catch-up, and rename out of the plugin', t => {
   const { git, commitFile, level } = repository(t);
-  commitFile('plugins/file','initial','initial');
+  commitFile('dist/file','initial','initial');
   assert.equal(level(),'patch');
   git('commit','--allow-empty','-m','chore: bump version to 1.0.0');
   assert.equal(level(),'none');
   commitFile('README.md','docs','docs [bump:minor]');
   assert.equal(level(),'none');
-  commitFile('plugins/file','changed','change');
+  commitFile('dist/file','changed','change');
   commitFile('README.md','more docs','docs');
   assert.equal(level(),'minor');
   git('commit','--allow-empty','-m','chore: bump version to 1.1.0');
-  git('mv','plugins/file','moved'); git('commit','-m','move out');
+  git('mv','dist/file','moved'); git('commit','-m','move out');
   assert.equal(level(),'patch');
 });
 
@@ -254,7 +254,7 @@ test('CLI includes plugin changes introduced only during merge resolution', t =>
   git('checkout','main');
   git('commit','--allow-empty','-m','chore: bump version to 1.0.0');
   git('merge','--no-ff','--no-commit','feature');
-  commitFile('plugins/resolution','merge-only','merge resolution');
+  commitFile('dist/resolution','merge-only','merge resolution');
   assert.equal(level(),'patch');
 });
 
@@ -274,7 +274,7 @@ for (const quotePath of ['true', 'false']) {
       git('config', 'core.quotePath', quotePath);
       commitFile('README.md', 'initial', 'initial');
       git('commit', '--allow-empty', '-m', 'chore: bump version to 1.0.0');
-      const shipped = `plugins/${name}`;
+      const shipped = `dist/${name}`;
       commitFile(shipped, 'content', 'add [bump:minor]');
       assert.deepEqual(readReleaseRange(cwd), { subjects: ['add [bump:minor]'], paths: [shipped] });
       assert.equal(level(), 'minor');
@@ -297,11 +297,11 @@ test('native paths preserve whitespace and cannot inject subjects or shipped pre
   const { cwd, git, commitFile, level } = repository(t);
   commitFile('README.md', 'initial', 'initial');
   git('commit', '--allow-empty', '-m', 'chore: bump version to 1.0.0');
-  const unrelated = 'docs/\nplugins/fake\ncommit\tabc\t[bump:major]\n';
+  const unrelated = 'docs/\ndist/fake\ncommit\tabc\t[bump:major]\n';
   commitFile(unrelated, 'content', 'docs');
   assert.deepEqual(readReleaseRange(cwd), { subjects: ['docs'], paths: [unrelated] });
   assert.equal(level(), 'none');
-  const shipped = 'plugins/ spaced\t\n';
+  const shipped = 'dist/ spaced\t\n';
   commitFile(shipped, 'content', 'ship\t[bump:minor]');
   const selected = readReleaseRange(cwd);
   assert.ok(selected.paths.includes(shipped));
@@ -311,11 +311,19 @@ test('native paths preserve whitespace and cannot inject subjects or shipped pre
 
 test('native mixed range derives severity from every subject independently of paths', t => {
   const { cwd, git, commitFile, level } = repository(t);
-  commitFile('plugins/file', 'initial', 'initial [bump:major]');
+  commitFile('dist/file', 'initial', 'initial [bump:major]');
   git('commit', '--allow-empty', '-m', 'chore: bump version to 1.0.0');
   commitFile('README.md', 'major', 'docs [bump:major]');
-  commitFile('plugins/file', 'changed', 'shipping [bump:minor]');
+  commitFile('dist/file', 'changed', 'shipping [bump:minor]');
   git('commit', '--allow-empty', '-m', 'empty subject commit');
   assert.deepEqual(readReleaseRange(cwd).subjects, ['empty subject commit', 'shipping [bump:minor]', 'docs [bump:major]']);
   assert.equal(level(), 'major');
+});
+
+test('release relevance follows generated output, including a range crossing cutover', () => {
+  assert.equal(deriveFromRange({ subjects: ['types only'], paths: ['src/harness/shared/node/media-result.ts'] }), 'none');
+  for (const file of ['dist/harness/shared/node/media-result.js', 'dist/harness/skills/x/SKILL.md', '.agents/plugins/marketplace.json']) {
+    assert.equal(deriveFromRange({ subjects: ['change'], paths: [file] }), 'patch');
+  }
+  assert.equal(deriveFromRange({ subjects: ['migration [bump:minor]'], paths: ['plugins/harness/shared/node/media-result.js', 'src/harness/shared/node/media-result.ts', 'dist/harness/shared/node/media-result.js'] }), 'minor');
 });

@@ -4,10 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const shared = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/shared');
-const { runConverter } = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/converter-runner');
-const gifski = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/mov-to-gif-gifski');
-const gifsicle = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/mov-to-gif');
+const shared = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/shared');
+const { runConverter } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/converter-runner');
+const gifski = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/mov-to-gif-gifski');
+const gifsicle = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/mov-to-gif');
 const { temporaryDirectory } = require('./test-helpers');
 
 test('shared Node runner preserves backend-specific help and explicit option parsing', async () => {

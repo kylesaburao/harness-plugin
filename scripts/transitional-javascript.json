@@ -1,0 +1,17 @@
+[
+  "skills/back-up-directories/scripts/backup.js",
+  "skills/create-discord-emoji-gif/scripts/node/converter-runner.js",
+  "skills/create-discord-emoji-gif/scripts/node/gif-loop.js",
+  "skills/create-discord-emoji-gif/scripts/node/mov-to-gif-gifski.js",
+  "skills/create-discord-emoji-gif/scripts/node/mov-to-gif.js",
+  "skills/create-discord-emoji-gif/scripts/node/process-manager.js",
+  "skills/create-discord-emoji-gif/scripts/node/shared.js",
+  "skills/extract-video-frames/scripts/extract-video-frames.js",
+  "skills/extract-video-frames/scripts/frame-records.js",
+  "skills/harness-advisor/scripts/advisor-config.js",
+  "skills/harness-advisor/scripts/claude-advisor.js",
+  "skills/random-sampler/scripts/sample.mjs",
+  "skills/wake-desktop/scripts/manage-targets.js",
+  "skills/wake-desktop/scripts/target-config.js",
+  "skills/wake-desktop/scripts/wake-desktop.js"
+]

@@ -36,7 +36,7 @@ test('exec preserves argv and failure status with isolated dependencies', t => {
   assert.deepEqual(run.slice(-args.length), args);
   for (const flag of ['--rm', '--init', '--sig-proxy=true', '-i']) assert.ok(run.includes(flag));
   assert.ok(!run.includes('-it'));
-  assert.equal(run.filter(arg => arg.includes('volume-nocopy')).length, 3);
+  assert.equal(run.filter(arg => arg.includes('volume-nocopy')).length, 4);
   assert.equal(run[run.indexOf('--user') + 1], `${process.getuid()}:${process.getgid()}`);
   assert.ok(!result.calls.some(call => ['build', 'create'].includes(call[0])));
 });
@@ -60,13 +60,13 @@ test('setup and reset refuse busy volumes before any mutation', t => {
   }
 });
 
-test('reset removes exactly the three dependency volumes and retains image', t => {
+test('reset removes exactly the four dependency volumes and retains image', t => {
   const result = probe(t, ['reset']);
   assert.equal(result.status, 0);
   const removals = result.calls.filter(call => call.includes('rm'));
-  assert.equal(removals.length, 3);
+  assert.equal(removals.length, 4);
   assert.ok(removals.every(call => call[0] === 'volume'));
-  assert.equal(new Set(removals.map(call => call[2])).size, 3);
+  assert.equal(new Set(removals.map(call => call[2])).size, 4);
 });
 
 test('missing image reports explicit build remedy without building', t => {

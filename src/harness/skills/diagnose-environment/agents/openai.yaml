@@ -1,0 +1,6 @@
+interface:
+  display_name: "Environment Diagnosis"
+  short_description: "Diagnose a local-machine environment failure"
+  default_prompt: "Use $diagnose-environment to find out why this only breaks on this machine."
+policy:
+  allow_implicit_invocation: true

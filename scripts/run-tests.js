@@ -11,8 +11,8 @@ const { performance } = require('node:perf_hooks');
 
 const EXIT = Object.freeze({ OK: 0, FAILED: 1, CANNOT_START: 2 });
 const GIF_GROUP = 'create-discord-emoji-gif';
-const GIF_SKILL = 'plugins/harness/skills/create-discord-emoji-gif/scripts/node';
-const STE_SCRIPTS = 'plugins/harness/skills/write-asd-ste100/scripts';
+const GIF_SKILL = 'dist/harness/skills/create-discord-emoji-gif/scripts/node';
+const STE_SCRIPTS = 'dist/harness/skills/write-asd-ste100/scripts';
 
 const USAGE = `Usage: run-tests.js [--skip-gif]
 
@@ -61,8 +61,10 @@ function command(label, executable, args, repoRoot) {
 function buildSetupPlan(repoRoot) {
   const python = path.join('.venv', 'bin', 'python');
   return [
+    command('install build dependencies', 'npm', ['ci', '--include=dev'], repoRoot),
+    command('verify generated distribution', 'node', ['scripts/build.js', '--check'], repoRoot),
     command('install backup dependencies', 'npm', [
-      'ci', '--omit=dev', '--prefix', 'plugins/harness/skills/back-up-directories',
+      'ci', '--omit=dev', '--prefix', 'dist/harness/skills/back-up-directories',
     ], repoRoot),
     command('create or reuse Python virtual environment', 'python3', [
       '-m', 'venv', '.venv',
@@ -78,6 +80,8 @@ function buildCommandPlan(repoRoot, skipGif) {
   const python = path.join('.venv', 'bin', 'python');
   const plan = [
     command('validate test prerequisites', 'node', ['scripts/setup-tests.js', '--check'], repoRoot),
+    command('verify generated distribution', 'node', ['scripts/build.js', '--check'], repoRoot),
+    command('validate distribution artifact', 'node', ['scripts/validate-dist.js'], repoRoot),
     command('validate ASD-STE100 references', python, [
       path.join(STE_SCRIPTS, 'validate_references.py'), '--json',
     ], repoRoot),
@@ -151,7 +155,15 @@ async function runWithVenvCleanup(repoRoot, runGate, {
 
   const venv = path.join(path.resolve(repoRoot), '.venv');
   try {
-    await remove(venv, { recursive: true, force: true });
+    try {
+      await remove(venv, { recursive: true, force: true });
+    } catch (error) {
+      // Node can reject the mount-point rmdir before visiting its children.
+      // Clean those explicitly, retaining only the empty mounted directory.
+      if (error.code !== 'EBUSY' || error.syscall !== 'rmdir' || error.path !== venv) throw error;
+      for (const name of await fs.promises.readdir(venv)) await remove(path.join(venv, name), { recursive: true, force: true });
+      if ((await fs.promises.readdir(venv)).length !== 0) throw error;
+    }
   } catch (error) {
     stderr.write(`ERROR [VENV_CLEANUP_FAILED]: Could not remove ${venv}: ${error.message}\n`);
     if (!gateError && status === EXIT.OK) status = EXIT.FAILED;

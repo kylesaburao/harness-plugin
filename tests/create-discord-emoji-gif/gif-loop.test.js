@@ -4,9 +4,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { inspectGifLoop } = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/gif-loop');
-const shared = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/shared');
-const { ProcessManager } = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/process-manager');
+const { inspectGifLoop } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/gif-loop');
+const shared = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/shared');
+const { ProcessManager } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/process-manager');
 const { temporaryDirectory } = require('./test-helpers');
 
 const bytes = (...values) => Buffer.from(values);

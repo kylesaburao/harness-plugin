@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const script = require.resolve('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
+const script = require.resolve('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
 const ffmpeg = ['/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg', '/usr/local/opt/ffmpeg-full/bin/ffmpeg'].find(fs.existsSync);
 
 for (const json of [false, true]) {

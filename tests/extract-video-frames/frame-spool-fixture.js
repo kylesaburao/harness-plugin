@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const subject = require('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames');
+const subject = require('../../dist/harness/skills/extract-video-frames/scripts/extract-video-frames');
 const oracle = require('./frame-analysis-oracle');
 async function outcome(fn) {
   try { return { result: await fn() }; }

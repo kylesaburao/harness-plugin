@@ -7,7 +7,7 @@ const { EventEmitter } = require('node:events');
 const { Writable } = require('node:stream');
 const test = require('node:test');
 
-const { OperationContext, createArchive } = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
+const { OperationContext, createArchive } = require('../../dist/harness/skills/back-up-directories/scripts/backup.js');
 const { temporaryRoot } = require('./test-helpers.js');
 
 function archiveDouble(configure = () => {}) {

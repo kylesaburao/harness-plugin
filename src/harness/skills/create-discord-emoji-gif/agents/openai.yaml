@@ -1,0 +1,6 @@
+interface:
+  display_name: "Discord Emoji GIF"
+  short_description: "Create a Discord-ready animated emoji GIF"
+  default_prompt: "Use $create-discord-emoji-gif to turn this clip into a Discord-ready animated emoji."
+policy:
+  allow_implicit_invocation: true

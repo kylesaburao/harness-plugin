@@ -7,8 +7,8 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const test = require('node:test');
 
-const { OperationContext, copyAtomically, execute } = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
-const SCRIPT = path.resolve(__dirname, '../../plugins/harness/skills/back-up-directories/scripts/backup.js');
+const { OperationContext, copyAtomically, execute } = require('../../dist/harness/skills/back-up-directories/scripts/backup.js');
+const SCRIPT = path.resolve(__dirname, '../../dist/harness/skills/back-up-directories/scripts/backup.js');
 const { directoryDetails, successfulArchiveFactory, temporaryRoot } = require('./test-helpers.js');
 
 function delayedValidation(t, canonicalPath, occurrence) {

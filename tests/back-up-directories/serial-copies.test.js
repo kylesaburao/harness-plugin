@@ -6,7 +6,7 @@ const path = require('node:path');
 const { Readable } = require('node:stream');
 const test = require('node:test');
 
-const { EXIT, OperationContext, execute } = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
+const { EXIT, OperationContext, execute } = require('../../dist/harness/skills/back-up-directories/scripts/backup.js');
 const { directoryDetails, successfulArchiveFactory, temporaryRoot } = require('./test-helpers.js');
 
 async function makePlan(t) {

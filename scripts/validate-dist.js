@@ -1,0 +1,53 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { validateArtifact, inventory, classify, outputPath } = require('./build');
+
+function validateTracked(root, files) {
+  const output = execFileSync('git', ['ls-files', '--stage', '-z', '--', 'dist'], { cwd: root, encoding: 'utf8' });
+  const tracked = new Map(output.split('\0').filter(Boolean).map(line => {
+    const separator = line.indexOf('\t');
+    const metadata = line.slice(0, separator);
+    const name = line.slice(separator + 1);
+    const [mode, , stage] = metadata.split(' ');
+    if (stage !== '0') throw new Error(`Unmerged distribution path: ${name}`);
+    return [name, mode];
+  }));
+  for (const [name, entry] of files) {
+    const expected = entry.mode === 0o755 ? '100755' : '100644';
+    if (tracked.get(`dist/harness/${name}`) !== expected) throw new Error(`Distribution file missing from index or wrong executable bit: ${name}`);
+  }
+  for (const name of tracked.keys()) {
+    if (!name.startsWith('dist/harness/') || !files.has(name.slice('dist/harness/'.length))) throw new Error(`Forbidden/stale tracked artifact: ${name}`);
+  }
+}
+
+function validate(root, tracked = false) {
+  const files = validateArtifact(path.join(root, 'dist/harness'));
+  const source = inventory(path.join(root, 'src/harness'));
+  const expected = new Set();
+  for (const [name, entry] of source) {
+    const kind = classify(name);
+    const output = kind === 'typescript' ? outputPath(name) : name;
+    if (output === null) continue;
+    expected.add(output);
+    const installed = files.get(output);
+    if (!installed || installed.mode !== entry.mode) throw new Error(`Missing artifact or wrong mode: ${output}`);
+    if (['asset', 'javascript'].includes(kind) && !fs.readFileSync(entry.absolute).equals(fs.readFileSync(installed.absolute))) throw new Error(`Asset differs from source: ${name}`);
+  }
+  for (const name of files.keys()) if (!expected.has(name)) throw new Error(`Unexpected artifact: ${name}`);
+  if (tracked) validateTracked(root, files);
+  return files.size;
+}
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  if (args.length > 1 || args.some(arg => arg !== '--tracked')) { process.stderr.write('Usage: node scripts/validate-dist.js [--tracked]\n'); process.exitCode = 2; }
+  else {
+    try { process.stdout.write(`Distribution validation passed: ${validate(path.resolve(__dirname, '..'), args.includes('--tracked'))} files.\n`); }
+    catch (error) { process.stderr.write(`ERROR [invalid_distribution]: ${error.message}\n`); process.exitCode = 1; }
+  }
+}
+module.exports = { validate, validateTracked };

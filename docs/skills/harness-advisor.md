@@ -8,7 +8,7 @@ Harness Advisor provides a read-only second opinion for consequential planning, 
 
 After [installing the plugin](../../README.md#install), ask the agent to use `install-harness-plugin-capabilities` for Codex, Claude Code, or both. It updates the effective user instructions and installs the companion guidance for final plans and skill discovery. Existing unrelated instructions, settings, and routing preferences are preserved.
 
-Start a new host session afterward. Invoke the installer again to update integration. The [installer contract](../../plugins/harness/skills/install-harness-plugin-capabilities/SKILL.md) describes the exact files and host overrides.
+Start a new host session afterward. Invoke the installer again to update integration. The [installer contract](../../dist/harness/skills/install-harness-plugin-capabilities/SKILL.md) describes the exact files and host overrides.
 
 Codex uses Harness Advisor. Claude sessions with native Advisor use the native feature exclusively, including after a native error. Harness fallback is available for Claude sessions without native Advisor. A request limited to native Advisor does not authorize fallback.
 
@@ -32,6 +32,6 @@ Preferences live in `~/.harness-plugin/harness-advisor/config.json`, shared by b
 
 ## Contracts and qualification
 
-The [skill contract](../../plugins/harness/skills/harness-advisor/SKILL.md) owns exact dispatch policy, call accounting, routing, context handling, permissions, and diagnostics. Human requests should not need those internals.
+The [skill contract](../../dist/harness/skills/harness-advisor/SKILL.md) owns exact dispatch policy, call accounting, routing, context handling, permissions, and diagnostics. Human requests should not need those internals.
 
 See the [evaluation record](../../tests/harness-advisor/EVALUATION.md) for tested behavior and qualification limits. Recorded results describe the tested environment, not a guarantee of access or enforcement in another session.

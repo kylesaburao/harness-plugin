@@ -12,7 +12,7 @@ async function spawnAsync(command, args, options = {}) {
   catch (error) { return { ...error, status: error.code }; }
 }
 const { temporaryDirectory, skillDir, runEntrypointAsync, narrowSearch } = require('./test-helpers');
-const shared = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/shared');
+const shared = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/shared');
 
 test.describe('retained candidates', { concurrency: Math.max(1, Math.floor(os.availableParallelism() / 4)) }, () => {
 for (const backend of ['gifski', 'gifsicle']) {
@@ -138,7 +138,7 @@ if (scenario === 'rename') {
           if (scenario === 'keep') assert.deepEqual(proof.candidates.sort(), proof.scored.map(candidate => candidate.name).sort());
           else assert.deepEqual(proof.candidates, [proof.selected]);
           if (backend === 'gifski') {
-            const { candidateSequence } = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/mov-to-gif-gifski');
+            const { candidateSequence } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/mov-to-gif-gifski');
             for (const fps of [8, 9]) {
               assert.deepEqual(proof.scored.filter(candidate => candidate.name.startsWith(`f${fps}-`)).map(candidate => candidate.name).sort(), candidateSequence({ minQuality: 70, maxQuality: 90 }, 90).map(c => `f${fps}-q${c.quality}-m${c.motionQuality}-l${c.lossyQuality}.gif`).sort());
             }

@@ -12,7 +12,7 @@ const {
   createArchive,
   execute,
   readAndValidate,
-} = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
+} = require('../../dist/harness/skills/back-up-directories/scripts/backup.js');
 const { directoryDetails, runCli, successfulArchiveFactory, temporaryRoot } = require('./test-helpers.js');
 
 const POSIX_PERMISSIONS = process.platform !== 'win32';

@@ -7,7 +7,7 @@ const path = require('node:path');
 const { spawnSync, execFile } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '../..');
-const skillDir = path.join(repoRoot, 'plugins/harness/skills/create-discord-emoji-gif');
+const skillDir = path.join(repoRoot, 'dist/harness/skills/create-discord-emoji-gif');
 
 function temporaryDirectory(prefix) { return fs.mkdtempSync(path.join(os.tmpdir(), prefix)); }
 function makeExecutable(file, contents) { fs.writeFileSync(file, contents, { mode: 0o755 }); }

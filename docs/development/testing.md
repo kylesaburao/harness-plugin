@@ -6,13 +6,15 @@ Run commands from the repository root. Tests live in `tests/<skill-name>/`, with
 
 ## Setup
 
+After editing source, run `npm ci --include=dev` and `npm run build`. Setup and the gate reject stale distribution instead of repairing it. Runtime tests execute `dist/harness/`.
+
 Install the host tools in [dependencies](dependencies.md) first. On macOS, run:
 
 ```sh
 node scripts/setup-tests.js
 ```
 
-Setup installs backup npm dependencies, creates `.venv`, installs `pypdfium2`, and initializes ASD-STE100 references. It does not install host runtimes or media executables. To check an existing environment without installation, use `node scripts/setup-tests.js --check`.
+Setup installs the root locked build toolchain, checks that the tracked distribution matches a fresh build, installs backup npm dependencies, creates `.venv`, installs `pypdfium2`, and initializes ASD-STE100 references. It does not install host runtimes or media executables. To check an existing environment without installation, use `node scripts/setup-tests.js --check`.
 
 On Linux, including WSL2, use [container setup](container.md). Run development commands through `./scripts/dev exec <command> [args...]` and keep Git on the host.
 
@@ -30,7 +32,7 @@ On Linux/WSL2, after `./scripts/dev setup`:
 ./scripts/dev exec node scripts/run-tests.js
 ```
 
-The gate validates existing dependencies and does not install them. After all test processes finish, it removes the repository `.venv`. Run setup before each gate. Backup `node_modules` and user-level reference bundles remain. A parent shell may still display `(.venv)` until deactivated or closed.
+The gate checks fresh compilation/assembly and static artifact validity before behavioral tests, and validates existing dependencies and does not install them. After all test processes finish, it removes the repository `.venv`. Run setup before each gate. Backup `node_modules` and user-level reference bundles remain. A parent shell may still display `(.venv)` until deactivated or closed.
 
 Use `--skip-gif` for a partial gate that omits GIF tests and both converter preflights. Report that exclusion. Linux platform skips do not establish native macOS frame-extraction coverage.
 

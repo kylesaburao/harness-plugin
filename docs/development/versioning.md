@@ -2,11 +2,11 @@
 
 [Development](README.md) / Versioning
 
-`plugins/harness/.codex-plugin/plugin.json` and `plugins/harness/.claude-plugin/plugin.json` both carry a `version` field, and the two are always kept equal. `scripts/bump-version.js` is the only thing that changes them: `--bump-major`, `--bump-minor`, or `--bump-patch`, where bumping a higher-priority value resets the lower-priority ones to 0. Never edit either `version` field by hand, except to recover from a `VERSION_MISMATCH` the script reports.
+`src/harness/package.json` owns the only editable plugin version. `scripts/bump-version.js` changes it with `--bump-major`, `--bump-minor`, or `--bump-patch`. Run `npm run build` afterward to inject that version into both generated host manifests. Source host manifests contain no version field. The backup package version is independent.
 
 A push to `main` runs `.github/workflows/bump-version.yml`. When the path gate below finds a shipped change, the default bump is patch. `scripts/derive-bump-level.js` scans every commit since the last `chore: bump version to X.Y.Z` commit on first-parent ancestry, including merged commits in that range, so a `[bump:minor]` or `[bump:major]` subject tag survives a batched push. The workflow's own bump commits do not trigger another bump. Its push step retries against freshly fetched state to handle concurrent pushes.
 
-The version tracks what ships, not what lands, so the bump is gated on paths. A run bumps only if some commit in that range touched `plugins/`, `.claude-plugin/`, or `.agents/plugins/`, the plugin tree itself and the two marketplace manifests. A push that only edits `tests/`, `scripts/`, `.github/`, `.githooks/`, or documentation changes nothing observable to someone who installed the plugin, so it derives `none` and the workflow exits without committing.
+The version tracks what ships, not what lands, so the bump is gated on paths. A run bumps only if some commit in that range touched `dist/`, `.claude-plugin/`, or `.agents/plugins/`, the plugin tree itself and the two marketplace manifests. A push that only edits `tests/`, `scripts/`, `.github/`, `.githooks/`, or documentation changes nothing observable to someone who installed the plugin, so it derives `none` and the workflow exits without committing.
 
 Paths decide whether to bump. Subjects decide the level, with major taking priority over minor and patch. Once any commit in the range is relevant, tags in every subject count, including tags on documentation commits.
 
@@ -21,6 +21,8 @@ node scripts/bump-version.js --bump-patch
 node scripts/bump-version.js --bump-minor
 node scripts/bump-version.js --bump-major
 ```
+
+Choose one command, then run `npm run build`, setup, and the required gate. Commit the canonical package and generated output together. Each automated push retry reinstalls the locked toolchain, validates fresh main, bumps the source version, rebuilds, and tests the versioned artifact before staging its owned changes. The resulting bump commit completes a release. Same-version cache refresh before that commit is not guaranteed.
 
 The [bump script](../../scripts/bump-version.js), [level derivation](../../scripts/derive-bump-level.js), and [workflow](../../.github/workflows/bump-version.yml) implement this policy.
 

@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { temporaryDirectory, skillDir, runEntrypoint, narrowSearch } = require('./test-helpers');
-const shared = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/shared');
-const { ProcessManager } = require('../../plugins/harness/skills/create-discord-emoji-gif/scripts/node/process-manager');
+const shared = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/shared');
+const { ProcessManager } = require('../../dist/harness/skills/create-discord-emoji-gif/scripts/node/process-manager');
 function ffmpeg(args) {
   const result = spawnSync('ffmpeg', ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', ...args], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
@@ -84,10 +84,11 @@ test('FFV1 CRC errors with exit zero fail both GIF backends and preserve destina
   const dir = temporaryDirectory('gif-damaged.');
   try {
     const input = path.join(dir, 'damaged.mkv');
-    ffmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=24:duration=0.5', '-c:v', 'ffv1', '-level', '3', '-slicecrc', '1', input]);
+    ffmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=24:duration=3', '-c:v', 'ffv1', '-level', '3', '-slicecrc', '1', input]);
     const probe = spawnSync('ffprobe', ['-v', 'error', '-show_packets', '-show_entries', 'packet=pos,size', '-of', 'json', input], { encoding: 'utf8' });
     assert.equal(probe.status, 0, probe.stderr);
-    const packet = JSON.parse(probe.stdout).packets[5];
+    // Keep corruption beyond decoder read-ahead during the first-frame probe.
+    const packet = JSON.parse(probe.stdout).packets[60];
     const bytes = fs.readFileSync(input);
     bytes[Number(packet.pos) + Number(packet.size) - 1] ^= 1;
     fs.writeFileSync(input, bytes);
@@ -98,7 +99,8 @@ test('FFV1 CRC errors with exit zero fail both GIF backends and preserve destina
       fs.writeFileSync(output, 'existing');
       const result = runEntrypoint(process.execPath, path.join(skillDir, 'scripts/node', backend), ['--json', input, output], { GIF_SIZE: '64', MIN_FPS: '24', MAX_FPS: '24', JOBS: '1', KEEP_WORK: '0' });
       assert.equal(result.status, 1, result.stderr);
-      const error = JSON.parse(result.stderr).error;
+      let error;
+      assert.doesNotThrow(() => { error = JSON.parse(result.stderr).error; }, result.stderr);
       assert.equal(error.childExitCode, 0);
       assert.match(error.stderr, /CRC mismatch/);
       assert.equal(fs.readFileSync(output, 'utf8'), 'existing');

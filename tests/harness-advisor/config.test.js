@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, spawn } = require('node:child_process');
-const script = path.resolve(__dirname, '../../plugins/harness/skills/harness-advisor/scripts/advisor-config.js');
+const script = path.resolve(__dirname, '../../dist/harness/skills/harness-advisor/scripts/advisor-config.js');
 const { emptyConfig, resolve, validateConfig } = require(script);
 function fixture(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'advisor-config-test-'));

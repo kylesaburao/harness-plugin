@@ -131,11 +131,13 @@ test('setup is separate from the validation and test command plan', () => {
     backup: ['backup.test.js'],
   });
   const { buildCommandPlan, buildSetupPlan } = loadRunner();
-  assert.deepEqual(buildSetupPlan(root).find(stage => stage.label === 'initialize ASD-STE100 references').args, ['plugins/harness/skills/write-asd-ste100/scripts/initialize_references.py']);
+  assert.deepEqual(buildSetupPlan(root).find(stage => stage.label === 'initialize ASD-STE100 references').args, ['dist/harness/skills/write-asd-ste100/scripts/initialize_references.py']);
   const labels = buildCommandPlan(root, false).map(({ label }) => label);
 
   assert.deepEqual(labels, [
     'validate test prerequisites',
+    'verify generated distribution',
+    'validate distribution artifact',
     'validate ASD-STE100 references',
     'preflight GIF converter (gifski)',
     'preflight GIF converter (gifsicle)',
@@ -235,8 +237,30 @@ test('missing test prerequisites give a setup remedy without installing', () => 
   const root = makeTestTree({ empty: [] });
   try {
     const { checkPrerequisites } = require('../../scripts/setup-tests');
-    assert.throws(() => checkPrerequisites(root), /Python environment is missing/);
+    assert.throws(() => checkPrerequisites(root), /Local TypeScript compiler is missing/);
     const { buildCommandPlan } = loadRunner();
     assert.equal(buildCommandPlan(root, false).some(item => item.command === 'npm' || item.args.includes('pip') || item.args.some(arg => arg.includes('initialize_references'))), false);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('cleanup empties a busy venv mount and reports child cleanup failure', async t => {
+  const { runWithVenvCleanup } = loadRunner();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'run-tests-mount.'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const venv = path.join(root, '.venv'); fs.mkdirSync(venv);
+  let failChild = false;
+  const busy = async (target, options) => {
+    if (target === venv) throw Object.assign(new Error('mounted'), { code: 'EBUSY', syscall: 'rmdir', path: venv });
+    if (failChild) throw new Error('child cleanup failed');
+    await fs.promises.rm(target, options);
+  };
+  fs.writeFileSync(path.join(venv, 'remove-me'), 'data');
+  const capture = captureOutput();
+  assert.equal(await runWithVenvCleanup(root, async () => 0, { remove: busy, ...capture }), 0);
+  assert.equal(capture.output.stderr, '');
+  assert.deepEqual(fs.readdirSync(venv), []);
+  failChild = true;
+  fs.writeFileSync(path.join(venv, 'unremoved'), 'data');
+  assert.equal(await runWithVenvCleanup(root, async () => 0, { remove: busy, ...capture }), 1);
+  assert.match(capture.output.stderr, /VENV_CLEANUP_FAILED/);
 });
