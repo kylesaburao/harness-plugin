@@ -213,17 +213,17 @@ MIT: see [LICENSE](LICENSE).
 
 ## Development tests
 
-Run `node scripts/setup-tests.js` once to install test dependencies and initialize references. Run `node scripts/run-tests.js` for the complete local gate. The test command validates the existing environment and does not install dependencies. Use `--skip-gif` to omit GIF tests and converter preflights.
+Before each gate, run `node scripts/setup-tests.js` to install test dependencies and initialize references. Then run `node scripts/run-tests.js` for the complete local gate. The test command validates the existing environment, does not install dependencies, and removes the repository `.venv` after all test processes finish. Use `--skip-gif` to omit GIF tests and converter preflights.
 
 Prerequisites run sequentially and stop the gate on failure. Then sequential Python tests overlap the dedicated full GIF search. After that search finishes, all remaining Node files share one process-isolated pool sized by `os.availableParallelism()`. The full search uses that many encoding workers, and independent retained-candidate scenarios use `max(1, floor(availableParallelism / 4))` concurrent tests. Tests that change process-global state remain sequential inside their files.
 
-Test failures do not stop other groups. The final terminal report includes actual wall time, selected concurrency, prerequisite timings, per-group counts and elapsed spans, aggregate counts, five slowest tests, and failure locations. Group spans overlap and must not be summed. Excluded groups are omitted by `--skip-gif`, unrun groups never started, and skipped tests come from the test frameworks. No report files are written. Exit status is 0 on success, the failed prerequisite's status, 1 after test failures, or the conventional 128 plus signal number on interruption. Setup remains a separate sequential command.
+Test failures do not stop other groups. The final terminal report includes actual wall time, selected concurrency, prerequisite timings, per-group counts and elapsed spans, aggregate counts, five slowest tests, and failure locations. Group spans overlap and must not be summed. Excluded groups are omitted by `--skip-gif`, unrun groups never started, and skipped tests come from the test frameworks. No report files are written. Exit status is 0 on success, the failed prerequisite's status, 1 after test failures, or the conventional 128 plus signal number on interruption. Setup remains a separate sequential command and is required again before the next gate. An activated parent shell can continue to display `(.venv)` after cleanup until it is deactivated or closed.
 
 The gate timer includes prerequisites and scheduling time, but excludes Node startup and any external container wrapper.
 
 ## Development container
 
-See [CONTAINER.md](CONTAINER.md) to build the Node 26 and media toolchain image, prepare persistent dependency volumes, and run temporary command containers against your live checkout with `./scripts/dev`. Git operations stay on the host.
+See [CONTAINER.md](CONTAINER.md) to build the Node 26 and media toolchain image, prepare dependency volumes for one setup-and-gate cycle, and run temporary command containers against your live checkout with `./scripts/dev`. Git operations stay on the host.
 
 ## Other Plugins
 

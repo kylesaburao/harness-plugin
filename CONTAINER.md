@@ -12,7 +12,7 @@ Use a normal non-root account with local Docker, a POSIX shell, Git, and the che
 ./scripts/dev exec node scripts/run-tests.js
 ```
 
-Build creates the toolchain image. Setup explicitly reinstalls the backup skill's npm dependencies with `npm ci`, creates or reuses the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references through `node scripts/setup-tests.js`. Initial build and setup require network access.
+Build creates the toolchain image. Setup explicitly reinstalls the backup skill's npm dependencies with `npm ci`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references through `node scripts/setup-tests.js`. Initial build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
 
 Run a focused test or open a shell with the same source and dependency mounts:
 
@@ -23,11 +23,11 @@ Run a focused test or open a shell with the same source and dependency mounts:
 
 `exec` preserves argument boundaries, stdin, stdout, stderr, and command exit status without allocating a TTY. Use `sh -c '...'` explicitly when a command needs shell expansion. `shell` allocates an interactive TTY. Both use attached `docker run --rm --init --sig-proxy=true`, with Docker's [signal forwarding](https://docs.docker.com/reference/cli/docker/container/run/). Containers are removed when commands exit.
 
-Ordinary commands never build or install implicitly. Source edits need no preparation. Rerun `setup` after dependency or reference-configuration changes. Run setup and reset only when no development commands are active. The launcher checks for containers using the volumes, but does not lock out concurrent launches.
+Ordinary commands never build or install implicitly. Source edits need no preparation. Run `setup` before each gate. Run setup and reset only when no development commands are active. The launcher checks for containers using the volumes, but does not lock out concurrent launches.
 
 ## Persistence and reset
 
-The checkout is bind-mounted at `/workspace/harness-plugin`. Three named volumes mask `.venv`, `plugins/harness/skills/back-up-directories/node_modules`, and `/home/node`. All use `volume-nocopy`, so host dependencies and image home contents are not imported. Host dependency directories remain untouched. Docker may create empty mount-point directories if they do not exist.
+The checkout is bind-mounted at `/workspace/harness-plugin`. Three named volumes mask `.venv`, `plugins/harness/skills/back-up-directories/node_modules`, and `/home/node`. All use `volume-nocopy`, so host dependencies and image home contents are not imported. The `.venv` volume hands the Python environment from setup to one gate, then the gate empties it. The other volumes retain backup dependencies, generated references, and caches. Host dependency directories remain untouched. Docker may create empty mount-point directories if they do not exist.
 
 The home volume stores generated references under `/home/node/.harness-plugin/` and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the three volumes. The source checkout is never mounted into that root container.
 
@@ -61,7 +61,7 @@ Targets are local Linux Docker, macOS Docker Desktop, and Windows through WSL2. 
 - Docker unavailable: start local Docker and check `docker context show`.
 - A failed build or setup download requires restored network access and a retry of the same command.
 
-Relay failures from the command that produced them. A failed setup can leave partial volume state, so fix the reported cause and rerun setup before testing. Run the complete gate with `./scripts/dev exec node scripts/run-tests.js`, including both converter preflights. Record platform checks separately and mark unavailable platforms as skipped.
+Relay failures from the command that produced them. A failed setup can leave partial volume state, so fix the reported cause and rerun setup before testing. Run the complete gate with `./scripts/dev exec node scripts/run-tests.js`, including both converter preflights. Run setup again before another gate. Record platform checks separately and mark unavailable platforms as skipped.
 
 ## Verified on 2026-09-06
 

@@ -137,30 +137,57 @@ function runCommandPlan(plan, execute = spawnCommand, {
   return status;
 }
 
-function main(argv) {
+async function runWithVenvCleanup(repoRoot, runGate, {
+  remove = fs.promises.rm,
+  stderr = process.stderr,
+} = {}) {
+  let status;
+  let gateError;
+  try {
+    status = await runGate();
+  } catch (error) {
+    gateError = error;
+  }
+
+  const venv = path.join(path.resolve(repoRoot), '.venv');
+  try {
+    await remove(venv, { recursive: true, force: true });
+  } catch (error) {
+    stderr.write(`ERROR [VENV_CLEANUP_FAILED]: Could not remove ${venv}: ${error.message}\n`);
+    if (!gateError && status === EXIT.OK) status = EXIT.FAILED;
+  }
+
+  if (gateError) throw gateError;
+  return status;
+}
+
+async function main(argv, {
+  repoRoot = path.resolve(__dirname, '..'),
+  stdout = process.stdout,
+  stderr = process.stderr,
+} = {}) {
   let options;
   try {
     options = parseArguments(argv);
   } catch (error) {
-    process.stderr.write(`ERROR [${error.code}]: ${error.message}\nRemedy: node scripts/run-tests.js --help\n`);
+    stderr.write(`ERROR [${error.code}]: ${error.message}\nRemedy: node scripts/run-tests.js --help\n`);
     return EXIT.CANNOT_START;
   }
   if (options.help) {
-    process.stdout.write(`${USAGE}\n`);
+    stdout.write(`${USAGE}\n`);
     return EXIT.OK;
   }
-  const repoRoot = path.resolve(__dirname, '..');
   const { runGate } = require('./test-gate');
   const plan = buildCommandPlan(repoRoot, options.skipGif);
   const groups = Object.fromEntries(discoverNodeTestGroups(repoRoot, options.skipGif).map(group => [group, nodeTestFiles(repoRoot, group)]));
-  return runGate({
+  return runWithVenvCleanup(repoRoot, () => runGate({
     root: repoRoot,
     prerequisites: plan.filter(stage => !stage.label.startsWith('Node tests:') && stage.label !== 'ASD-STE100 Python tests'),
     groups,
     fullSearch: options.skipGif ? undefined : 'tests/create-discord-emoji-gif/full-search.test.js',
     python: command('ASD-STE100 Python tests', path.join('.venv', 'bin', 'python'), ['scripts/python-test-reporter.py'], repoRoot),
     excluded: options.skipGif ? [GIF_GROUP] : [],
-  });
+  }), { stderr });
 }
 
 if (require.main === module) Promise.resolve(main(process.argv.slice(2))).then(status => { process.exitCode = status; }).catch(error => { console.error(error); process.exitCode = 1; });
@@ -172,4 +199,5 @@ module.exports = {
   main,
   parseArguments,
   runCommandPlan,
+  runWithVenvCleanup,
 };

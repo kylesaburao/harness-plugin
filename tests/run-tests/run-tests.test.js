@@ -50,6 +50,63 @@ test('CLI accepts only the complete gate, --skip-gif, and --help', () => {
   assert.match(result.stderr, /ERROR \[INVALID_ARGUMENTS\]/);
 });
 
+test('successful, failed, and interrupted gates remove the test virtual environment', async t => {
+  const { runWithVenvCleanup } = loadRunner();
+  for (const status of [0, 1, 17, 130, 143]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'run-tests-cleanup.'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(root, '.venv'));
+    fs.writeFileSync(path.join(root, '.venv', 'sentinel'), 'test-owned');
+
+    assert.equal(await runWithVenvCleanup(root, async () => status), status);
+    assert.equal(fs.existsSync(path.join(root, '.venv')), false);
+  }
+});
+
+test('an unexpected gate error still removes the test virtual environment', async t => {
+  const { runWithVenvCleanup } = loadRunner();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'run-tests-cleanup.'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.venv'));
+
+  await assert.rejects(runWithVenvCleanup(root, async () => {
+    throw new Error('unexpected gate error');
+  }), /unexpected gate error/);
+  assert.equal(fs.existsSync(path.join(root, '.venv')), false);
+});
+
+test('help and invalid arguments do not remove the test virtual environment', async t => {
+  const { main } = loadRunner();
+  for (const argv of [['--help'], ['--unknown']]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'run-tests-no-cleanup.'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(root, '.venv'));
+    const capture = captureOutput();
+
+    assert.equal(await main(argv, { repoRoot: root, ...capture }), argv[0] === '--help' ? 0 : 2);
+    assert.equal(fs.existsSync(path.join(root, '.venv')), true);
+  }
+});
+
+test('cleanup failure reports its code and only overrides a successful gate', async () => {
+  const { runWithVenvCleanup } = loadRunner();
+  for (const [gateStatus, expectedStatus] of [[0, 1], [17, 17], [143, 143]]) {
+    const capture = captureOutput();
+    const removed = [];
+    const status = await runWithVenvCleanup('/resolved/repository', async () => gateStatus, {
+      remove: async (target, options) => {
+        removed.push([target, options]);
+        throw new Error('permission denied');
+      },
+      stderr: capture.stderr,
+    });
+
+    assert.equal(status, expectedStatus);
+    assert.deepEqual(removed, [[path.join('/resolved/repository', '.venv'), { recursive: true, force: true }]]);
+    assert.equal(capture.output.stderr, `ERROR [VENV_CLEANUP_FAILED]: Could not remove ${path.join('/resolved/repository', '.venv')}: permission denied\n`);
+  }
+});
+
 test('Node test groups are discovered deterministically and ignore non-test files', () => {
   const root = makeTestTree({
     zebra: ['z.test.js'],

@@ -29,7 +29,7 @@ node scripts/setup-tests.js
 node scripts/run-tests.js
 ```
 
-Setup runs `npm ci --omit=dev` for backup, creates or reuses `.venv`, installs `pypdfium2`, and initializes references. It does not install Node, Python, or media executables. Rerun setup after dependency or reference-configuration changes. The test command validates dependencies without installing them. `--skip-gif` omits GIF tests and preflights only. Platform-specific skips do not establish macOS frame-extraction coverage.
+Setup runs `npm ci --omit=dev` for backup, creates `.venv`, installs `pypdfium2`, and initializes references. It does not install Node, Python, or media executables. Run setup before every gate because the test command removes `.venv` after all test processes finish. The test command validates dependencies without installing them. It does not remove backup `node_modules` or the user-level ASD reference bundle. `--skip-gif` omits GIF tests and preflights only. Platform-specific skips do not establish macOS frame-extraction coverage.
 
 ### Linux host and container
 
@@ -49,9 +49,9 @@ The [Dockerfile](Dockerfile) supplies the following development toolchain. These
 | Media runtime | FFmpeg **8.0.3**, VMAF **3.2.0**, and gifski **1.34.0**. FFmpeg is built with `--enable-libvmaf --enable-gpl --enable-libx264`. The image includes libvmaf and Debian `libx264-164` runtime libraries. |
 | C/C++ builder only | `build-essential`, curl, CA certificates, Meson, Ninja, NASM, pkg-config, `libx264-dev`, and `xxd`. `xxd` embeds the VMAF models. Source unpacking uses tar and xz from the base image. |
 | Rust builder only | Rust and Cargo from `rust:1-trixie`, used to build gifski with its locked dependency graph. |
-| Setup volumes | The same backup npm dependencies, Python virtual environment, `pypdfium2`, and ASD reference bundle as native development. |
+| Setup volumes | The same backup npm dependencies, disposable Python virtual environment with `pypdfium2`, and ASD reference bundle as native development. |
 
-Dependencies persist in volumes masking `.venv`, the backup skill's `node_modules`, and `/home/node`. They do not replace host dependencies. Setup needs network access. Ordinary commands never build or install implicitly. After incompatible runtime changes, stop development commands, reset the dependency volumes, rebuild, and run setup again.
+Named volumes mask `.venv`, the backup skill's `node_modules`, and `/home/node`. The `.venv` volume hands the environment from setup to one gate and is emptied by that gate. Backup dependencies, generated references, and caches persist in their own volumes. These do not replace host dependencies. Setup needs network access. Ordinary commands never build or install implicitly. Run setup before each gate. After incompatible runtime changes, stop development commands, reset the dependency volumes, rebuild, and run setup again.
 
 The Linux container cannot execute the macOS-only frame-extraction skill. It runs the portable tests and reports platform skips. See [CONTAINER.md](CONTAINER.md#verified-on-2026-09-06) for recorded platform verification. Docker Desktop on macOS remains available for explicit container development and validation, while ordinary macOS development runs natively.
 
