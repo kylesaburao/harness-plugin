@@ -1,15 +1,15 @@
 ---
 name: extract-video-frames
-description: Extract every presented frame from a video as lossless full-resolution images, preserving HDR as linear float OpenEXR and SDR as PNG. Use when the user wants all video frames, or all frames inside an inclusive time window, without frame-rate conversion, resizing, deinterlacing, or tone mapping.
-compatibility: Requires Node.js 20.6.0 or newer, macOS 26.0 or newer or Linux/WSL2, plus ffmpeg and ffprobe with zscale, PNG, and OpenEXR support.
+description: Extract every presented frame from a video at full resolution, preserving PQ or HLG HDR as 10-bit BT.2100 HEIC and SDR as lossless PNG. Use when the user wants all video frames, or all frames inside an inclusive time window, without frame-rate conversion, resizing, deinterlacing, or tone mapping.
+compatibility: Requires Node.js 20.6.0 or newer, macOS 26.0 or newer, the macOS Command Line Tools, and ffmpeg-full with ffprobe, zscale, PNG, and TIFF support.
 ---
 
 # Extract full-quality video frames
 
 Extract each presented frame once at its coded resolution. SDR becomes lossless sRGB
 PNG, using 8-bit channels for an 8-bit source and 16-bit channels for a higher-depth
-source. PQ and HLG HDR become losslessly compressed, linear-light BT.2020 OpenEXR with
-32-bit floating-point RGB or RGBA channels. The conversion never tone-maps HDR.
+source. PQ and HLG HDR become quality-1.0 10-bit HEIC with the matching BT.2100 PQ or
+HLG transfer. HEIC encoding is lossy. The conversion never tone-maps HDR.
 
 The entrypoint is the only supported execution path. It inspects the input, selects the
 first non-attached-picture video stream, constructs the FFmpeg filter graph, extracts
@@ -24,7 +24,7 @@ Do not recreate or modify its FFmpeg commands.
 - Existing output is never replaced. Move or remove an existing output only when the
   user explicitly asks. Publication reserves the destination atomically and fails if a
   file, directory, or symlink appears there first.
-- Frames are named `frame-000001.png` or `frame-000001.exr`. There is no manifest and
+- Frames are named `frame-000001.png` or `frame-000001.heic`. There is no manifest and
   no per-frame timestamp map. The result reports only the first and last included PTS.
 - Every decoded presentation frame in the selected interval is emitted once. Sample
   aspect ratio and interlacing are preserved. Exact right-angle rotations and axis
@@ -54,9 +54,11 @@ Resolve the script relative to this skill directory, not the caller's working di
    node scripts/extract-video-frames.js --preflight --json [--start TIME] [--end TIME] INPUT_VIDEO
    ```
 
-   This checks metadata, timestamps, the requested window, the complete display matrix,
-   and a representative decode through the selected color-conversion path to a null
-   sink. It creates no output artifact.
+   This checks metadata, timestamps, the requested window, and the complete display
+   matrix. For HDR it converts one representative frame through the same TIFF-to-HEIC
+   path used by extraction, validates its 10-bit BT.2100 profile with `sips`, and removes
+   both files. For SDR it decodes one representative frame to a null sink. It creates no
+   output artifact.
 
 2. If preflight succeeds, dispatch the same request without `--preflight`:
 
@@ -76,8 +78,8 @@ Resolve the script relative to this skill directory, not the caller's working di
    not run ffprobe, ffmpeg, file, stat, a viewer, a checksum tool, or another inspection
    command afterward. The entrypoint already reports the published artifact.
 
-Use `--preflight --json` without an input only to check Node, the platform, FFmpeg, and
-ffprobe. Window flags require an input.
+Use `--preflight --json` without an input to check the complete toolchain with a synthetic
+HLG TIFF-to-HEIC conversion. Window flags require an input.
 
 ## Result contract
 
@@ -94,7 +96,7 @@ use `{"error":{"code","condition","remedy"}}`. A capability preflight can includ
 `failures` array containing the same stable triples.
 
 A successful JSON run returns `{"result": ...}` with supplied and resolved input paths,
-selected stream, output directory, source and output color properties, PNG or OpenEXR
+selected stream, output directory, source and output color properties, PNG or HEIC
 encoding, alpha, dimensions, orientation, aspect ratios, requested window, actual first
 and last PTS, frame count, and structural checks. No field claims per-frame hashing or
 complete image decoding.
@@ -102,7 +104,6 @@ complete image decoding.
 ## Platform status
 
 - macOS 26.0 or newer: supported.
-- Linux and WSL2: supported by design.
-- Older macOS and native Windows: rejected.
+- Older macOS, Linux, WSL2, and native Windows: rejected.
 
 Node.js 20.6.0 is the supported runtime floor. The script has no npm dependencies.

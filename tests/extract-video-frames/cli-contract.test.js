@@ -18,6 +18,7 @@ test('help documents the deterministic interface and fixed sibling output', () =
   assert.match(result.stdout, /--start TIME/);
   assert.match(result.stdout, /--end TIME/);
   assert.match(result.stdout, /<input-stem>-frames/);
+  assert.match(result.stdout, /frame-000001\.heic\s+for PQ or HLG HDR/);
   assert.doesNotMatch(result.stdout, /--output|--replace|--stream/);
 });
 
@@ -41,4 +42,6 @@ test('skill documentation defines the entrypoint and forbids redundant reinspect
   assert.doesNotMatch(skill, /untested working draft/i);
   assert.match(skill, /Do not recreate or modify its FFmpeg commands/);
   assert.match(skill, /Do\s+not run ffprobe, ffmpeg/);
+  assert.match(skill, /10-bit BT\.2100 HEIC/);
+  assert.doesNotMatch(skill, /OpenEXR|Linux\/WSL2/);
 });

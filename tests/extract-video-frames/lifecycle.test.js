@@ -5,9 +5,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const subject = require('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
+const realFfmpeg = ['/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg', '/usr/local/opt/ffmpeg-full/bin/ffmpeg'].find(fs.existsSync);
 
 function temporaryRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'extract-video-frames-test-'));
@@ -76,6 +77,27 @@ test('process interruption terminates the active child and records the signal', 
   assert.equal(result.code, null);
 });
 
+test('HDR conversion reuses the helper with at most 10 direct workers', async t => {
+  const root = temporaryRoot(t);
+  for (let index = 1; index <= 12; index += 1) fs.writeFileSync(path.join(root, `frame-${String(index).padStart(6, '0')}.tiff`), 'tiff');
+  let active = 0;
+  let maximum = 0;
+  const manager = { run: async (_command, args) => {
+    active += 1;
+    maximum = Math.max(maximum, active);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    fs.writeFileSync(args[1], 'heic');
+    active -= 1;
+    return { code: 0, stdout: '', stderr: '' };
+  } };
+  const state = { commands: { encoder: '/fake/encoder' }, media: { expectedFrames: 12, color: { transfer: 'arib-std-b67' } } };
+
+  await subject.convertHdrFrames(manager, state, root);
+
+  assert.equal(maximum, 10);
+  assert.deepEqual(fs.readdirSync(root), Array.from({ length: 12 }, (_, index) => `frame-${String(index + 1).padStart(6, '0')}.heic`));
+});
+
 test('source mutation is rejected after preflight', t => {
   const input = path.join(temporaryRoot(t), 'clip.mov');
   fs.writeFileSync(input, 'before');
@@ -84,27 +106,38 @@ test('source mutation is rejected after preflight', t => {
   assert.throws(() => subject.assertSourceUnchanged(paths), { code: 'source_changed', exitCode: 1 });
 });
 
-test('raw preflight failures become stable exit-2 diagnostics', async () => {
+test('raw preflight failures become stable exit-2 diagnostics', { skip: process.platform !== 'darwin' }, async t => {
   const manager = { run: async () => { throw new Error('spawn exploded'); } };
-  await assert.rejects(subject.prepare(manager, { input: null }), { code: 'preflight_failed', exitCode: 2 });
+  const encoderDirectory = path.join(temporaryRoot(t), 'encoder');
+  fs.mkdirSync(encoderDirectory);
+  await assert.rejects(subject.prepare(manager, { input: null }, encoderDirectory), { code: 'preflight_failed', exitCode: 2 });
 });
 
 for (const [signal, exitCode] of [['SIGHUP', 129], ['SIGINT', 130], ['SIGTERM', 143]]) {
-  test(`CLI ${signal} terminates extraction, cleans owned artifacts, and exits ${exitCode}`, async t => {
+  test(`CLI ${signal} terminates HDR encoding, cleans TIFF/HEIC/helper partials, and exits ${exitCode}`, { skip: process.platform !== 'darwin' || !realFfmpeg }, async t => {
     const root = temporaryRoot(t);
     const bin = path.join(root, 'bin');
     const input = path.join(root, 'clip.mov');
     const started = path.join(root, 'started');
     const terminated = path.join(root, 'terminated');
     fs.mkdirSync(bin);
-    fs.writeFileSync(input, 'stable input');
+    const generated = spawnSync(realFfmpeg, ['-hide_banner', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=white:s=16x16:r=2:d=1', '-vf', 'format=yuv420p10le', '-c:v', 'libx265', '-x265-params', 'log-level=error:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc', '-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc', '-color_range', 'tv', input], { encoding: 'utf8' });
+    assert.equal(generated.status, 0, generated.stderr);
     writeExecutable(path.join(bin, 'sw_vers'), '#!/bin/sh\necho 26.0\n');
     writeExecutable(path.join(bin, 'osascript'), '#!/bin/sh\necho failed\n');
-    writeExecutable(path.join(bin, 'ffprobe'), fakeFfprobe());
-    writeExecutable(path.join(bin, 'ffmpeg'), fakeFfmpeg(started, terminated));
+    const fakeEncoder = path.join(bin, 'fake-encoder');
+    writeExecutable(fakeEncoder, fakeEncoderScript(started, terminated));
+    writeExecutable(path.join(bin, 'swiftc'), `#!/bin/sh\ncp ${JSON.stringify(fakeEncoder)} "$3"\nchmod +x "$3"\n`);
+    writeExecutable(path.join(bin, 'sips'), `#!/bin/sh\necho "$6"\necho '  pixelWidth: 16'\necho '  pixelHeight: 16'\necho '  bitsPerSample: 10'\necho '  profile: Rec. ITU-R BT.2100 HLG'\n`);
     const script = path.resolve(__dirname, '../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
-    const child = spawn(process.execPath, [script, '--json', input], { env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` }, stdio: ['ignore', 'pipe', 'pipe'] });
-    await waitForPath(started);
+    const child = spawn(process.execPath, [script, '--json', input], { env: { ...process.env, TMPDIR: root, PATH: `${bin}${path.delimiter}${process.env.PATH}` }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    try { await waitForPath(started); } catch (error) {
+      child.kill('SIGKILL');
+      if (child.exitCode === null) await new Promise(resolve => child.once('close', resolve));
+      assert.fail(`${error.message}\n${stderr}`);
+    }
     child.kill(signal);
     const status = await new Promise((resolve, reject) => {
       child.once('error', reject);
@@ -115,6 +148,7 @@ for (const [signal, exitCode] of [['SIGHUP', 129], ['SIGINT', 130], ['SIGTERM', 
     assert.equal(fs.existsSync(terminated), true);
     assert.equal(fs.existsSync(path.join(root, 'clip-frames')), false);
     assert.deepEqual(fs.readdirSync(root).filter(name => name.startsWith('.clip-frames.partial-')), []);
+    assert.deepEqual(fs.readdirSync(root).filter(name => name.startsWith('extract-video-frames-encoder-')), []);
   });
 }
 
@@ -122,29 +156,13 @@ function writeExecutable(filename, contents) {
   fs.writeFileSync(filename, contents, { mode: 0o755 });
 }
 
-function fakeFfprobe() {
-  return `#!${process.execPath}
-const args = process.argv.slice(2);
-if (args.includes('-show_program_version')) process.stdout.write('{"program_version":{"version":"test"}}');
-else if (args.includes('-show_frames')) process.stdout.write('{"frames":[{"best_effort_timestamp":"0","duration":1},{"best_effort_timestamp":"1","duration":1}]}');
-else process.stdout.write('{"streams":[{"index":0,"codec_type":"video","disposition":{"attached_pic":0},"width":16,"height":16,"pix_fmt":"yuv420p","color_primaries":"bt709","color_transfer":"bt709","color_space":"bt709","color_range":"tv","time_base":"1/1","sample_aspect_ratio":"1:1","display_aspect_ratio":"1:1","field_order":"progressive"}]}');
-`;
-}
-
-function fakeFfmpeg(started, terminated) {
+function fakeEncoderScript(started, terminated) {
   return `#!${process.execPath}
 const fs = require('node:fs');
-const path = require('node:path');
 const args = process.argv.slice(2);
-if (args.includes('-filters')) process.stdout.write('zscale select setpts format transpose hflip vflip\\n');
-else if (args.includes('-encoders')) process.stdout.write('png exr\\n');
-else if (args.includes('-muxers')) process.stdout.write('image2\\n');
-else if (args.includes('-pix_fmts')) process.stdout.write('rgb24 rgb48le rgba rgba64le gbrpf32le gbrapf32le\\n');
-else if (args.includes('encoder=exr')) process.stdout.write('-compression zip16 -format float\\n');
-else if (args.includes('null')) process.stdout.write('frame=1\\nprogress=end\\n');
+fs.writeFileSync(args[1], 'partial heic');
+if (args[1].includes('preflight-frame')) process.exit(0);
 else {
-  const output = args.at(-1).replace('%06d', '000001');
-  fs.writeFileSync(output, 'frame');
   fs.writeFileSync(${JSON.stringify(started)}, 'started');
   for (const signal of ['SIGHUP', 'SIGINT', 'SIGTERM']) process.on(signal, () => {
     fs.writeFileSync(${JSON.stringify(terminated)}, signal);
@@ -179,12 +197,12 @@ test('result truthfully reports the artifact contract', () => {
     paths: { supplied: '/tmp/clip.mov', resolved: '/private/tmp/clip.mov', output: '/tmp/clip-frames' },
     media: {
       stream: { index: 1 },
-      color: { dynamicRange: 'hdr-hlg', primaries: 'bt2020', transfer: 'arib-std-b67', matrix: 'bt2020nc', range: 'tv', bitDepth: 10, codec: 'exr', extension: 'exr', outputPixelFormat: 'gbrpf32le', outputDepth: 'float32', outputColor: 'linear-bt2020', alpha: false },
+      color: { dynamicRange: 'hdr-hlg', primaries: 'bt2020', transfer: 'arib-std-b67', matrix: 'bt2020nc', range: 'tv', bitDepth: 10, codec: 'heic', extension: 'heic', outputPixelFormat: '10-bit', outputDepth: '10', outputColor: 'bt2100-hlg', alpha: false },
       transform: { rotationDegrees: 270, flips: ['horizontal'], filters: ['hflip', 'transpose=clock'] },
       width: 1080, height: 1920, sampleAspectRatio: '1:1', displayAspectRatio: '9:16', fieldOrder: 'progressive',
       start: 0n, end: 1000000000n, firstPts: 0n, lastPts: 1000000000n, expectedFrames: 2,
     },
   };
   const result = subject.resultPayload(state, { probes: [] });
-  assert.deepEqual([result.output.format, result.frames, result.orientation.filters], ['openexr', 2, ['hflip', 'transpose=clock']]);
+  assert.deepEqual([result.output.format, result.frames, result.orientation.filters], ['heic', 2, ['hflip', 'transpose=clock']]);
 });

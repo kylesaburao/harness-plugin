@@ -36,18 +36,19 @@ test('output is a fixed sibling derived from the supplied path', () => {
   assert.equal(result.output, path.join(path.dirname(result.supplied), 'clip.final-frames'));
 });
 
-test('strict HDR classification produces float32 OpenEXR and preserves alpha', () => {
+test('strict HDR classification produces 10-bit HEIC through a 16-bit TIFF', () => {
   const result = subject.classifyStream({ pix_fmt: 'yuva444p10le', color_primaries: 'bt2020', color_transfer: 'smpte2084', color_space: 'bt2020nc', color_range: 'tv' });
   assert.equal(result.dynamicRange, 'hdr-pq');
-  assert.equal(result.extension, 'exr');
-  assert.equal(result.outputPixelFormat, 'gbrapf32le');
-  assert.equal(result.outputDepth, 'float32');
+  assert.equal(result.extension, 'heic');
+  assert.equal(result.intermediateExtension, 'tiff');
+  assert.equal(result.intermediatePixelFormat, 'rgba64le');
+  assert.equal(result.outputDepth, '10');
 });
 
 test('HLG is accepted only as tagged 10-bit BT.2020 HDR', () => {
   const result = subject.classifyStream({ pix_fmt: 'yuv420p10le', color_primaries: 'bt2020', color_transfer: 'arib-std-b67', color_space: 'bt2020nc', color_range: 'tv' });
   assert.equal(result.dynamicRange, 'hdr-hlg');
-  assert.equal(result.outputColor, 'linear-bt2020');
+  assert.equal(result.outputColor, 'bt2100-hlg');
   assert.throws(() => subject.classifyStream({ pix_fmt: 'yuv420p', color_primaries: 'bt2020', color_transfer: 'arib-std-b67', color_space: 'bt2020nc', color_range: 'tv' }), { code: 'color_metadata_ambiguous' });
 });
 
@@ -147,9 +148,11 @@ test('representative decode probe uses the selected frame and a null sink', () =
   assert.deepEqual(args.slice(args.indexOf('-c:v'), args.indexOf('-f')), ['-c:v', 'png', '-compression_level', '9']);
 });
 
-test('OpenEXR encoding explicitly requests ZIP16-compressed float32 samples', () => {
-  const color = { codec: 'exr' };
-  assert.deepEqual(subject.codecArguments(color), ['-c:v', 'exr', '-compression', 'zip16', '-format', 'float']);
+test('HDR extraction writes TIFF intermediates with the source transfer intact', () => {
+  const color = { codec: 'heic', dynamicRange: 'hdr-hlg', primaries: 'bt2020', transfer: 'arib-std-b67', matrix: 'bt2020nc', range: 'tv', intermediatePixelFormat: 'rgb48le', intermediateExtension: 'tiff' };
+  assert.deepEqual(subject.codecArguments(color), ['-c:v', 'tiff']);
+  assert.match(subject.colorConversionFilter(color), /transfer=arib-std-b67/);
+  assert.doesNotMatch(subject.colorConversionFilter(color), /transfer=linear/);
 });
 
 test('representative decode requires an emitted frame', async () => {
