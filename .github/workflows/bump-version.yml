@@ -65,15 +65,23 @@ jobs:
               # A human picked this explicitly via the choice input; no derivation needed.
               level="$DISPATCH_LEVEL"
             else
-              # Derived from every commit subject since the last bump commit, not just the
-              # newest one, so a tag on an earlier commit in a batched push isn't dropped, and a
-              # run that only sees part of the picture (e.g. it got evicted from the concurrency
-              # queue) is caught up by whichever run executes next.
-              level="$(git log --format='%H%x09%s' HEAD | node scripts/derive-bump-level.js --from-stdin)"
+              # Derived from every commit since the last bump commit, not just the newest one, so
+              # a tag on an earlier commit in a batched push isn't dropped, and a run that only
+              # sees part of the picture (e.g. it got evicted from the concurrency queue) is
+              # caught up by whichever run executes next. That catch-up is also why the
+              # "did anything worth bumping change?" test lives in the script rather than in an
+              # `on: push: paths:` filter up top: a docs-only push still runs, still sees an
+              # earlier un-bumped plugins/ commit in the range, and still bumps it. A paths:
+              # filter would skip that run and strand the bump.
+              #
+              # --name-only feeds the script each commit's files; --no-renames matters because
+              # with git's default rename detection a file moved out of plugins/ shows only its
+              # destination path, so deleting something that ships would read as irrelevant.
+              level="$(git log --format='commit%x09%H%x09%s' --name-only --no-renames HEAD | node scripts/derive-bump-level.js --from-stdin)"
             fi
 
             if [ "$level" = "none" ]; then
-              echo "nothing to bump since the last version-bump commit"
+              echo "nothing to bump: no commit since the last version-bump commit changed anything that ships"
               exit 0
             fi
 
