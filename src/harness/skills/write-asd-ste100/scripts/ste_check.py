@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from collections.abc import Iterable
+from functools import lru_cache
 import argparse
 import errno
 import json
@@ -18,7 +19,7 @@ from ste_data import (
     LAYERS,
     SOURCE_SOFTWARE,
     ReferencesError,
-    ensure_references_ready,
+    ensure_references_loaded,
     load_dictionary,
     load_software_terms,
     load_terms,
@@ -95,6 +96,34 @@ def protect_markdown(text: str) -> str:
         for match in pattern.finditer(text):
             protected.append(match.span())
     return mask_spans(text, protected)
+
+
+PHRASE_BEFORE = r"(?<![A-Za-z])"
+PHRASE_AFTER = r"(?![A-Za-z])"
+
+
+@lru_cache(maxsize=32)
+def phrase_matchers(phrases: tuple[str, ...]) -> tuple[re.Pattern | None, tuple[re.Pattern, ...]]:
+    """Compile one ordered phrase list once: an alternation gate and one pattern per phrase.
+
+    Phrases are masked one at a time, longest first, over the whole text, so a
+    longer phrase wins over a shorter one that overlaps it anywhere. A single
+    alternation scan takes the leftmost match instead and would change findings,
+    for example "get to" against "to be honest" in "I get to be honest.". The
+    alternation is therefore only a gate. It has the same lookarounds, so it
+    matches somewhere exactly when at least one phrase pattern does. When it does
+    not match, no phrase matches, nothing is masked, and the pass can be skipped.
+    """
+    if not phrases:
+        return None, ()
+    gate = re.compile(
+        PHRASE_BEFORE + "(?:" + "|".join(re.escape(phrase) for phrase in phrases) + ")" + PHRASE_AFTER,
+        re.I,
+    )
+    patterns = tuple(
+        re.compile(PHRASE_BEFORE + re.escape(phrase) + PHRASE_AFTER, re.I) for phrase in phrases
+    )
+    return gate, patterns
 
 
 def position(newline_offsets: list[int], offset: int) -> Position:
@@ -276,22 +305,27 @@ def check_file(
                 ))
 
     vocabulary_masked = mask_spans(masked, (match.span() for match in contraction_matches))
-    protected_phrases = sorted(
+    protected_phrases = tuple(sorted(
         {key for key in approved_forms if " " in key} | {key for key in terms if " " in key},
         key=len,
         reverse=True,
-    )
-    for phrase in protected_phrases:
-        pattern = re.compile(r"(?<![A-Za-z])" + re.escape(phrase) + r"(?![A-Za-z])", re.I)
-        vocabulary_masked = mask_spans(
-            vocabulary_masked, (match.span() for match in pattern.finditer(vocabulary_masked))
-        )
-    unapproved_phrases = sorted((key for key in unapproved if " " in key), key=len, reverse=True)
-    for phrase in unapproved_phrases:
-        pattern = re.compile(r"(?<![A-Za-z])" + re.escape(phrase) + r"(?![A-Za-z])", re.I)
+    ))
+    gate, patterns = phrase_matchers(protected_phrases)
+    if gate is not None and gate.search(vocabulary_masked):
+        for pattern in patterns:
+            spans = [match.span() for match in pattern.finditer(vocabulary_masked)]
+            if spans:
+                vocabulary_masked = mask_spans(vocabulary_masked, spans)
+    unapproved_phrases = tuple(sorted((key for key in unapproved if " " in key), key=len, reverse=True))
+    gate, patterns = phrase_matchers(unapproved_phrases)
+    if gate is None or not gate.search(vocabulary_masked):
+        patterns = ()
+    for phrase, pattern in zip(unapproved_phrases, patterns):
+        matches = list(pattern.finditer(vocabulary_masked))
+        if not matches:
+            continue
         records = unapproved[phrase]
         source = records[0].get("source")
-        matches = list(pattern.finditer(vocabulary_masked))
         for match in matches:
             if source == SOURCE_SOFTWARE:
                 findings.append(make_finding(
@@ -598,7 +632,7 @@ def main(argv: list[str] | None = None) -> int:
         report_invocation_error(error, json_output)
         return 2
     try:
-        ensure_references_ready()
+        _, dictionary_rows = ensure_references_loaded()
     except ReferencesError as error:
         report_reference_error(error, args.json)
         return 2
@@ -616,7 +650,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     try:
-        dictionary = load_dictionary()
+        dictionary = load_dictionary(rows=dictionary_rows)
     except (OSError, UnicodeError, ValueError) as error:
         report_reference_error(
             ReferencesError("references_invalid", f"dictionary loading could not complete: {error}"), args.json

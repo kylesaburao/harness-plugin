@@ -141,8 +141,8 @@ def read_jsonl(path: Path):
             yield value
 
 
-def _validate_dictionary(path: Path, validation: dict, config: dict) -> tuple[int, str]:
-    digest = sha256_file(path)
+def _validate_dictionary(path: Path, digest: str, validation: dict, config: dict) -> list:
+    """Validate the dictionary whose SHA-256 the caller computed, and return its rows."""
     expected = config["dictionary"]
     if digest != expected["sha256"]:
         _invalid(f"dictionary SHA-256 is {digest}, expected {expected['sha256']}")
@@ -201,14 +201,19 @@ def _validate_dictionary(path: Path, validation: dict, config: dict) -> tuple[in
         _invalid("approved row-count reconciliation is incomplete")
     if unapproved_extra != len(reconciliation["unapproved_multi_word_rows_not_in_word_count"]):
         _invalid("unapproved row-count reconciliation is incomplete")
-    return len(entries), digest
+    return entries
 
 
-def validate_bundle(
+def validate_bundle_rows(
     generated: Path = GENERATED,
     config_path: Path = SOURCE_CONFIG,
-) -> dict:
-    """Validate one complete generated bundle and return its identity."""
+) -> tuple[dict, list]:
+    """Validate one complete generated bundle and return its identity and dictionary rows.
+
+    The rows are the parsed `dictionary.jsonl` rows that validation already read,
+    so a caller can pass them to `load_dictionary(rows=...)` instead of parsing
+    the file a second time. Each file is hashed once.
+    """
     generated = generated.resolve()
     config = load_source_config(config_path)
     if not generated.is_dir():
@@ -231,6 +236,7 @@ def validate_bundle(
     files = manifest.get("files")
     if not isinstance(files, dict):
         _invalid("generated manifest has an incomplete files object")
+    digests = {}
     for name in ("dictionary.jsonl", "dictionary-validation.json"):
         record = files.get(name)
         path = generated / name
@@ -242,19 +248,33 @@ def validate_bundle(
         actual_digest = sha256_file(path)
         if record["sha256"] != actual_digest:
             _invalid(f"generated manifest SHA-256 for {name} is {record['sha256']}, actual SHA-256 is {actual_digest}")
-    rows, dictionary_digest = _validate_dictionary(generated / "dictionary.jsonl", validation, config)
-    return {
+        digests[name] = actual_digest
+    dictionary_digest = digests["dictionary.jsonl"]
+    entries = _validate_dictionary(generated / "dictionary.jsonl", dictionary_digest, validation, config)
+    identity = {
         "generated_data_location": str(generated),
-        "dictionary_rows": rows,
+        "dictionary_rows": len(entries),
         "dictionary_sha256": dictionary_digest,
         "source": expected_source,
     }
+    return identity, entries
 
 
-def ensure_references_ready() -> dict:
-    """Fail deterministically unless the installed generated bundle is valid."""
+def validate_bundle(
+    generated: Path = GENERATED,
+    config_path: Path = SOURCE_CONFIG,
+) -> dict:
+    """Validate one complete generated bundle and return its identity."""
+    return validate_bundle_rows(generated, config_path)[0]
+
+
+def ensure_references_loaded() -> tuple[dict, list]:
+    """Fail deterministically unless the installed generated bundle is valid.
+
+    Return the bundle identity and the validated dictionary rows.
+    """
     try:
-        return validate_bundle()
+        return validate_bundle_rows()
     except ReferencesError:
         raise
     except (KeyError, OSError, TypeError, UnicodeError, ValueError) as error:
@@ -262,6 +282,11 @@ def ensure_references_ready() -> dict:
             "references_invalid",
             f"reference validation could not complete: {error}",
         ) from error
+
+
+def ensure_references_ready() -> dict:
+    """Fail deterministically unless the installed generated bundle is valid."""
+    return ensure_references_loaded()[0]
 
 
 def report_reference_error(error: ReferencesError, json_output: bool = False) -> None:
@@ -319,8 +344,14 @@ class DictionaryData(NamedTuple):
     unapproved: dict
 
 
-def load_dictionary(path: Path = DICTIONARY) -> DictionaryData:
-    entries = list(read_jsonl(path))
+def load_dictionary(path: Path = DICTIONARY, rows: list | None = None) -> DictionaryData:
+    """Index the base dictionary.
+
+    `rows`, when given, are already-parsed rows (for example from
+    `ensure_references_loaded`) and `path` is not read. The rows are annotated
+    in place with their source layer.
+    """
+    entries = list(read_jsonl(path)) if rows is None else list(rows)
     by_headword = defaultdict(list)
     approved_forms = defaultdict(list)
     unapproved = defaultdict(list)

@@ -31,7 +31,9 @@ from ste_data import (
     load_software_terms,
     load_terms,
     merge_layers,
+    read_jsonl,
     validate_bundle,
+    validate_bundle_rows,
 )
 
 
@@ -445,6 +447,44 @@ class ReadinessValidationTests(unittest.TestCase):
             config, generated, _ = make_bundle(Path(directory), b"{not json}\n")
             with self.assertRaisesRegex(ReferencesError, "dictionary JSONL is malformed"):
                 validate_bundle(generated, config)
+
+    def test_bundle_rows_are_the_parsed_dictionary_and_each_file_is_hashed_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config, generated, _ = make_bundle(Path(directory))
+            hashed = []
+            real_sha256_file = ste_data.sha256_file
+
+            def counting_sha256_file(path):
+                hashed.append(Path(path).resolve())
+                return real_sha256_file(path)
+
+            with mock.patch.object(ste_data, "sha256_file", side_effect=counting_sha256_file):
+                identity, rows = validate_bundle_rows(generated, config)
+            self.assertEqual(len(hashed), len(set(hashed)))
+            self.assertIn((generated / "dictionary.jsonl").resolve(), hashed)
+            self.assertEqual(identity, validate_bundle(generated, config))
+            self.assertEqual(identity["dictionary_rows"], len(rows))
+            dictionary_path = generated / "dictionary.jsonl"
+            self.assertEqual(rows, list(read_jsonl(dictionary_path)))
+            self.assertEqual(load_dictionary(rows=rows), load_dictionary(dictionary_path))
+
+    def test_load_dictionary_with_rows_does_not_read_the_path(self):
+        rows = [entry("use", "USE", "approved", "v", ["USE", "USES", "USED"], 1, "2-1-A1")]
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing.jsonl"
+            dictionary = load_dictionary(missing, rows=rows)
+        self.assertEqual([item["headword"] for item in dictionary.entries], ["use"])
+        self.assertIn("uses", dictionary.approved_forms)
+
+    def test_ensure_references_wraps_unexpected_errors_and_ready_returns_identity(self):
+        with mock.patch.object(ste_data, "validate_bundle_rows", side_effect=OSError("disk gone")):
+            with self.assertRaises(ReferencesError) as caught:
+                ste_data.ensure_references_loaded()
+        self.assertEqual(caught.exception.code, "references_invalid")
+        self.assertIn("reference validation could not complete: disk gone", caught.exception.condition)
+        identity = {"dictionary_rows": 1}
+        with mock.patch.object(ste_data, "validate_bundle_rows", return_value=(identity, [{}])):
+            self.assertIs(ste_data.ensure_references_ready(), identity)
 
 
 class GeneratedBundlePathTests(unittest.TestCase):
@@ -982,7 +1022,10 @@ class BatchOrchestrationTests(unittest.TestCase):
                 },
                 "findings": [],
             }
-            with mock.patch.object(ste_check, "ensure_references_ready") as ready, mock.patch.object(
+            rows = [{"sentinel": "validated rows"}]
+            with mock.patch.object(
+                ste_check, "ensure_references_loaded", return_value=({}, rows)
+            ) as ready, mock.patch.object(
                 ste_check, "load_dictionary", return_value=DictionaryData([], {}, {}, {})
             ) as dictionary, mock.patch.object(
                 ste_check, "load_software_terms", return_value=[]
@@ -992,7 +1035,7 @@ class BatchOrchestrationTests(unittest.TestCase):
                 status = ste_check.main([str(first), str(second), "--mode", "procedural", "--json"])
         self.assertEqual(status, 0)
         ready.assert_called_once_with()
-        dictionary.assert_called_once_with()
+        dictionary.assert_called_once_with(rows=rows)
         software.assert_called_once_with()
         terms.assert_called_once_with(None)
         self.assertEqual(analyze.call_count, 2)
@@ -1002,7 +1045,9 @@ class BatchOrchestrationTests(unittest.TestCase):
             valid = Path(directory) / "valid.md"
             valid.write_text("Use.", encoding="utf-8")
             missing = Path(directory) / "missing.md"
-            with mock.patch.object(ste_check, "ensure_references_ready") as ready, mock.patch.object(
+            with mock.patch.object(
+                ste_check, "ensure_references_loaded", return_value=({}, [])
+            ) as ready, mock.patch.object(
                 ste_check, "load_dictionary"
             ) as dictionary, mock.patch.object(ste_check, "load_terms") as terms, mock.patch.object(
                 ste_check, "check_file"
@@ -1611,6 +1656,56 @@ Use the tool.
 
     def test_possessive_of_an_approved_word_is_not_an_unknown_term(self):
         self.assertEqual(self.result("Use the tool's function.", "procedural")["findings"], [])
+
+
+def phrase_record(headword: str, source: str) -> dict:
+    return {"headword": headword, "status": "unapproved", "meaning_or_alternatives": [f"not {headword}"], "source": source}
+
+
+class PhrasePassTests(unittest.TestCase):
+    """Phrases mask longest first over the whole text, not leftmost first."""
+
+    def phrase_findings(self, result):
+        return [
+            (item["category"], item["source"]["text"], item["source"]["start"]["offset"])
+            for item in result["findings"]
+            if item["category"] in {"unapproved_expression", "overused_term", "unapproved_word", "unknown_term"}
+        ]
+
+    def test_longer_unapproved_phrase_wins_over_an_earlier_overlapping_phrase(self):
+        unapproved = {
+            "get to": [phrase_record("get to", ste_data.SOURCE_ASD)],
+            "to be honest": [phrase_record("to be honest", ste_data.SOURCE_SOFTWARE)],
+        }
+        approved = {word: [{}] for word in ("i", "get", "be", "honest")}
+        result = check_file("I get to be honest.", "procedural", {}, approved, unapproved, {})
+        self.assertEqual(self.phrase_findings(result), [("overused_term", "to be honest", 6)])
+
+    def test_longer_protected_phrase_wins_over_an_earlier_overlapping_phrase(self):
+        terms = {"the foo": {}, "foo bar baz": {}}
+        unapproved = {"the": [phrase_record("the", ste_data.SOURCE_ASD)]}
+        result = check_file("Use the foo bar baz.", "procedural", {}, {"use": [{}]}, unapproved, terms)
+        self.assertEqual(self.phrase_findings(result), [("unapproved_word", "the", 4)])
+
+    def test_text_without_phrases_skips_the_pass_with_the_same_findings(self):
+        unapproved = {"get to": [phrase_record("get to", ste_data.SOURCE_ASD)]}
+        result = check_file("Use the tool.", "procedural", {}, {"use": [{}]}, unapproved, {})
+        self.assertEqual(self.phrase_findings(result), [
+            ("unknown_term", "the", 4), ("unknown_term", "tool", 8),
+        ])
+
+    def test_phrase_matchers_compile_once_and_gate_backtracks_across_alternatives(self):
+        phrases = ("get to b", "get to")
+        gate, patterns = ste_check.phrase_matchers(phrases)
+        self.assertIs(ste_check.phrase_matchers(phrases)[0], gate)
+        self.assertEqual(len(patterns), 2)
+        for text in ("get to bx", "get to b", "forget to", "get tox", "x get to.", ""):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    gate.search(text) is not None,
+                    any(pattern.search(text) for pattern in patterns),
+                )
+        self.assertEqual(ste_check.phrase_matchers(()), (None, ()))
 
 
 class SoftwareTerminologyLayerTests(unittest.TestCase):
