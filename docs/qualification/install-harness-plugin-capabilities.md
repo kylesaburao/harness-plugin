@@ -119,7 +119,7 @@ Read-only controls and user instructions remained enabled for both attempts.
 
 ## Claude live qualification (2026-09-25)
 
-This closes "Claude live skill loading is outside this task" above, and the blocked Claude refresh in `tests/write-implementation-plan/QUALIFICATION.md`.
+This closes "Claude live skill loading is outside this task" above, and the blocked Claude refresh in `docs/qualification/write-implementation-plan.md`.
 
 **Environment.**
 - Host: Claude Code 2.1.282, macOS, personal claude.ai login, model `claude-opus-5-5`.

@@ -83,7 +83,7 @@ prompt. There is no alternative workspace-inspection mode.
 
 The [skill contract](../../dist/harness/skills/harness-advisor/SKILL.md) owns routing,
 call accounting, context handling, diagnostics, and exact execution policy. The
-[qualification procedure](../../tests/harness-advisor/QUALIFICATION.md) separates
+[qualification procedure](../qualification/harness-advisor.md) separates
 adapter configuration, model behavior, and host enforcement. The
 [evaluation record](../../tests/harness-advisor/EVALUATION.md) identifies actual
 runs, failures, and unrun checks. Historical inspection results do not qualify the

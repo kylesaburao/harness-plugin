@@ -1,6 +1,6 @@
 # Conceptual-first qualification
 
-This record covers checks actually performed for the `conceptual-first` skill and its activation component. The [evaluation protocol](EVALUATION.md) defines the full set of intended checks. Package-preparation results supplied with the integration bundle are not repository evidence and are not repeated here.
+This record covers checks actually performed for the `conceptual-first` skill and its activation component. The [evaluation protocol](../../tests/conceptual-first/EVALUATION.md) defines the full set of intended checks. Package-preparation results supplied with the integration bundle are not repository evidence and are not repeated here.
 
 ## Integration candidate (2026-09-30)
 
@@ -41,7 +41,7 @@ The candidate was the integration before the post-review wording change to two i
 
 ## Live loading and installer behavior
 
-Claude Code 2.1.286 loaded the candidate with `harness:conceptual-first` among 15 skills. The installer component passed fresh-install, repeat no-op, missing-skill block, and Advisor-only scope runs. Evidence and limits are in the [installer qualification](../install-harness-plugin-capabilities/QUALIFICATION.md#conceptual-first-component-claude-live-qualification-2026-09-30).
+Claude Code 2.1.286 loaded the candidate with `harness:conceptual-first` among 15 skills. The installer component passed fresh-install, repeat no-op, missing-skill block, and Advisor-only scope runs. Evidence and limits are in the [installer qualification](install-harness-plugin-capabilities.md#conceptual-first-component-claude-live-qualification-2026-09-30).
 
 ## Not run
 

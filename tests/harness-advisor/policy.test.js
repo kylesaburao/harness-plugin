@@ -129,6 +129,6 @@ test('static supplied-evidence fixture has six cases and ordered sections, separ
   assert.deepEqual([...packet.matchAll(/^\[(.+)\]$/gm)].map(match => match[1]), ['TASK BASELINE', 'DURABLE CARRYOVER', 'NEW EVIDENCE', 'QUESTION']);
   assert.doesNotMatch(packet, /Expected reasoning outcomes|Not acceptable|Grade each case/);
   assert.equal(fs.existsSync(path.join(__dirname, 'qualification-fixture.js')), false);
-  const qualification = normalize(fs.readFileSync(path.join(__dirname, 'QUALIFICATION.md'), 'utf8'));
+  const qualification = normalize(fs.readFileSync(path.join(__dirname, '../../docs/qualification/harness-advisor.md'), 'utf8'));
   includes(qualification, ['Active policy: version 4', 'Do not send the expected-outcome rubric', 'at most one consultation per changed fallback host']);
 });

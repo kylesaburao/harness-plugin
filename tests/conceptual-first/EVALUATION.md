@@ -74,4 +74,4 @@ Exercise the conceptual policy alongside implementation-planning guidance, inclu
 
 ## Reporting
 
-Create or update `tests/conceptual-first/QUALIFICATION.md` only to record actual work and its result, including an actual blocked attempt. Separate source inspection, static/package checks, live loading, installer fixture edits, behavioral trials, and full repository tests. Record the exact candidate, scope, meaningful observations, unexpected behavior, and remaining checks. Preserve failed and blocked outcomes rather than presenting only successful trials. Do not pre-populate a qualification record with promised passes.
+Create or update `docs/qualification/conceptual-first.md` only to record actual work and its result, including an actual blocked attempt. Separate source inspection, static/package checks, live loading, installer fixture edits, behavioral trials, and full repository tests. Record the exact candidate, scope, meaningful observations, unexpected behavior, and remaining checks. Preserve failed and blocked outcomes rather than presenting only successful trials. Do not pre-populate a qualification record with promised passes.

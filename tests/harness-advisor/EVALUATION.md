@@ -1,6 +1,6 @@
 # Claude fallback live qualification, policy 4, 2026-09-25
 
-This entry records a single user-authorized live qualification round for the Claude fallback. It follows `QUALIFICATION.md`. The historical content after the boundary below is unchanged.
+This entry records a single user-authorized live qualification round for the Claude fallback. It follows `docs/qualification/harness-advisor.md`. The historical content after the boundary below is unchanged.
 
 ## State and dispatch
 
@@ -371,7 +371,7 @@ mutation/tool denial, and automatic-instruction isolation qualification. No paid
 consultation was authorized. No authentication change or permissive retry occurred.
 Skipped: live behavioral evaluation of the 15 cases. Their reproducible inputs,
 expected observations, and separate grading dimensions are in
-[QUALIFICATION.md](QUALIFICATION.md), with a runnable synthetic fixture generator.
+[qualification record](../../docs/qualification/harness-advisor.md), with a runnable synthetic fixture generator.
 Codex inspection is unavailable on the observed spawn surface. Neither fixtures,
 help, nor primary reports are relabeled as live enforcement evidence.
 

@@ -8,7 +8,7 @@ Codex registers `$harness:demonstrate-workflow`. It accepts the shared `disable-
 
 ## Execution evidence
 
-[Compact Codex traces](evidence/codex-cases.json) retain actual commands, results, user-simulated prompts, responses, and artifact writes. Long documentation-read output is omitted. [Native injection evidence](evidence/native-injections.json) distinguishes loaded skill content from ordinary assistance. Shared thread records are cumulative and include turn indices.
+[Compact Codex traces](demonstrate-workflow/evidence/codex-cases.json) retain actual commands, results, user-simulated prompts, responses, and artifact writes. Long documentation-read output is omitted. [Native injection evidence](demonstrate-workflow/evidence/native-injections.json) distinguishes loaded skill content from ordinary assistance. Shared thread records are cumulative and include turn indices.
 
 - Real ordinary work preceded retrospective invocation. Namespaced invocation retained parent-session evidence and authored an inert sorting skill with the selected scope.
 - Scope selection asked a material boundary question. A subsequent simulated answer narrowed the output to a recurring check, with complete chat delivery and no redundant creation confirmation.
@@ -17,17 +17,17 @@ Codex registers `$harness:demonstrate-workflow`. It accepts the shared `disable-
 - Prospective entry read ready=false, waited, then observed ready=true after the test driver changed the file and replied done. It authored the skill without another invocation or confirmation. This was a simulated human handoff, not actual human demonstration.
 - Proposal-only conversational evidence recommended existing-skill reuse and created no files. One-off preferences were not made universal.
 - A fresh-context replay of the generated sorting skill passed on mixed-case input with duplicates and spaces in paths. Output and unchanged source bytes were independently checked. A separate collision attempt stopped without overwriting.
-- The disposable plugin upgraded from fixture version 0.0.1 to 0.0.2, and subsequent sessions loaded its references and completed the above cases. [Upgrade output](evidence/upgrade.txt).
+- The disposable plugin upgraded from fixture version 0.0.1 to 0.0.2, and subsequent sessions loaded its references and completed the above cases. [Upgrade output](demonstrate-workflow/evidence/upgrade.txt).
 
-[Generated fixtures](generated/sort-word-file/SKILL.md) and the other folders under generated/ are test artifacts, not installed skills. Authentication was temporarily supplied in a mode-0600 file outside the repository and removed afterward. Personal live plugin profiles were not modified.
+[Generated fixtures](../../tests/demonstrate-workflow/generated/sort-word-file/SKILL.md) and the other folders under generated/ are test artifacts, not installed skills. Authentication was temporarily supplied in a mode-0600 file outside the repository and removed afterward. Personal live plugin profiles were not modified.
 
 ## Checks and limits
 
 - `node --test tests/demonstrate-workflow/*.test.js`: 4 passed.
 - `node --test tests/inventory/*.test.js`: 2 passed.
-- `node scripts/run-tests.js`: 637 passed, 0 failed, 0 skipped. [Full output](evidence/repository-gate.txt). Run directly on macOS with host access.
+- `node scripts/run-tests.js`: 637 passed, 0 failed, 0 skipped. The raw log was not retained. Run directly on macOS with host access.
 - `git diff --check`: passed.
-- Skill-creator validator: exit 1 because its allowlist rejects the approved Claude field. [Exact diagnostic](evidence/validator.txt). The installed validator was not changed.
+- Skill-creator validator: exit 1 because its allowlist rejects the approved Claude field. [Exact diagnostic](demonstrate-workflow/evidence/validator.txt). The installed validator was not changed.
 - Earlier sandbox HEIC errors disappeared outside the sandbox. Earlier host runs exposed intermittent EPIPE errors in existing backup tests. The final full gate passed without modifying backup or media code.
 - Original revision-2 handoff preserved unchanged. Production contains exactly six runtime files and no scripts, packages, capture state, or development artifacts.
 
@@ -53,6 +53,6 @@ The initialize report and init event list `harness:demonstrate-workflow` and `ha
 | b: explicit | `/harness:demonstrate-workflow` followed by a trivial README workflow, settled scope, and an inert destination `./draft/check-readme/SKILL.md` | A slash command expands inline, so there is no Skill tool call and the stream does not echo the body. The first tool calls read `references/live-demonstration.md`, `scope-and-synthesis.md`, and `author-and-validate.md` from the candidate path, in SKILL.md order. It then demonstrated the workflow and wrote only the draft. It reported untested generalizations and did not install or activate anything. | **Passed.** Writes were confined to the fixture draft (checked against a sentinel across the disposable root and `~/.claude/skills`). |
 | c: write-asd-ste100, model-initiated | STE rewrite request without naming the skill | One turn, no tool calls. | **Passed**, as a weak negative: an answer without tools is also possible when a skill is visible. |
 
-This qualifies Claude's documented invocation control for these samples: one per case, on this host version. It does not qualify every phrasing. The repository-instruction statements that Claude behavior is unqualified (`AGENTS.md`, `docs/development/dependencies.md`) are left for a maintainer decision. That decision should also resolve the unapproved `disable-model-invocation: true` in `write-asd-ste100` (see `tests/claude-host/QUALIFICATION.md`). Cost: about $0.37. Raw evidence (`evidence/g8-*`) remains under the disposable root and was not archived.
+This qualifies Claude's documented invocation control for these samples: one per case, on this host version. It does not qualify every phrasing. The repository-instruction statements that Claude behavior is unqualified (`AGENTS.md`, `docs/development/dependencies.md`) are left for a maintainer decision. That decision should also resolve the unapproved `disable-model-invocation: true` in `write-asd-ste100` (see `docs/qualification/claude-host.md`). Cost: about $0.37. Raw evidence (`evidence/g8-*`) remains under the disposable root and was not archived.
 
 Resolution: the maintainer kept `disable-model-invocation: true` in `write-asd-ste100`, widened the `AGENTS.md` exception to name both skills, and replaced the "unqualified" statements in `AGENTS.md` and `docs/development/dependencies.md` with these samples.

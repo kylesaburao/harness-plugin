@@ -6,7 +6,7 @@ This record covers the whole plugin tree on Claude Code: manifest validation, di
 
 - Host: Claude Code `2.1.282` on macOS, using the user's personal claude.ai (Pro) login. The init report showed default model `claude-opus-5-5`.
 - Candidate: a fresh `npm run build` of HEAD `0071f1e4fe1cf58dd6e29c79a58ceaa105c24db7`, copied from `.build/harness` to `/private/tmp/claude-qual-20260925092150/harness`. The copy omits the `back-up-directories` dependency overlay. Tree SHA-256 over sorted per-file hashes: `ca43f7443adc4aef01960a11a74e8db8cb5aa47dffa42c421ddd91699de89902`.
-- Isolation: the candidate loads through `--plugin-dir`, with `--setting-sources '' --no-session-persistence`. A throwaway `CLAUDE_CONFIG_DIR` was not used. The user chose the personal profile instead, and the earlier disposable-profile attempt had failed to authenticate (see [random-sampler](../random-sampler/QUALIFICATION.md)). `--bare` was not used because it skips keychain authentication. Personal settings, plugins, and instruction files were not modified.
+- Isolation: the candidate loads through `--plugin-dir`, with `--setting-sources '' --no-session-persistence`. A throwaway `CLAUDE_CONFIG_DIR` was not used. The user chose the personal profile instead, and the earlier disposable-profile attempt had failed to authenticate (see [random-sampler](random-sampler.md)). `--bare` was not used because it skips keychain authentication. Personal settings, plugins, and instruction files were not modified.
 
 ## Isolation probe
 
@@ -30,7 +30,7 @@ This probe sends no model turn. It sends a stream-json `initialize` control requ
 | Skill content | `claude plugin validate "$QROOT/harness/skills" --json --strict` | Exit 0 with no manifest and empty `contents`. Validating a single skill directory reports "No manifest found". This client version produced no observable skill-frontmatter validation, so frontmatter is not claimed as validated. |
 | Discovery | initialize probe above | **Passed**: all 14 skills appear as `harness:<skill>` commands: back-up-directories, create-discord-emoji-gif, demonstrate-workflow, diagnose-environment, extract-video-frames, harness-advisor, inspect-development-environment, install-harness-plugin-capabilities, random-sampler, record-decision, research-precedent, wake-desktop, write-asd-ste100, write-implementation-plan. `available_output_styles` includes `harness:Casual`, `harness:Encoded`, and `harness:Natural`. |
 
-This is `--plugin-dir` discovery of the development candidate, not a marketplace installation. Marketplace installation into the personal profile was out of scope. The earlier isolated marketplace installation on Claude Code 2.1.270 is recorded in [the implementation receipt](../distribution/IMPLEMENTATION_RECEIPT.md). It predates `write-implementation-plan`.
+This is `--plugin-dir` discovery of the development candidate, not a marketplace installation. Marketplace installation into the personal profile was out of scope. The earlier isolated marketplace installation on Claude Code 2.1.270 is recorded in [the implementation receipt](../../tests/distribution/IMPLEMENTATION_RECEIPT.md). It predates `write-implementation-plan`.
 
 ### Frontmatter finding
 
@@ -86,4 +86,4 @@ The qualification changed only Markdown under `tests/`. `dist/` and `src/` have 
 - Six `harness-advisor/claude-adapter.test.js` cases (contract-missing and cleanup-denial). The default `TMPDIR` under `/var/folders` resolves to `/private/var/folders`, so the expected paths differ from the real paths.
 - `distribution/build.test.js` "assembly failures and unsafe ancestors". It expects case-colliding paths, which requires a case-sensitive filesystem.
 
-`tests/write-implementation-plan/QUALIFICATION.md` records the same environment-only failures at a pristine HEAD. With `TMPDIR` set to a realpath directory, `claude-adapter.test.js` passed 41/41. The case-sensitive build test was not rerun, because doing so would need a case-sensitive disk image on the host.
+`docs/qualification/write-implementation-plan.md` records the same environment-only failures at a pristine HEAD. With `TMPDIR` set to a realpath directory, `claude-adapter.test.js` passed 41/41. The case-sensitive build test was not rerun, because doing so would need a case-sensitive disk image on the host.

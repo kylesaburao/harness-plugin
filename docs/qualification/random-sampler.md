@@ -7,18 +7,18 @@ routing guarantee. No production routing changes were made to force these result
 ## Deterministic verification
 
 - `node --test tests/random-sampler/*.test.js`: 12 passed, zero failed or skipped.
-  [Focused output](evidence/focused-tests.txt).
+  [Focused output](random-sampler/evidence/focused-tests.txt).
 - `node --test tests/inventory/*.test.js tests/shared-node/*.test.js`: 16 passed,
   zero failed or skipped.
 - `python3 /Users/kyle/.codex/skills/.system/skill-creator/scripts/quick_validate.py plugins/harness/skills/random-sampler`:
   exit 0, `Skill is valid!`.
 - `node scripts/setup-tests.js` followed by `node scripts/run-tests.js`, with host
-  access: 643 passed, zero failed or skipped. [Full gate](evidence/repository-gate.txt).
+  access: 643 passed, zero failed or skipped. The raw log was not retained.
 - The initial sandboxed gate failed in three existing native HEIC encoder tests.
-  All three passed with host access, without media-code changes.
-  [Sandbox output](evidence/sandbox-gate.txt).
+  All three passed with host access, without media-code changes. Sandboxed aggregate:
+  638 passed, 3 failed, zero skipped. The raw log was not retained.
 - `git diff --check`: passed.
-- [Direct execution records](evidence/direct.json) retain help, JSON preflight,
+- [Direct execution records](random-sampler/evidence/direct.json) retain help, JSON preflight,
   choice, integer, sample, and shuffle invocations, requests, statuses, and outputs.
   All six exited 0. Random outcomes were checked against schemas and index/range
   invariants, not a particular selected result.
@@ -27,15 +27,15 @@ The integer width restriction follows the [Node 22 randomInt contract](https://n
 The original Node version boundary check used a test-only preload. After review,
 both numeric regression tests also passed on an actual official Node.js 22.0.0
 binary using `/private/tmp/node-v22.0.0-darwin-arm64/bin/node --test --test-name-pattern='candidate numeric|operation numeric' tests/random-sampler/sample.test.js`.
-[Node 22 output](evidence/node22-numeric-tests.txt) reports two passed tests and
+[Node 22 output](random-sampler/evidence/node22-numeric-tests.txt) reports two passed tests and
 eight unselected tests, not a full-suite Node 22 pass. Fault injection also covers
 unavailable crypto imports, non-callable and throwing randomInt, stdin failures,
-and entropy counts. [Direct numeric results](evidence/numeric-direct.json) preserve
+and entropy counts. [Direct numeric results](random-sampler/evidence/numeric-direct.json) preserve
 overflow, unsafe integer, and nested underflow candidates exactly.
 
 ## Isolation and live evidence
 
-[Compact live records](evidence/live-cases.json) preserve each prompt, response,
+[Compact live records](random-sampler/evidence/live-cases.json) preserve each prompt, response,
 completed CLI commands, returned JSON, status, and observed model. These live
 sessions predate the numeric-preservation review fix and were not rerun afterward.
 Successful

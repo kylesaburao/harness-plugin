@@ -18,6 +18,7 @@ Start with the [development overview](development/README.md), then use the focus
 - [Testing](development/testing.md): setup, full gate, focused checks, and results.
 - [Development container](development/container.md): Linux/WSL2 setup and container lifecycle.
 - [Versioning](development/versioning.md): releases and commit conventions.
+- [Qualification records](qualification/): per-skill and per-host live qualification summaries (`<name>.md`), with retained evidence under `<name>/evidence/`.
 - [Repository invariants](../AGENTS.md): instructions for changing this repository.
 
 ## Related

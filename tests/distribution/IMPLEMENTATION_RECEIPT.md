@@ -1,5 +1,7 @@
 # TypeScript migration implementation receipt
 
+> **Historical record.** This receipt predates the candidate-based build workflow (`.build/harness/` candidates and release-owned `dist/harness/`). It is kept as evidence of that migration and is not current procedure; see [build workflow](../../docs/development/build.md) and [versioning](../../docs/development/versioning.md) for current practice.
+
 ## Starting checkpoint
 
 - HEAD: `233fd2792ef598464152a52b7e96e110eacde70f`, clean working tree, matching the investigation baseline.

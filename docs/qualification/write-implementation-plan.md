@@ -788,14 +788,14 @@ these focused checks do not claim a new full gate or behavioral run on version 3
 
 ## Claude live qualification — 2026-09-25
 
-This section closes the "Claude behavior is untested" gaps above for planning-skill loading, plan-only scope, and the handoff choice. The Claude activation refresh is covered in `tests/install-harness-plugin-capabilities/QUALIFICATION.md`.
+This section closes the "Claude behavior is untested" gaps above for planning-skill loading, plan-only scope, and the handoff choice. The Claude activation refresh is covered in `docs/qualification/install-harness-plugin-capabilities.md`.
 
 #### Host, candidate, and isolation
 
 - Host: Claude Code 2.1.282, macOS, personal claude.ai login, default model `claude-opus-5-5`.
 - Candidate: fresh `npm run build` of HEAD `0071f1e4fe1cf58dd6e29c79a58ceaa105c24db7`, copied to `/private/tmp/claude-qual-20260925092150/harness` (tree hash `ca43f744…9902`).
 - Flags on every session: `claude -p --plugin-dir "$QROOT/harness" --add-dir "$QROOT/harness" --setting-sources '' --no-session-persistence --output-format stream-json --verbose --max-budget-usd 2`.
-- Each init showed exactly one `harness` plugin, from that path. Personal `CLAUDE.md` does not load under these flags (see `tests/claude-host/QUALIFICATION.md`), so these sessions have no activation unless a proxy is supplied.
+- Each init showed exactly one `harness` plugin, from that path. Personal `CLAUDE.md` does not load under these flags (see `docs/qualification/claude-host.md`), so these sessions have no activation unless a proxy is supplied.
 - The activation proxy passed the Implementation planning and Skill discovery blocks verbatim from `activation-instructions.md` via `--append-system-prompt-file`. It is a proxy for CLAUDE.md, not an installed activation.
 
 #### Fixture
@@ -871,7 +871,7 @@ macOS, repo root: `npm run build` passed, then `npm run test:setup` passed. `npm
 - The single failure is pre-existing and environment-only: `distribution/build.test.js:207` "assembly failures and unsafe ancestors retain the prior selected artifact".
   - On case-insensitive APFS the case-colliding fixture overwrote `media-result.ts`.
   - Compilation therefore failed before the expected `/Case-colliding paths/` message.
-  - This is the signature recorded in `tests/claude-host/QUALIFICATION.md`.
+  - This is the signature recorded in `docs/qualification/claude-host.md`.
 
 #### Host, harness, and fixture
 

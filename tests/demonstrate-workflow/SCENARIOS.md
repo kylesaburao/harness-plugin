@@ -1,6 +1,6 @@
 # Validation and evaluation scenarios
 
-**Status:** revision-2 scenario catalog, with later user revisions: Claude excluded, quoted instruction loading allowed without formalization, and further test expansion stopped. Actual execution status is recorded separately in [QUALIFICATION.md](QUALIFICATION.md). A case definition is not execution evidence.
+**Status:** revision-2 scenario catalog, with later user revisions: Claude excluded, quoted instruction loading allowed without formalization, and further test expansion stopped. Actual execution status is recorded separately in [qualification record](../../docs/qualification/demonstrate-workflow.md). A case definition is not execution evidence.
 
 ## Test layers
 
