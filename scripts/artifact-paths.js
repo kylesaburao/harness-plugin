@@ -13,6 +13,35 @@ const ASSET_EXTENSIONS = new Set(['.md', '.json', '.jsonl', '.yaml', '.yml', '.p
 const FORBIDDEN_ARTIFACT_COMPONENTS = new Set([
   'node_modules', '__pycache__', 'tests', 'fixtures', 'benchmarks', 'evidence', '.git', '.build', '.venv', 'generated',
 ]);
+// Ignored local directories that may exist inside a built artifact. Builders
+// and validators leave them untouched and never inventory their contents.
+const OPAQUE_OVERLAYS = new Set([
+  'skills/back-up-directories/node_modules',
+  'skills/write-asd-ste100/scripts/__pycache__',
+]);
+
+// The path rules every builder and validator applies to artifact-relative
+// paths. Callers keep their own errors.
+function isOpaqueOverlay(relative)
+{
+  return OPAQUE_OVERLAYS.has(relative);
+}
+
+// Compiled JavaScript is installed only for shared runtime modules and skill scripts.
+function isAllowedJavaScriptPath(relative)
+{
+  return /^(?:shared\/node\/|skills\/[^/]+\/scripts\/)/.test(relative);
+}
+
+function isLocalConfiguration(relative)
+{
+  return relative.endsWith('.local.json');
+}
+
+function hasForbiddenComponent(relative)
+{
+  return relative.split('/').some((component) => FORBIDDEN_ARTIFACT_COMPONENTS.has(component));
+}
 
 class ArtifactArgumentError extends Error
 {
@@ -128,6 +157,11 @@ module.exports = {
   TARGETS,
   ASSET_EXTENSIONS,
   FORBIDDEN_ARTIFACT_COMPONENTS,
+  OPAQUE_OVERLAYS,
+  isOpaqueOverlay,
+  isAllowedJavaScriptPath,
+  isLocalConfiguration,
+  hasForbiddenComponent,
   ArtifactArgumentError,
   validateTarget,
   artifactRoot,

@@ -10,7 +10,10 @@ const {
   TARGETS,
   DEFAULT_TARGET,
   ASSET_EXTENSIONS,
-  FORBIDDEN_ARTIFACT_COMPONENTS,
+  isOpaqueOverlay,
+  isAllowedJavaScriptPath,
+  isLocalConfiguration,
+  hasForbiddenComponent,
   ArtifactArgumentError,
   validateTarget,
   artifactRoot,
@@ -18,8 +21,6 @@ const {
   assertReleaseWriteIntent,
 } = require('./artifact-paths');
 const templates = ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json'];
-const backupModules = 'skills/back-up-directories/node_modules';
-const pythonCache = /^skills\/write-asd-ste100\/scripts\/__pycache__$/;
 const mode = stat => stat.mode & 0o111 ? 0o755 : 0o644;
 const exists = file => { try { return fs.lstatSync(file); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } };
 
@@ -45,7 +46,7 @@ function inventory(root, { overlays = false, missing = false } = {}) {
       if (folded.has(lower)) throw new Error(`Case-colliding paths: ${folded.get(lower)} and ${key}`);
       folded.set(lower, key);
       if (stat.isSymbolicLink()) throw new Error(`Symlink is not permitted: ${absolute}`);
-      if (overlays && (key === backupModules || pythonCache.test(key))) {
+      if (overlays && isOpaqueOverlay(key)) {
         if (!stat.isDirectory()) throw new Error(`Local overlay must be a directory: ${absolute}`);
         continue;
       }
@@ -59,8 +60,8 @@ function inventory(root, { overlays = false, missing = false } = {}) {
 }
 
 function classify(relative) {
-  if (relative.endsWith('.local.json')) throw new Error(`Local configuration is not distributable: ${relative}`);
-  if (relative.split('/').some(part => FORBIDDEN_ARTIFACT_COMPONENTS.has(part))) {
+  if (isLocalConfiguration(relative)) throw new Error(`Local configuration is not distributable: ${relative}`);
+  if (hasForbiddenComponent(relative)) {
     throw new Error(`Development/local resource is not distributable: ${relative}`);
   }
   if (templates.includes(relative)) return 'template';
@@ -76,11 +77,11 @@ function outputPath(relative) {
 
 function validatePaths(files) {
   for (const relative of files.keys()) {
-    if (relative.endsWith('.local.json')) throw new Error(`Forbidden local configuration: ${relative}`);
+    if (isLocalConfiguration(relative)) throw new Error(`Forbidden local configuration: ${relative}`);
     if (/\.(?:js|mjs|cjs)$/.test(relative)) {
-      if (!/^(?:shared\/node\/|skills\/[^/]+\/scripts\/)/.test(relative)) throw new Error(`Unexpected JavaScript: ${relative}`);
+      if (!isAllowedJavaScriptPath(relative)) throw new Error(`Unexpected JavaScript: ${relative}`);
     } else if (!ASSET_EXTENSIONS.has(path.extname(relative))) throw new Error(`Forbidden artifact file: ${relative}`);
-    if (relative.split('/').some(part => FORBIDDEN_ARTIFACT_COMPONENTS.has(part))) throw new Error(`Forbidden artifact path: ${relative}`);
+    if (hasForbiddenComponent(relative)) throw new Error(`Forbidden artifact path: ${relative}`);
   }
 }
 
@@ -183,7 +184,7 @@ function reconcile(candidate, destination) {
   function prune(relative) {
     for (const entry of fs.readdirSync(path.join(destination, relative), { withFileTypes: true })) {
       const child = relative ? `${relative}/${entry.name}` : entry.name;
-      if (child === backupModules || pythonCache.test(child)) continue;
+      if (isOpaqueOverlay(child)) continue;
       if (entry.isDirectory()) {
         prune(child);
         if (!fs.readdirSync(path.join(destination, child)).length) fs.rmdirSync(path.join(destination, child));

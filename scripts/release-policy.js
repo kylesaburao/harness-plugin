@@ -9,7 +9,14 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { isDeepStrictEqual } = require('node:util');
 const { createHash } = require('node:crypto');
-const { assertReleaseWriteIntent, ASSET_EXTENSIONS, FORBIDDEN_ARTIFACT_COMPONENTS } = require('./artifact-paths');
+const {
+  assertReleaseWriteIntent,
+  ASSET_EXTENSIONS,
+  isOpaqueOverlay,
+  isAllowedJavaScriptPath,
+  isLocalConfiguration,
+  hasForbiddenComponent,
+} = require('./artifact-paths');
 const { classify, outputPath } = require('./build');
 
 const CANONICAL_PACKAGE = 'src/harness/package.json';
@@ -45,11 +52,6 @@ const RELEVANT_EXACT_PATHS = Object.freeze([
   'package-lock.json',
   '.gitattributes',
   '.github/workflows/bump-version.yml',
-]);
-
-const OPAQUE_OVERLAYS = new Set([
-  'skills/back-up-directories/node_modules',
-  'skills/write-asd-ste100/scripts/__pycache__',
 ]);
 
 class PolicyError extends Error
@@ -674,7 +676,7 @@ function validateArtifactEntries(entries, label)
         'regenerate the distribution from source and stage only regular generated files',
       );
     }
-    if (relative.endsWith('.local.json'))
+    if (isLocalConfiguration(relative))
     {
       policyFailure(
         'FORBIDDEN_ARTIFACT_PATH',
@@ -682,8 +684,7 @@ function validateArtifactEntries(entries, label)
         'remove local configuration from the generated distribution',
       );
     }
-    const components = relative.split('/');
-    if (components.some((component) => FORBIDDEN_ARTIFACT_COMPONENTS.has(component)))
+    if (hasForbiddenComponent(relative))
     {
       policyFailure(
         'FORBIDDEN_ARTIFACT_PATH',
@@ -701,7 +702,7 @@ function validateArtifactEntries(entries, label)
     }
     if (/\.(?:js|mjs|cjs)$/.test(relative))
     {
-      if (!/^(?:shared\/node\/|skills\/[^/]+\/scripts\/)/.test(relative))
+      if (!isAllowedJavaScriptPath(relative))
       {
         policyFailure(
           'UNEXPECTED_ARTIFACT_JAVASCRIPT',
@@ -796,9 +797,7 @@ function validateSourceArtifactBoundary(
       );
     }
 
-    const components = relative.split('/');
-    if (relative.endsWith('.local.json')
-        || components.some((component) => FORBIDDEN_ARTIFACT_COMPONENTS.has(component)))
+    if (isLocalConfiguration(relative) || hasForbiddenComponent(relative))
     {
       policyFailure(
         'FORBIDDEN_SOURCE_ARTIFACT_INPUT',
@@ -1356,7 +1355,7 @@ function workingDistributionEntries(repositoryRoot)
       const child = relative ? `${relative}/${name}` : name;
       const absolute = path.join(artifactRoot, child);
       const stat = fs.lstatSync(absolute);
-      if (OPAQUE_OVERLAYS.has(child))
+      if (isOpaqueOverlay(child))
       {
         if (!stat.isDirectory() || stat.isSymbolicLink())
         {
