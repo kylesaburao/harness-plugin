@@ -1,0 +1,6 @@
+interface:
+  display_name: "Compact Prompt"
+  short_description: "Prepare focus instructions before compacting a session"
+  default_prompt: "Use $harness:write-compact-prompt to prepare instructions for /compact."
+policy:
+  allow_implicit_invocation: true
