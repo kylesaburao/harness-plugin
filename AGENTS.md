@@ -41,12 +41,13 @@ Installing a plugin copies the whole plugin directory into the harness's plugin 
 ```sh
 node --test tests/back-up-directories/*.test.js
 node --test tests/wake-desktop/*.test.js
+node --test tests/bump-version/*.test.js
 python3 -m unittest discover -s tests/write-asd-ste100 -v
 ```
 
 The backup tests need that skill's dependency installed first (`npm install --omit=dev --prefix plugins/harness/skills/back-up-directories`). The others need nothing.
 
-The same reasoning applies to anything else that only exists to develop the code. If it never runs for someone who installed the plugin, it does not belong under `plugins/harness/`.
+The same reasoning applies to anything else that only exists to develop the code. If it never runs for someone who installed the plugin, it does not belong under `plugins/harness/`. Repo-root `scripts/` is where that development tooling lives, `bump-version.js` and `derive-bump-level.js` among it.
 
 Prefer no dependencies. `wake-desktop` builds its Wake-on-LAN packet with `node:dgram` and probes with the system `ping` so it runs from a plugin cache directory with nothing installed. Add a dependency only when the standard library genuinely cannot do the job, as with `archiver` in `back-up-directories`, and give that skill an `INSTALL.md`.
 
@@ -67,4 +68,6 @@ The diagnostic shape matches `plugins/harness/skills/write-asd-ste100/scripts/st
 
 ## Versioning
 
-No `VERSION` file, no manual version bumps, no sync script. `plugins/harness/.codex-plugin/plugin.json` carries a static `version` field that is never incremented. The git commit history on `main` is the actual update signal.
+`plugins/harness/.codex-plugin/plugin.json` and `plugins/harness/.claude-plugin/plugin.json` both carry a `version` field, and the two are always kept equal. `scripts/bump-version.js` is the only thing that changes them: `--bump-major`, `--bump-minor`, or `--bump-patch`, where bumping a higher-priority value resets the lower-priority ones to 0. Never edit either `version` field by hand, except to recover from a `VERSION_MISMATCH` the script reports.
+
+A push to `main` runs `.github/workflows/bump-version.yml`, which bumps the patch version automatically. `scripts/derive-bump-level.js` scans every commit subject since the last `chore: bump version to X.Y.Z` commit, not just the newest one, so a `[bump:minor]` or `[bump:major]` tag survives a batched push. The workflow's own bump commits are excluded from re-triggering itself, and its push step retries against freshly-fetched state so a race with another push to `main` doesn't lose a bump.

@@ -1,0 +1,89 @@
+name: Bump version
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      level:
+        description: Bump level
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Skip runs triggered by the bot's own bump commit, so this doesn't loop. In practice a push
+    # made with the default GITHUB_TOKEN never re-triggers push events, so this is insurance for
+    # the day a PAT or GitHub App token replaces GITHUB_TOKEN (e.g. to satisfy branch protection).
+    # On workflow_dispatch there is no head_commit, GitHub coerces the null to '', startsWith('', ...)
+    # is false, and the job runs - that's intended, not an accident of this expression.
+    if: "${{ !startsWith(github.event.head_commit.message, 'chore: bump version to') }}"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Bump, commit, and push (retries on a race)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_LEVEL: ${{ inputs.level }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Each attempt re-fetches and hard-resets to origin/main before re-deriving the bump
+          # level and re-running the script, so a commit that lands on main between attempts (a
+          # direct push, or another run of this same workflow) is picked up rather than raced
+          # against with stale state. This reset is why it happens here and not in
+          # scripts/bump-version.js: it's destructive and only safe on a disposable CI checkout.
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git reset --hard origin/main
+
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              # A human picked this explicitly via the choice input; no derivation needed.
+              level="$DISPATCH_LEVEL"
+            else
+              # Derived from every commit subject since the last bump commit, not just the
+              # newest one, so a tag on an earlier commit in a batched push isn't dropped, and a
+              # run that only sees part of the picture (e.g. it got evicted from the concurrency
+              # queue) is caught up by whichever run executes next.
+              level="$(git log --format='%H%x09%s' HEAD | node scripts/derive-bump-level.js --from-stdin)"
+            fi
+
+            if [ "$level" = "none" ]; then
+              echo "nothing to bump since the last version-bump commit"
+              exit 0
+            fi
+
+            node scripts/bump-version.js "--bump-${level}" --json | tee /tmp/bump.json
+            next="$(jq -r .next /tmp/bump.json)"
+
+            git add plugins/harness/.codex-plugin/plugin.json plugins/harness/.claude-plugin/plugin.json
+            git commit -m "chore: bump version to ${next}"
+
+            if git push origin HEAD:main; then
+              echo "pushed chore: bump version to ${next} on attempt ${attempt}"
+              exit 0
+            fi
+
+            echo "push rejected on attempt ${attempt}, retrying with fresh state"
+          done
+
+          echo "::error::failed to push version bump after 3 attempts" >&2
+          exit 1
