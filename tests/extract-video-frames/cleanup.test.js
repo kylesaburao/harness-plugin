@@ -67,10 +67,11 @@ cp.spawn = function(command, args, options) {
       if (phase === 'publication') assert.equal(fs.readdirSync(path.join(root, 'clip-frames')).length, 2);
       const failedPaths = removals.filter(removal => denied.includes(removal.kind));
       if (json) {
-        const report = success ? JSON.parse(result.stdout)[phase === 'publication' ? 'result' : 'preflight'] : result.stderr ? JSON.parse(result.stderr).error : null;
+        const report = success ? (phase === 'publication' ? JSON.parse(result.stdout).result : JSON.parse(result.stdout)) : result.stderr ? JSON.parse(result.stderr).error : null;
         if (denied.length) assert.deepEqual(report.cleanupFailures, failedPaths.map(removal => ({path: removal.path, code: removal.kind === 'partial' ? 'EACCES' : 'EBUSY', condition: 'injected removal denial'})));
         else if (report) assert.equal(report.cleanupFailures, undefined);
         if (phase === 'publication') assert.equal(report.frames, 2);
+        if (phase === 'preflight success') assert.equal(report.status, 'ready');
         if (phase === 'preflight failure' || phase === 'extraction') {
           assert.equal(report.code, phase === 'extraction' ? 'extraction_failed' : 'input_decode_failed');
           assert.equal(report.task, phase === 'extraction' ? 'extraction' : 'decode-probe');

@@ -70,11 +70,13 @@ test('Claude CLI applies per-call profile, fresh input, tool restrictions, and n
   let r = f.invoke(['--native-absent', '--preflight']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(fs.existsSync(f.log), false);
-  assert.equal(JSON.parse(r.stdout).runtime_controls, 'unverified');
+  assert.equal(JSON.parse(r.stdout).status, 'ready');
+  assert.equal(JSON.parse(r.stdout).runtimeControls, 'unverified');
   assert.deepEqual(JSON.parse(r.stdout).checks, ['prompt_readable_nonempty', 'advisor_contract_readable_nonempty', 'cli_version_command_succeeded']);
   r = f.invoke(['--native-absent']);
   assert.equal(r.status, 0, r.stderr);
-  const result = JSON.parse(r.stdout);
+  assert.deepEqual(Object.keys(JSON.parse(r.stdout)), ['result']);
+  const result = JSON.parse(r.stdout).result;
   assert.equal(result.advice, 'Use pendingFiles.');
   assert.deepEqual(result.tools, []);
   const observed = JSON.parse(fs.readFileSync(f.log));
@@ -188,7 +190,7 @@ function noHostCalls(f) {
 }
 function noInspection(report) {
   assert.deepEqual(report.tools, []);
-  assert.equal(report.runtime_controls, 'unverified');
+  assert.equal(report.runtimeControls, 'unverified');
   assert.equal(Object.hasOwn(report, 'workspace'), false);
   assert.equal(Object.hasOwn(report, 'observations'), false);
 }
@@ -240,10 +242,10 @@ test('read-free help and preflight allocate no invocation directory', t => {
   const { copy } = isolatedAdapter(f);
   // A nonexistent TMPDIR makes any attempt to allocate a cwd fail.
   const extra = { TMPDIR: path.join(f.root, 'absent') };
-  for (const json of [false, true]) {
-    const r = f.run(['--help', ...(json ? ['--json'] : [])], { ...extra, PATH: '' }, copy);
+  for (const [flag, json] of [['--help', false], ['--help', true], ['-h', false]]) {
+    const r = f.run([flag, ...(json ? ['--json'] : [])], { ...extra, PATH: '' }, copy);
     assert.equal(r.status, 0, r.stderr);
-    const usage = json ? JSON.parse(r.stdout).usage : r.stdout;
+    const usage = json ? JSON.parse(r.stdout).result.usage : r.stdout;
     assert.match(usage, /One separate, tool-free Claude fallback consultation/);
     assert.doesNotMatch(usage, /--workspace|restricted-mode/);
     noHostCalls(f);
@@ -252,7 +254,7 @@ test('read-free help and preflight allocate no invocation directory', t => {
   assert.equal(r.status, 0, r.stderr);
   const report = JSON.parse(r.stdout);
   noInspection(report);
-  assert.equal(report.status, 'preflight_passed');
+  assert.equal(report.status, 'ready');
   assert.deepEqual(report.checks, ['prompt_readable_nonempty', 'advisor_contract_readable_nonempty', 'cli_version_command_succeeded']);
   assert.equal(fs.readFileSync(f.log + '.probes', 'utf8'), 'probe\n');
   assert.equal(fs.existsSync(f.log + '.calls'), false);
@@ -262,7 +264,7 @@ for (const version of ['floor-fixture', '2.1.247']) test(`retained route accepts
   const f = fixture(t);
   const r = f.invoke(['--native-absent'], { ADVISOR_TEST_VERSION: version });
   assert.equal(r.status, 0, r.stderr);
-  noInspection(JSON.parse(r.stdout));
+  noInspection(JSON.parse(r.stdout).result);
   assert.equal(fs.readFileSync(f.log + '.probes', 'utf8'), 'probe\n');
   assert.equal(fs.readFileSync(f.log + '.calls', 'utf8'), 'call\n');
 });
@@ -277,14 +279,14 @@ test('exact argv, unmodified input, plain report and environment isolation', t =
   const r = f.run(f.valid, { TMPDIR: f.root }, copy);
   assert.equal(r.status, 0, r.stderr);
   assert.ok(r.stdout.startsWith('Report:\n'));
-  const report = JSON.parse(r.stdout.slice('Report:\n'.length));
+  const report = JSON.parse(r.stdout.slice('Report:\n'.length)).result;
   noInspection(report);
   assert.equal(report.model, 'opus');
-  assert.equal(report.reasoning_effort, 'high');
+  assert.equal(report.reasoningEffort, 'high');
   assert.equal(report.mechanism, 'claude-cli');
-  assert.equal(report.context_mode, 'fresh');
+  assert.equal(report.contextMode, 'fresh');
   assert.equal(report.status, 'consulted');
-  assert.deepEqual(report.model_usage, { 'claude-opus-fixture': { inputTokens: 100, cacheReadInputTokens: 0 } });
+  assert.deepEqual(report.modelUsage, { 'claude-opus-fixture': { inputTokens: 100, cacheReadInputTokens: 0 } });
   assert.equal(report.usage, null);
   const call = JSON.parse(fs.readFileSync(f.log));
   assert.equal(call.input, prompt);
@@ -365,11 +367,11 @@ for (const response of [{ result: ' advice ' }, { result: 'advice', is_error: 0,
     const f = fixture(t);
     const r = f.invoke(['--native-absent'], { ADVISOR_TEST_RESPONSE: JSON.stringify(response) });
     assert.equal(r.status, 0, r.stderr);
-    const report = JSON.parse(r.stdout);
+    const report = JSON.parse(r.stdout).result;
     noInspection(report);
     assert.equal(report.advice, response.result);
     assert.deepEqual(report.usage, response.usage ?? null);
-    assert.deepEqual(report.model_usage, response.modelUsage ?? null);
+    assert.deepEqual(report.modelUsage, response.modelUsage ?? null);
   });
 }
 
@@ -403,7 +405,7 @@ test('success emission happens after cwd cleanup at the process boundary', t => 
   const f = fixture(t);
   const r = f.run([...f.valid, '--json'], { TMPDIR: f.root }, script, preload(f));
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(JSON.parse(r.stdout).status, 'consulted');
+  assert.equal(JSON.parse(r.stdout).result.status, 'consulted');
 });
 
 for (const runtimeFailure of [false, true]) test(`cleanup denial retains path and original failure (runtime=${runtimeFailure})`, t => {

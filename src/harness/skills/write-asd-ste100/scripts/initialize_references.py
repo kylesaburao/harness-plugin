@@ -56,7 +56,7 @@ class InitializationInputError(Exception):
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         raise InitializationInputError(
-            "invalid_arguments",
+            "usage_error",
             message,
             f"{initialization_command()} --help",
         )
@@ -402,7 +402,7 @@ def publish_validated(stage: Path, generated: Path, config_path: Path, result: d
                 raise
             if moved_existing:
                 record_cleanup(remove_owned(backup), result, None)
-        result["generated_data_location"] = str(generated)
+        result["generatedDataLocation"] = str(generated)
 
 
 def validate_import_source(source: Path, config_path: Path) -> Path:
@@ -485,16 +485,16 @@ def preflight(
         try:
             validate_bundle(generated, config_path)
             return {
-                "source_mode": "existing",
-                "generated_data_location": str(generated),
+                "sourceMode": "existing",
+                "generatedDataLocation": str(generated),
                 "source": config["source"],
             }
         except ReferencesError:
             pass
     source_mode, _ = prepare_source(pdf, import_from, config_path)
     return {
-        "source_mode": source_mode,
-        "generated_data_location": str(generated),
+        "sourceMode": source_mode,
+        "generatedDataLocation": str(generated),
         "source": config["source"],
     }
 
@@ -506,7 +506,7 @@ def report_error(code: str, condition: str, remedy: str, json_output: bool, **de
             "condition": condition,
             "remedy": remedy,
             **details,
-        }}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
+        }}, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return
     print(f"ERROR [{code}]: {condition}", file=sys.stderr)
     print(f"Remedy: {remedy}", file=sys.stderr)
@@ -545,16 +545,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2 if args.preflight else 1
     if args.preflight:
         if args.json:
-            print(json.dumps({"status": "ready", "preflight": True, **result}, ensure_ascii=False, indent=2, sort_keys=True))
+            print(json.dumps({"status": "ready", "preflight": True, **result}, ensure_ascii=False, sort_keys=True))
         else:
-            print(f"READY: initialization preflight passed ({result['source_mode']})")
-            print(f"Generated data: {result['generated_data_location']}")
+            print(f"READY: initialization preflight passed ({result['sourceMode']})")
+            print(f"Generated data: {result['generatedDataLocation']}")
         return 0
     if args.json:
-        print(json.dumps({"status": "ready", **result}, ensure_ascii=False, indent=2, sort_keys=True))
+        print(json.dumps({"result": result}, ensure_ascii=False, sort_keys=True))
         return 1 if result.get("cleanupFailures") else 0
-    print(f"READY: {result['generated_data_location']}")
-    print(f"Dictionary: {result['dictionary_rows']} rows, SHA-256 {result['dictionary_sha256']}")
+    print(f"READY: {result['generatedDataLocation']}")
+    print(f"Dictionary: {result['dictionaryRows']} rows, SHA-256 {result['dictionarySha256']}")
     if result.get("cleanupFailures"):
         print(json.dumps({"cleanupFailures": result["cleanupFailures"]}, ensure_ascii=False), file=sys.stderr)
         return 1

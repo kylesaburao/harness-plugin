@@ -25,7 +25,9 @@ Other initializer options (`--import-from` and `--force` are described below):
 
 - `--pdf PATH` uses a local copy of the pinned PDF instead of downloading it.
 - `--preflight` checks the source, configuration, and dependency without building.
-- `--json` makes the error or success report machine-readable.
+- `--json` makes the error or success report machine-readable: one stdout line, `{"result":{...}}`
+  after initialization or `{"status":"ready",...}` after `--preflight`, or one stderr line,
+  `{"error":{...}}`, on failure.
 
 The bundle is written under `~/.harness-plugin/write-asd-ste100/bundles/`, in a directory named for
 the SHA-256 of the tracked `references/source-config.json`. Codex and Claude Code share it, and a
@@ -53,7 +55,7 @@ manually removing a stale lock. A killed publisher can also leave an invalid bac
 beside the destination. This does not interrupt an already valid bundle.
 
 Publication failures preserve the primary diagnosis and add `rollbackFailure` when restoration
-fails. Cleanup failures report absolute retained paths in `cleanupFailures`. A ready report with
+fails. Cleanup failures report absolute retained paths in `cleanupFailures`. A successful report with
 `cleanupFailures` means the bundle is available but cleanup is incomplete, and exits with status 1.
 Relay these details without deleting retained paths or retrying initialization automatically.
 

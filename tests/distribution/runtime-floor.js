@@ -26,12 +26,12 @@ function qualifyWakeDesktop() {
   const configPath = path.join(home, '.harness-plugin/wake-desktop/config.json');
   success(manager, ['--help']);
   success(wake, ['--help']);
-  assert.deepEqual(JSON.parse(success(manager, ['list', '--json'])), { status: 'listed', configPath, targets: [] });
+  assert.deepEqual(JSON.parse(success(manager, ['list', '--json'])), { result: { status: 'listed', configPath, targets: [] } });
   const register = ['register', '--name', 'desktop', '--ip', '192.168.1.91', '--mac', '34:5a:60:37:3e:21', '--json'];
   assert.equal(JSON.parse(success(manager, [...register, '--preflight'])).status, 'ready');
   assert.equal(fs.existsSync(configPath), false);
-  assert.equal(JSON.parse(success(manager, register)).changed, true);
-  assert.deepEqual(JSON.parse(success(manager, ['list', '--json'])).targets, [{ name: 'desktop', ip: '192.168.1.91', mac: '34:5a:60:37:3e:21' }]);
+  assert.equal(JSON.parse(success(manager, register)).result.changed, true);
+  assert.deepEqual(JSON.parse(success(manager, ['list', '--json'])).result.targets, [{ name: 'desktop', ip: '192.168.1.91', mac: '34:5a:60:37:3e:21' }]);
   const unknown = run(wake, ['--target', 'absent', '--no-wait', '--preflight', '--json']);
   assert.equal(unknown.status, 2, unknown.stderr);
   assert.equal(JSON.parse(unknown.stderr).error.code, 'target_unknown');
@@ -89,23 +89,23 @@ try {
   qualifyWakeDesktop();
   const sampler = 'skills/random-sampler/scripts/sample.mjs';
   success(sampler, ['--help']);
-  assert.equal(JSON.parse(success(sampler, ['--preflight', '--json'])).preflight.status, 'passed');
+  assert.equal(JSON.parse(success(sampler, ['--preflight', '--json'])).status, 'ready');
   for (const [input, expected] of [
-    ['{"op":"integer","min":-2,"maxExclusive":-1}', '{"op":"integer","value":-2}\n'],
-    ['{"op":"choice","values":[9007199254740993]}', '{"op":"choice","index":0,"value":9007199254740993}\n'],
-    ['{"op":"sample","values":[1e999],"count":0}', '{"op":"sample","indices":[],"values":[]}\n'],
-    ['{"op":"shuffle","values":[1e999]}', '{"op":"shuffle","indices":[0],"values":[1e999]}\n'],
+    ['{"op":"integer","min":-2,"maxExclusive":-1}', '{"result":{"op":"integer","value":-2}}\n'],
+    ['{"op":"choice","values":[9007199254740993]}', '{"result":{"op":"choice","index":0,"value":9007199254740993}}\n'],
+    ['{"op":"sample","values":[1e999],"count":0}', '{"result":{"op":"sample","indices":[],"values":[]}}\n'],
+    ['{"op":"shuffle","values":[1e999]}', '{"result":{"op":"shuffle","indices":[0],"values":[1e999]}}\n'],
   ]) assert.equal(success(sampler, ['--json'], input), expected);
-  assert.equal(typeof JSON.parse(success(sampler, ['--json'], '{"op":"boolean"}')).value, 'boolean');
+  assert.equal(typeof JSON.parse(success(sampler, ['--json'], '{"op":"boolean"}')).result.value, 'boolean');
   const invalid = run(sampler, ['--json'], '{"op":"integer","min":9007199254740993,"maxExclusive":9007199254740994}');
   assert.equal(invalid.status, 2);
-  assert.equal(JSON.parse(invalid.stderr).error.code, 'INVALID_INTEGER_RANGE');
+  assert.equal(JSON.parse(invalid.stderr).error.code, 'invalid_integer_range');
   const config = 'skills/harness-advisor/scripts/advisor-config.js';
-  const initial = JSON.parse(success(config, ['resolve', '--host', 'codex', '--primary', 'sol', '--json']));
-  assert.equal(initial.route_source, 'built-in');
+  const initial = JSON.parse(success(config, ['resolve', '--host', 'codex', '--primary', 'sol', '--json'])).result;
+  assert.equal(initial.routeSource, 'built-in');
   success(config, ['set-route', '--host', 'codex', '--primary', 'sol', '--advisor', 'terra', '--reasoning-effort', 'medium', '--json']);
-  const selected = JSON.parse(success(config, ['resolve', '--host', 'codex', '--primary', 'sol', '--json']));
-  assert.equal(selected.advisor_family, 'terra'); assert.equal(selected.reasoning_effort, 'medium'); assert.equal(selected.route_source, 'user-route');
+  const selected = JSON.parse(success(config, ['resolve', '--host', 'codex', '--primary', 'sol', '--json'])).result;
+  assert.equal(selected.advisorFamily, 'terra'); assert.equal(selected.reasoningEffort, 'medium'); assert.equal(selected.routeSource, 'user-route');
   const bin = path.join(home, 'bin'); fs.mkdirSync(bin);
   const calls = path.join(home, 'claude-calls');
   fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}
@@ -139,19 +139,19 @@ else {
   assert.equal(fs.existsSync(calls), false);
   const args = ['--native-absent', '--model', 'opus', '--reasoning-effort', 'high', '--prompt', prompt, '--json'];
   const preflight = JSON.parse(success(adapter, [...args, '--preflight']));
-  assert.equal(preflight.status, 'preflight_passed');
+  assert.equal(preflight.status, 'ready');
   assert.ok(preflight.checks.includes('advisor_contract_readable_nonempty'));
-  const consulted = JSON.parse(success(adapter, args));
+  const consulted = JSON.parse(success(adapter, args)).result;
   assert.equal(consulted.status, 'consulted');
   assert.equal(consulted.advice, 'Floor advice.');
   assert.equal(consulted.usage, null);
-  assert.equal(consulted.model_usage, null);
+  assert.equal(consulted.modelUsage, null);
   for (const report of [preflight, consulted]) {
     assert.equal(report.model, 'opus');
-    assert.equal(report.reasoning_effort, 'high');
+    assert.equal(report.reasoningEffort, 'high');
     assert.equal(report.mechanism, 'claude-cli');
-    assert.equal(report.context_mode, 'fresh');
-    assert.equal(report.runtime_controls, 'unverified');
+    assert.equal(report.contextMode, 'fresh');
+    assert.equal(report.runtimeControls, 'unverified');
     assert.deepEqual(report.tools, []);
     assert.equal(Object.hasOwn(report, 'workspace'), false);
     assert.equal(Object.hasOwn(report, 'observations'), false);

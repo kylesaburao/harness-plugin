@@ -322,7 +322,7 @@ class PublicationTests(unittest.TestCase):
             return real_remove(path, *args, **kwargs)
         with mock.patch.object(init.shutil, "rmtree", remove):
             result = self.publish()
-        self.assertEqual(result["dictionary_rows"], 2)
+        self.assertEqual(result["dictionaryRows"], 2)
         validate_bundle(self.generated, self.config)
         retained = Path(result["cleanupFailures"][0]["path"])
         self.assertEqual((retained / "invalid").read_text(), "original invalid data")
@@ -342,9 +342,10 @@ class PublicationTests(unittest.TestCase):
                 status = init.main(["--json"] if json_output else [])
             self.assertEqual(status, 1)
             if json_output:
-                result = json.loads(stdout.getvalue())
-                self.assertEqual(result["status"], "ready")
-                self.assertEqual(result["dictionary_rows"], 2)
+                envelope = json.loads(stdout.getvalue())
+                self.assertEqual(list(envelope), ["result"])
+                result = envelope["result"]
+                self.assertEqual(result["dictionaryRows"], 2)
                 self.assertTrue(Path(result["cleanupFailures"][0]["path"]).exists())
             else:
                 self.assertIn("READY:", stdout.getvalue())

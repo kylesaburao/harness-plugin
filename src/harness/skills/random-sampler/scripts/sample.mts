@@ -26,9 +26,9 @@ const field = (error: unknown, key: string): unknown => error !== null && typeof
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const helpCommand = `node ${quote(fileURLToPath(import.meta.url))} --help`;
 const runtimeRemedy = 'Install supported Node.js with: brew install node@24 && export PATH="$(brew --prefix node@24)/bin:$PATH" (macOS), or nvm install 24 && nvm use 24 (Linux with nvm).';
-const usage = `Usage: sample.mjs [--help | --preflight] [--json]
+const usage = `Usage: sample.mjs [--help | -h | --preflight] [--json]
 
-Read one complete JSON object from stdin, then output one JSON object.
+Read one complete JSON object from stdin, then output {"result":{...}} holding:
   integer: {"op":"integer","min":1,"maxExclusive":101} -> op, value
     Safe integer endpoints, min inclusive, maxExclusive exclusive.
     Require 0 < maxExclusive - min < 2^48.
@@ -41,10 +41,10 @@ Read one complete JSON object from stdin, then output one JSON object.
     Uniform permutation. Empty and singleton arrays are valid.
 Only the fields shown are accepted. Array entries may be any JSON values.
 System cryptographic randomness via node:crypto randomInt. Node.js >=24.0.0.
---help prints usage without reading stdin or checking the runtime.
+--help or -h prints usage without reading stdin or checking the runtime.
 --preflight checks runtime/crypto without reading stdin or drawing randomness.
---json selects JSON stderr diagnostics and JSON preflight output.
-Normal success is always JSON. No automatic retries.
+--json selects JSON stderr diagnostics and the {"status":"ready",...} preflight line.
+Normal success is always one {"result":{...}} JSON line. No automatic retries.
 Exit: 0 success, 2 work not started (usage/input/runtime), 1 sampling failed.`;
 
 function reject(code: string, condition: string, correction: string, status = 2): never {
@@ -54,12 +54,13 @@ function invalid(code: string, condition: string, correction: string): never {
   reject(code, condition, `${correction} See: ${helpCommand}`);
 }
 function argumentsFor(argv: string[]) {
-  const unknown = argv.find(arg => !['--help', '--preflight', '--json'].includes(arg));
-  if (unknown !== undefined) invalid('UNKNOWN_ARGUMENT', `Unknown argument: ${unknown}`, 'Remove the unknown argument.');
-  if (new Set(argv).size !== argv.length || (argv.includes('--help') && argv.includes('--preflight'))) {
-    invalid('INVALID_ARGUMENTS', 'Duplicate flags or combined --help and --preflight.', 'Use each flag once and select at most one mode.');
+  const unknown = argv.find(arg => !['--help', '-h', '--preflight', '--json'].includes(arg));
+  if (unknown !== undefined) invalid('usage_error', `Unknown argument: ${unknown}`, 'Remove the unknown argument.');
+  const help = argv.includes('--help') || argv.includes('-h');
+  if (new Set(argv).size !== argv.length || (argv.includes('--help') && argv.includes('-h')) || (help && argv.includes('--preflight'))) {
+    invalid('usage_error', 'Duplicate flags or combined help and --preflight.', 'Use each flag once and select at most one mode.');
   }
-  return { help: argv.includes('--help'), preflight: argv.includes('--preflight') };
+  return { help, preflight: argv.includes('--preflight') };
 }
 async function prerequisites(): Promise<RandomIntSource> {
   if (Number(process.versions.node.split('.')[0]) < 24) {
@@ -70,7 +71,7 @@ async function prerequisites(): Promise<RandomIntSource> {
     if (typeof crypto.randomInt !== 'function') throw new Error('randomInt is not callable');
     return crypto;
   } catch (error) {
-    reject('CRYPTO_UNAVAILABLE', `System cryptographic randomness is unavailable: ${message(error)}`, runtimeRemedy);
+    reject('crypto_unavailable', `System cryptographic randomness is unavailable: ${message(error)}`, runtimeRemedy);
   }
 }
 // Preserve candidate numeric tokens, including values outside IEEE-754 precision/range.
@@ -98,40 +99,40 @@ async function requestFromStdin(): Promise<SamplingRequest> {
     process.stdin.setEncoding('utf8');
     for await (const chunk of process.stdin) text += chunk;
   } catch (error) {
-    invalid('INPUT_READ_FAILED', `Could not read stdin: ${message(error)}`, 'Provide the complete JSON request through readable stdin.');
+    invalid('input_read_failed', `Could not read stdin: ${message(error)}`, 'Provide the complete JSON request through readable stdin.');
   }
-  if (!text.trim()) invalid('EMPTY_INPUT', 'stdin contains no JSON request.', 'Send one JSON object through stdin.');
+  if (!text.trim()) invalid('empty_input', 'stdin contains no JSON request.', 'Send one JSON object through stdin.');
   let request: PreservedJsonValue;
   try {
     request = json.parse(text, typeof json.rawJSON === 'function'
       ? (key, value, context) => typeof value === 'number' ? json.rawJSON!(context!.source) : value
       : undefined);
   }
-  catch { invalid('INVALID_JSON', 'stdin is not one complete JSON value.', 'Correct the JSON syntax and send exactly one object.'); }
+  catch { invalid('invalid_json', 'stdin is not one complete JSON value.', 'Correct the JSON syntax and send exactly one object.'); }
   if (request === null || typeof request !== 'object' || Array.isArray(request) || typeof request.op !== 'string') {
-    invalid('INVALID_REQUEST', 'Expected an object with a string op.', 'Provide a JSON object with an op field.');
+    invalid('invalid_request', 'Expected an object with a string op.', 'Provide a JSON object with an op field.');
   }
   const fields: Record<string, string[]> = { integer: ['min', 'maxExclusive'], boolean: [], choice: ['values'], sample: ['values', 'count'], shuffle: ['values'] };
-  if (!Object.hasOwn(fields, request.op)) invalid('UNKNOWN_OPERATION', `Unknown operation: ${request.op}`, 'Use integer, boolean, choice, sample, or shuffle.');
+  if (!Object.hasOwn(fields, request.op)) invalid('unknown_operation', `Unknown operation: ${request.op}`, 'Use integer, boolean, choice, sample, or shuffle.');
   const operation = request.op;
   const unknown = Object.keys(request).find(key => key !== 'op' && !fields[operation]?.includes(key));
-  if (unknown !== undefined) invalid('INVALID_REQUEST', `Unknown field for ${request.op}: ${unknown}`, 'Remove or correct the unknown field.');
+  if (unknown !== undefined) invalid('invalid_request', `Unknown field for ${request.op}: ${unknown}`, 'Remove or correct the unknown field.');
   if (request.op === 'integer') {
     const min = exactInteger(request.min);
     const maxExclusive = exactInteger(request.maxExclusive);
     if (!Number.isSafeInteger(min) || !Number.isSafeInteger(maxExclusive)
       || !(maxExclusive - min > 0 && maxExclusive - min < 2 ** 48)) {
-      invalid('INVALID_INTEGER_RANGE', 'Expected safe integer endpoints with 0 < maxExclusive - min < 2^48.', 'Correct min and maxExclusive to satisfy these bounds.');
+      invalid('invalid_integer_range', 'Expected safe integer endpoints with 0 < maxExclusive - min < 2^48.', 'Correct min and maxExclusive to satisfy these bounds.');
     }
     return { op: 'integer', min, maxExclusive };
   } else if (request.op !== 'boolean') {
     if (!Array.isArray(request.values) || (request.op === 'choice' && request.values.length === 0)) {
-      invalid('INVALID_VALUES', 'Expected a values array, nonempty for choice.', 'Supply values as an array, with at least one entry for choice.');
+      invalid('invalid_values', 'Expected a values array, nonempty for choice.', 'Supply values as an array, with at least one entry for choice.');
     }
     if (request.op === 'sample') {
       const count = exactInteger(request.count);
       if (!Number.isSafeInteger(count) || count < 0 || count > request.values.length) {
-        invalid('INVALID_COUNT', 'Expected a safe integer count in 0..values.length.', 'Set count to an integer from zero through values.length.');
+        invalid('invalid_count', 'Expected a safe integer count in 0..values.length.', 'Set count to an integer from zero through values.length.');
       }
       return { op: 'sample', values: request.values, count };
     }
@@ -180,15 +181,15 @@ async function main() {
     const crypto = await prerequisites();
     if (mode.preflight) {
       process.stdout.write(argv.includes('--json')
-        ? JSON.stringify({ preflight: { status: 'passed', node: process.versions.node, crypto: 'available' } }) + '\n'
+        ? JSON.stringify({ status: 'ready', node: process.versions.node, crypto: 'available' }) + '\n'
         : `Preflight passed: Node.js ${process.versions.node}, crypto available.\n`);
       return;
     }
     // A request was read and validated before prerequisites on the normal path.
     let result;
     try { result = sample(request!, crypto); }
-    catch (error) { reject('SAMPLING_FAILED', `Sampling failed: ${message(error)}`, 'Stop and report this failure. Restore working system cryptographic randomness before a user-requested new draw.', 1); }
-    process.stdout.write(JSON.stringify(result) + '\n');
+    catch (error) { reject('sampling_failed', `Sampling failed: ${message(error)}`, 'Stop and report this failure. Restore working system cryptographic randomness before a user-requested new draw.', 1); }
+    process.stdout.write(JSON.stringify({ result }) + '\n');
   } catch (error) {
     const diagnostic = { code: field(error, 'code'), condition: message(error), remedy: field(error, 'remedy') };
     process.stderr.write(argv.includes('--json') ? JSON.stringify({ error: diagnostic }) + '\n'

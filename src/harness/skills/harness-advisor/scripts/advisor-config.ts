@@ -18,7 +18,7 @@ interface AdvisorDefault { host: AdvisorHost; advisor: ModelFamily; reasoning_ef
 interface AdvisorRoute extends Omit<AdvisorDefault, 'primary'> { primary: ModelFamily }
 interface AdvisorConfig { schema_version: 1; defaults: AdvisorDefault[]; routes: AdvisorRoute[] }
 type RouteSource = 'explicit-user' | 'user-route' | 'user-default' | 'built-in';
-interface ResolvedAdvisorRoute { host: AdvisorHost; primary_family: ModelFamily; advisor_family: ModelFamily; reasoning_effort: ReasoningEffort; route_source: RouteSource; consultation_mode: 'fresh-review' | 'escalation' }
+interface ResolvedAdvisorRoute { host: AdvisorHost; primaryFamily: ModelFamily; advisorFamily: ModelFamily; reasoningEffort: ReasoningEffort; routeSource: RouteSource; consultationMode: 'fresh-review' | 'escalation' }
 type Flags = { help?: false; json?: boolean; preflight?: boolean };
 type EffortOption = { 'reasoning-effort'?: ReasoningEffort | undefined };
 type AdvisorCommand = Flags & (
@@ -53,7 +53,8 @@ set-default --host HOST --advisor FAMILY [--reasoning-effort LEVEL]
 clear-default --host HOST
 set-route --host HOST --primary FAMILY --advisor FAMILY [--reasoning-effort LEVEL]
 remove-route --host HOST --primary FAMILY
-Every command accepts --help, --json, --preflight. Missing config uses built-ins.
+Every command accepts --help (-h), --json, --preflight. Missing config uses built-ins.
+--json prints one line: {"status":"ready",...} for --preflight, {"result":{...}} otherwise.
 resolve concerns Harness routing only, never Claude native detection.
 Families: ${FAMILIES.join(', ')}. Exact model IDs are invocation details.
 Exit: 0 success, 2 cannot start, 1 write failed.`;
@@ -109,14 +110,15 @@ export function resolve(config: unknown, host: unknown, primary: unknown, adviso
   else if ((selected = config.defaults.find(r => r.host === host))) source = 'user-default';
   else if (Object.hasOwn(BUILTIN[host], primary)) { selected = { advisor: BUILTIN[host][primary]! }; source = 'built-in'; }
   else fail('route_unresolved', `No Harness route for ${host}:${primary}`, `node ${quote(__filename)} set-default --host ${host} --advisor ${host === 'codex' ? 'astra' : 'opus'}`);
-  return { host, primary_family: primary, advisor_family: selected.advisor,
-    reasoning_effort: effort ?? selected.reasoning_effort ?? 'high', route_source: source,
-    consultation_mode: primary === selected.advisor ? 'fresh-review' : 'escalation' };
+  return { host, primaryFamily: primary, advisorFamily: selected.advisor,
+    reasoningEffort: effort ?? selected.reasoning_effort ?? 'high', routeSource: source,
+    consultationMode: primary === selected.advisor ? 'fresh-review' : 'escalation' };
 }
 export function parseArguments(argv: string[]): AdvisorCommand | HelpOptions {
   const options: ParsedOptions = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
+    if (arg === '-h') { options.help = true; continue; }
     if (['--help', '--json', '--preflight'].includes(arg)) { options[arg.slice(2)] = true; continue; }
     if (!arg.startsWith('--')) {
       if (options.command || !Object.hasOwn(COMMANDS, arg)) fail('usage_error', `Unknown command or argument: ${arg}`);
@@ -192,7 +194,7 @@ export function main(argv: string[]) {
   let writing = false;
   try {
     const options = parseArguments(argv);
-    if (options.help) { process.stdout.write(json ? `${JSON.stringify({ usage: USAGE })}\n` : `${USAGE}\n`); return 0; }
+    if (options.help) { process.stdout.write(json ? `${JSON.stringify({ result: { usage: USAGE } })}\n` : `${USAGE}\n`); return 0; }
     if (Number(process.versions.node.split('.')[0]) < 24) fail('node_version_unsupported', 'Node.js 24.0.0 or newer is required', 'nvm install 24');
     const file = configPath();
     let report: { config: AdvisorConfig; changed?: boolean } | ResolvedAdvisorRoute | undefined;
@@ -208,7 +210,8 @@ export function main(argv: string[]) {
       };
       report = options.preflight ? mutate() : withMutationLock(file, mutate);
     }
-    const output = { status: options.preflight ? 'preflight_passed' : 'ok', config_path: file, ...report };
+    const details = { configPath: file, ...report };
+    const output = options.preflight ? { status: 'ready', ...details } : { result: details };
     process.stdout.write(json ? `${JSON.stringify(output)}\n` : `Report:\n${JSON.stringify(output, null, 2)}\n`);
     return 0;
   } catch (error) {

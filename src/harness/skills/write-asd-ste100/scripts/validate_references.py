@@ -29,10 +29,12 @@ def main(argv: list[str] | None = None) -> int:
         report_reference_error(error, args.json)
         return 2
     if args.json:
-        print(json.dumps({"status": "ready", **result}, ensure_ascii=False, indent=2, sort_keys=True))
+        # Validation is the preflight, so --preflight reports flat readiness and a run reports a result.
+        envelope = {"status": "ready", **result} if args.preflight else {"result": result}
+        print(json.dumps(envelope, ensure_ascii=False, sort_keys=True))
     else:
-        print(f"READY: {result['generated_data_location']}")
-        print(f"Dictionary: {result['dictionary_rows']} rows, SHA-256 {result['dictionary_sha256']}")
+        print(f"READY: {result['generatedDataLocation']}")
+        print(f"Dictionary: {result['dictionaryRows']} rows, SHA-256 {result['dictionarySha256']}")
     return 0
 
 

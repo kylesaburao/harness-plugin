@@ -32,7 +32,7 @@ function failure(result, status, code) {
 test('no-wait skips ping and sends exact packets once per port using one prepared socket', () => {
   const result = cli('missing', ['--no-wait', '--json']);
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), { status: 'packet-sent', mac: base[1], ip: base[3], waitedSeconds: 0 });
+  assert.deepEqual(JSON.parse(result.stdout), { result: { status: 'packet-sent', mac: base[1], ip: base[3], waitedSeconds: 0 } });
   assert.deepEqual(result.trace.map(x => x.event), ['socket', 'broadcast', 'send', 'send', 'close']);
   const sends = result.trace.filter(x => x.event === 'send');
   assert.deepEqual(sends.map(x => x.port), [9, 7]);
@@ -52,7 +52,7 @@ test('preflight prepares and closes without sending, preserving ready fields', (
 test('sending precedes the first target probe, including an already reachable host', () => {
   const result = cli('ok', ['--json']);
   assert.equal(result.status, 0);
-  assert.equal(JSON.parse(result.stdout).status, 'online');
+  assert.equal(JSON.parse(result.stdout).result.status, 'online');
   assert.deepEqual(result.trace.map(x => x.event), ['ping', 'socket', 'broadcast', 'send', 'send', 'close', 'ping']);
   assert.equal(result.trace[0].host, '127.0.0.1');
 });
@@ -60,7 +60,7 @@ for (const scenario of ['fail-9', 'fail-7', 'duplicate', 'late-socket-error']) {
   test(`${scenario}: at least one successful send is sufficient`, () => {
     const result = cli(scenario, ['--no-wait', '--json']);
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(JSON.parse(result.stdout).status, 'packet-sent');
+    assert.equal(JSON.parse(result.stdout).result.status, 'packet-sent');
     assert.equal(result.trace.filter(x => x.event === 'close').length, 1);
   });
 }
@@ -97,7 +97,7 @@ test('expired real subprocess is killed and reaped without retrying', () => {
 test('an abnormal target ping exit keeps polling, but an abnormal loopback exit is fatal', () => {
   const result = cli('unresolved', ['--json']);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).status, 'online');
+  assert.equal(JSON.parse(result.stdout).result.status, 'online');
   assert.equal(result.trace.filter(x => x.event === 'ping' && x.host !== '127.0.0.1').length, 2);
   failure(cli('loopback-exit', ['--json']), 2, 'probe_unusable');
 });

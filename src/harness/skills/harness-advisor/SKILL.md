@@ -89,8 +89,10 @@ node "<SKILL_DIR>/scripts/advisor-config.js" resolve --host codex --primary sol 
 Use the current host and semantic primary family. Add `--advisor <family>` for a
 family explicitly requested for this call, and `--reasoning-effort <level>` for an
 explicit effort. Missing config uses built-ins without creating a file. Resolution
-returns family selectors, effort, `route_source`, and `consultation_mode`, not an
-exact callable model or native status.
+prints one line, `{"result":{...}}`, whose `result` holds `configPath`, `host`,
+`primaryFamily`, `advisorFamily`, `reasoningEffort`, `routeSource`, and
+`consultationMode`: family selectors and effort, not an exact callable model or
+native status.
 
 Precedence is explicit call family, exact user host/primary route, user host
 default, built-in route, otherwise unresolved. Built-ins use `high` reasoning:
@@ -133,18 +135,30 @@ lock; confirm no mutation is running before using the reported recovery command.
 `show` and `resolve` are read-only. Explicit preflight neither locks nor publishes
 and previews only the state it read.
 
-All bundled commands accept `--help`, `--json`, and `--preflight`. Dispatch the real
-command by default, without a preliminary preflight. Use preflight for an explicit
-readiness or preview request. Exit 2 means startup/usage failure; exit 1 means a
-write or consultation attempt failed. Relay the failing script's code, condition,
-and remedy verbatim. Relay success fields without rereading configuration or
+All bundled commands accept `--help` (or `-h`), `--json`, and `--preflight`. Dispatch
+the real command by default, without a preliminary preflight. Use preflight for an
+explicit readiness or preview request. Under `--json`, each command prints one stdout
+line: `{"status":"ready",...}` for a passed preflight, with the same fields flat
+beside `status`, or `{"result":{...}}` for a completed command. Configuration
+commands report `configPath` and `config`, and mutations also report `changed`;
+`config` echoes the saved file, so it keeps the file's own `schema_version` and
+`reasoning_effort` keys. Exit 2 means startup/usage failure; exit 1 means a write or
+consultation attempt failed. Failures print one stderr line,
+`{"error":{"code":"...","condition":"...","remedy":"..."}}`, with lowercase codes:
+`usage_error`, `node_version_unsupported`, `route_unresolved`, `config_invalid`,
+`config_version_unsupported`, `config_read_failed`, `config_busy`,
+`config_lock_failed`, `config_lock_cleanup_failed`, and `config_write_failed` for
+configuration, and `input_read_failed`, `input_invalid`,
+`advisor_contract_unavailable`, `claude_unavailable`, `advisor_execution_failed`,
+`advisor_response_invalid`, and `advisor_failed` for the Claude adapter. Relay the
+failing script's code, condition, and remedy verbatim. Relay success fields without rereading configuration or
 remeasuring artifacts. Invalid config is not permission to ignore saved routing.
 
 Resolve a callable model only at invocation: prefer a stable host alias, then
 current host metadata, then reliable current runtime knowledge. Never guess an
-exact ID or maintain a provider-ID registry. Record `host`, `primary_family`,
-`advisor_family`, `exact_advisor_model`, `reasoning_effort`, `route_source`, and
-`consultation_mode` in the task-local profile. Native/fallback selection is not
+exact ID or maintain a provider-ID registry. Record `host`, `primaryFamily`,
+`advisorFamily`, `exactAdvisorModel`, `reasoningEffort`, `routeSource`, and
+`consultationMode` in the task-local profile. Native/fallback selection is not
 part of that routing profile.
 
 The executor reads [host-codex.md](references/host-codex.md) or

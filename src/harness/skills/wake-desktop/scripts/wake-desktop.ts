@@ -360,7 +360,9 @@ function report(json: boolean, payload: WakeReport) {
     'packet-sent': `Magic packet sent to ${payload.mac}`,
     online: `${payload.ip} is now online (took ${payload.waitedSeconds} seconds)`,
   };
-  process.stdout.write(`${json ? JSON.stringify(payload) : lines[payload.status]}\n`);
+  // A passed preflight is flat {"status":"ready",...}; a completed wake is {"result":{...}}.
+  const envelope = payload.status === 'ready' ? payload : { result: payload };
+  process.stdout.write(`${json ? JSON.stringify(envelope) : lines[payload.status]}\n`);
 }
 
 async function main(argv: string[], env: NodeJS.ProcessEnv) {

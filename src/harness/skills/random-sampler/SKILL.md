@@ -23,7 +23,8 @@ Requires Node.js **24.0.0 or newer**, with built-in `node:crypto`. Execution is 
 with no npm dependencies, persistent state, files written, or network access.
 
 Invoke the bundled `scripts/sample.mjs` directly. Dispatch the normal operation without
-a separate probe. Reserve standalone `--preflight --json` for explicit readiness checks.
+a separate probe. Reserve standalone `--preflight --json` for explicit readiness checks;
+it prints one line, `{"status":"ready","node":"...","crypto":"available"}`.
 
 Serialize one complete JSON request through stdin, using a tool's direct stdin
 facility or a quoted heredoc whose delimiter is absent from the serialized payload.
@@ -36,7 +37,7 @@ node "<SKILL_DIR>/scripts/sample.mjs" --json <<'SAMPLER_REQUEST'
 SAMPLER_REQUEST
 ```
 
-| Operation | Request fields besides `op` | Result fields besides `op` |
+| Operation | Request fields besides `op` | `result` fields besides `op` |
 | --- | --- | --- |
 | `integer` | `min`, `maxExclusive` | `value` |
 | `boolean` | None | Boolean `value` |
@@ -57,7 +58,9 @@ A coin uses `choice` over `["heads","tails"]`. Draws without replacement use
 
 ## Accept the result
 
-Normal success is exactly one JSON object plus newline, always including `op`.
+Normal success, with or without `--json`, is exactly one line holding
+`{"result":{...}}`, and the `result` object always includes `op`, for example
+`{"result":{"op":"choice","index":1,"value":"tails"}}`.
 Accept the returned values and original indices exactly. Never remap, substitute,
 reorder, or preference-reroll after selection. Another draw requires task semantics
 or a user request. Do not silently replace the sampling space after the draw.
@@ -69,10 +72,14 @@ provide seeds, weighted sampling, floating-point sampling, or secret generation.
 
 Exit 0 means success. Exit 2 means work never started because of CLI, input, or
 runtime validation. Exit 1 means sampling failed after validation and preflight.
-`--json` selects stderr diagnostics shaped as
+`--json` selects one stderr line shaped as
 `{"error":{"code":"...","condition":"...","remedy":"..."}}`.
 Without it, stderr is `ERROR [code]: condition` followed by `Remedy: ...`.
+Codes are lowercase: `usage_error` for flags, `empty_input`, `input_read_failed`,
+`invalid_json`, `invalid_request`, `unknown_operation`, `invalid_integer_range`,
+`invalid_values`, and `invalid_count` for the request, `node_version_unsupported`
+and `crypto_unavailable` for the runtime (all exit 2), and `sampling_failed` (exit 1).
 Relay diagnostics verbatim and stop on failure. Never automatically retry or
 independently replace the diagnosis. If Node cannot start, report the actual command
 failure, not invented structured diagnostics or a random answer.
-`--help` prints human-readable usage without reading stdin or drawing randomness.
+`--help` or `-h` prints human-readable usage without reading stdin or drawing randomness.

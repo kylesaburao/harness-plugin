@@ -458,8 +458,9 @@ function resultPayload(state: PreparedExtraction, checks: StructuralChecks) {
   };
 }
 
-function emit(payload: ExtractionResult | PreflightResult, json: boolean, kind = 'result') {
-  if (json) { process.stdout.write(`${JSON.stringify({ [kind]: payload })}\n`); return; }
+function emit(payload: ExtractionResult | PreflightResult, json: boolean) {
+  // A passed preflight is flat {"status":"ready",...}; a completed run is {"result":{...}}.
+  if (json) { process.stdout.write(`${JSON.stringify(payload.status === 'ready' ? payload : { result: payload })}\n`); return; }
   if (payload.status === 'ready') {
     process.stdout.write(`READY: ${payload.platform.os}${payload.expectedFrames ? `, ${payload.expectedFrames} frames -> ${payload.outputDirectory}` : ''}\n`);
     emitCleanupFailures(payload.cleanupFailures);
@@ -632,7 +633,6 @@ async function main(argv: string[]) {
   let encoderDirectory = null;
   let payload: ExtractionResult | PreflightResult | undefined;
   let primaryError: unknown;
-  let kind = 'result';
   let cleanupFailures;
   const signalHandler = (signal: ExtractionSignal) => manager.interrupt(signal);
   for (const signal of (Object.keys(SIGNAL_EXIT) as ExtractionSignal[])) process.once(signal, signalHandler);
@@ -644,7 +644,6 @@ async function main(argv: string[]) {
     manager.assertRunning();
     if (options.preflight) {
       payload = preflightPayload(state);
-      kind = 'preflight';
     } else {
       if (!state.paths || !state.media) throw new DraftError('input_unusable', 'input preparation did not produce media', 'pass a readable video input');
       if (pathExists(state.paths.output)) throw new DraftError('output_collision', `output appeared during preflight: ${state.paths.output}`, 'move or remove the existing path, then run again');
@@ -681,7 +680,7 @@ async function main(argv: string[]) {
   }
   if (!payload) throw new Error('extraction completed without a report');
   if (cleanupFailures.length) payload.cleanupFailures = cleanupFailures;
-  emit(payload, json, kind);
+  emit(payload, json);
   return cleanupFailures.length ? EXIT.FAILED : EXIT.OK;
 }
 

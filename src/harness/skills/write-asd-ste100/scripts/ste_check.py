@@ -666,7 +666,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     merged = merge_layers(dictionary, software_entries, layers)
     if args.preflight:
-        print(json.dumps({"ready": True}) if args.json else "READY: references and terminology validated")
+        print(json.dumps({"status": "ready"}) if args.json else "READY: references and terminology validated")
         return 0
     report_unknown_terms = "asd" in layers
     results = [
@@ -678,7 +678,7 @@ def main(argv: list[str] | None = None) -> int:
     ]
     result = make_batch(args.mode, results)
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps({"result": result}, ensure_ascii=False))
     else:
         print_plain(result)
     return 1 if result["outcome"] == "fail" else 0

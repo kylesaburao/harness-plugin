@@ -118,7 +118,7 @@ test('Claude documents one evidence-only route and early removal diagnostics', (
   includes(claude, ['There is one evidence-only route', 'former `--workspace` argument is unsupported',
     'exit 2 before file reads, CLI probing, or inference', 'no replacement inspection flag',
     '--tools ""', '--disallowedTools "mcp__*"', 'strict empty MCP configuration',
-    'runtime_controls: "unverified"', 'There is no workspace or observed-read report',
+    'runtimeControls: "unverified"', 'There is no workspace or observed-read report',
     'Successful output is emitted only after invocation-directory cleanup succeeds']);
   assert.doesNotMatch(claude, /--tools Read,Glob,Grep|--restricted|--safe-mode|Optional workspace inspection/);
 });

@@ -40,7 +40,7 @@ Commands:
   remove   --name NAME
   list
 
-Every command accepts --help, --json, and --preflight.
+Every command accepts --help (or -h), --json, and --preflight.
 Value options also accept --flag=value. Names are exact and case-sensitive.
 Registering identical addresses, unchanged updates, and same-name renames are no-ops.
 --replace permits registration to replace existing addresses, preserving other properties.
@@ -56,8 +56,8 @@ function parseArguments(argv: string[]): ManageTargetCommand | HelpCommand {
   let command: CommandName | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     const argument = argv[i]!;
-    if (argument === '--help' || argument === '--json' || argument === '--preflight') {
-      if (argument === '--help') options.help = true;
+    if (argument === '--help' || argument === '-h' || argument === '--json' || argument === '--preflight') {
+      if (argument === '--help' || argument === '-h') options.help = true;
       else if (argument === '--json') options.json = true;
       else options.preflight = true;
       continue;
@@ -146,7 +146,8 @@ function applyOperation(config: WakeRegistry, options: ManageTargetCommand): Tar
 }
 
 function report(json: boolean, result: TargetReport) {
-  if (json) { process.stdout.write(`${JSON.stringify(result)}\n`); return; }
+  // A passed preflight is flat {"status":"ready",...}; a completed command is {"result":{...}}.
+  if (json) { process.stdout.write(`${JSON.stringify(result.status === 'ready' ? result : { result })}\n`); return; }
   const facts = Object.entries(result).filter(([key]) => key !== 'status')
     .map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n');
   process.stdout.write(`${result.status.toUpperCase()}\n${facts}\n`);

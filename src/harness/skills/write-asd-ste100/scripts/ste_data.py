@@ -252,9 +252,9 @@ def validate_bundle_rows(
     dictionary_digest = digests["dictionary.jsonl"]
     entries = _validate_dictionary(generated / "dictionary.jsonl", dictionary_digest, validation, config)
     identity = {
-        "generated_data_location": str(generated),
-        "dictionary_rows": len(entries),
-        "dictionary_sha256": dictionary_digest,
+        "generatedDataLocation": str(generated),
+        "dictionaryRows": len(entries),
+        "dictionarySha256": dictionary_digest,
         "source": expected_source,
     }
     return identity, entries
@@ -300,21 +300,21 @@ def report_reference_error(error: ReferencesError, json_output: bool = False) ->
     details = {
         "code": error.code,
         "condition": error.condition,
-        "generated_data_location": str(GENERATED.resolve()),
-        "initialization_command": f"python3 {(SKILL_ROOT / 'scripts' / 'initialize_references.py').resolve()}",
-        "requires_online_download": True,
-        "source_url": source_url,
-        "issue_identity": issue_identity,
+        "remedy": f"python3 {(SKILL_ROOT / 'scripts' / 'initialize_references.py').resolve()}",
+        "generatedDataLocation": str(GENERATED.resolve()),
+        "requiresOnlineDownload": True,
+        "sourceUrl": source_url,
+        "issueIdentity": issue_identity,
     }
     if json_output:
-        print(json.dumps({"error": details}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
+        print(json.dumps({"error": details}, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return
     print(f"ERROR [{details['code']}]: {details['condition']}", file=sys.stderr)
-    print(f"Generated data: {details['generated_data_location']}", file=sys.stderr)
-    print(f"Initialization command: {details['initialization_command']}", file=sys.stderr)
+    print(f"Generated data: {details['generatedDataLocation']}", file=sys.stderr)
+    print(f"Initialization command: {details['remedy']}", file=sys.stderr)
     print("Online download required: yes", file=sys.stderr)
-    print(f"Pinned source: {details['source_url']}", file=sys.stderr)
-    print(f"Source identity: {details['issue_identity']}", file=sys.stderr)
+    print(f"Pinned source: {details['sourceUrl']}", file=sys.stderr)
+    print(f"Source identity: {details['issueIdentity']}", file=sys.stderr)
 
 
 def plural(base: str) -> str:

@@ -22,9 +22,9 @@ test('built-ins and derived same-family modes', () => {
     ['codex', 'luna', 'astra'], ['codex', 'terra', 'astra'], ['codex', 'sol', 'astra'], ['codex', 'astra', 'astra'],
     ['claude', 'haiku', 'opus'], ['claude', 'sonnet', 'opus'], ['claude', 'opus', 'opus'], ['claude', 'fable', 'fable'],
   ]) {
-    assert.deepEqual(resolve(emptyConfig(), host, primary), { host, primary_family: primary,
-      advisor_family: advisor, reasoning_effort: 'high', route_source: 'built-in',
-      consultation_mode: primary === advisor ? 'fresh-review' : 'escalation' });
+    assert.deepEqual(resolve(emptyConfig(), host, primary), { host, primaryFamily: primary,
+      advisorFamily: advisor, reasoningEffort: 'high', routeSource: 'built-in',
+      consultationMode: primary === advisor ? 'fresh-review' : 'escalation' });
   }
 });
 
@@ -32,14 +32,14 @@ test('explicit family > exact route > host default > built-in, including deliber
   const config = { schema_version: 1,
     defaults: [{ host: 'codex', advisor: 'sol', reasoning_effort: 'medium' }, { host: 'claude', advisor: 'sonnet' }],
     routes: [{ host: 'codex', primary: 'sol', advisor: 'astra', reasoning_effort: 'max' }] };
-  assert.equal(resolve(config, 'codex', 'luna').route_source, 'user-default');
-  assert.equal(resolve(config, 'codex', 'luna').advisor_family, 'sol');
-  assert.equal(resolve(config, 'codex', 'sol').route_source, 'user-route');
-  assert.equal(resolve(config, 'codex', 'sol').reasoning_effort, 'max');
-  assert.equal(resolve(config, 'codex', 'sol', 'sol').route_source, 'explicit-user');
-  assert.equal(resolve(config, 'codex', 'sol', 'sol').consultation_mode, 'fresh-review');
-  assert.equal(resolve(config, 'codex', 'sol', 'sol').reasoning_effort, 'high');
-  assert.equal(resolve(config, 'claude', 'fable').advisor_family, 'sonnet');
+  assert.equal(resolve(config, 'codex', 'luna').routeSource, 'user-default');
+  assert.equal(resolve(config, 'codex', 'luna').advisorFamily, 'sol');
+  assert.equal(resolve(config, 'codex', 'sol').routeSource, 'user-route');
+  assert.equal(resolve(config, 'codex', 'sol').reasoningEffort, 'max');
+  assert.equal(resolve(config, 'codex', 'sol', 'sol').routeSource, 'explicit-user');
+  assert.equal(resolve(config, 'codex', 'sol', 'sol').consultationMode, 'fresh-review');
+  assert.equal(resolve(config, 'codex', 'sol', 'sol').reasoningEffort, 'high');
+  assert.equal(resolve(config, 'claude', 'fable').advisorFamily, 'sonnet');
   assert.throws(() => resolve(emptyConfig(), 'claude', 'sol'), { code: 'route_unresolved' });
 });
 
@@ -60,13 +60,18 @@ test('CLI mutations preserve unrelated routes, serialize sparsely, and avoid no-
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
   };
-  run('set-default', '--host', 'codex', '--advisor', 'sol', '--reasoning-effort', 'high', '--preflight');
+  const preview = run('set-default', '--host', 'codex', '--advisor', 'sol', '--reasoning-effort', 'high', '--preflight');
+  assert.equal(preview.status, 'ready');
+  assert.equal(preview.configPath, f.file);
+  assert.equal(preview.changed, true);
+  assert.deepEqual(preview.config.defaults, [{ host: 'codex', advisor: 'sol', reasoning_effort: 'high' }]);
   assert.equal(fs.existsSync(path.dirname(f.file)), false);
   run('set-default', '--host', 'codex', '--advisor', 'sol', '--reasoning-effort', 'high');
   run('set-route', '--host', 'claude', '--primary', 'sonnet', '--advisor', 'opus');
   const before = fs.readFileSync(f.file, 'utf8');
   const mtime = fs.statSync(f.file).mtimeMs;
-  assert.equal(run('set-default', '--host', 'codex', '--advisor', 'sol').changed, false);
+  assert.deepEqual(Object.keys(run('set-default', '--host', 'codex', '--advisor', 'sol')), ['result']);
+  assert.equal(run('set-default', '--host', 'codex', '--advisor', 'sol').result.changed, false);
   assert.equal(fs.statSync(f.file).mtimeMs, mtime);
   run('resolve', '--host', 'codex', '--primary', 'sol', '--advisor', 'astra');
   assert.equal(fs.readFileSync(f.file, 'utf8'), before);
@@ -138,7 +143,7 @@ test('separate CLI writers fail explicitly on contention and preserve routes aft
   first.child.stdin.end('x');
   const saved = await first.done;
   assert.equal(saved.status, 0, saved.stderr);
-  assert.equal(JSON.parse(saved.stdout).changed, true);
+  assert.equal(JSON.parse(saved.stdout).result.changed, true);
   assert.equal(fs.existsSync(f.file + '.lock'), false);
   assert.equal(f.invoke(...args).status, 0);
   const config = JSON.parse(fs.readFileSync(f.file));
@@ -146,7 +151,7 @@ test('separate CLI writers fail explicitly on contention and preserve routes aft
     { host: 'claude', primary: 'sonnet', advisor: 'opus' },
     { host: 'codex', primary: 'sol', advisor: 'sol' },
   ]);
-  assert.equal(JSON.parse(f.invoke('resolve', '--host', 'codex', '--primary', 'sol').stdout).advisor_family, 'sol');
+  assert.equal(JSON.parse(f.invoke('resolve', '--host', 'codex', '--primary', 'sol').stdout).result.advisorFamily, 'sol');
 });
 
 test('interrupted writer leaves an actionable lock and never permits silent stealing', { timeout: 10000 }, async t => {

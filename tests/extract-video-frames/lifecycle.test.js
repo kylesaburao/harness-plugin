@@ -434,7 +434,8 @@ for (const [transfer, dynamicRange] of [['smpte2084', 'hdr-pq'], ['arib-std-b67'
     const script = require.resolve(require('../helpers/plugin-paths').artifactPath('skills/extract-video-frames/scripts/extract-video-frames.js'));
     const preflight = spawnSync(process.execPath, [script, '--preflight', '--json', input], { encoding: 'utf8', env });
     assert.equal(preflight.status, 0, preflight.stderr);
-    assert.equal(JSON.parse(preflight.stdout).preflight.dynamicRange, dynamicRange);
+    assert.equal(JSON.parse(preflight.stdout).status, 'ready');
+    assert.equal(JSON.parse(preflight.stdout).dynamicRange, dynamicRange);
     const [key] = fs.readdirSync(cacheRoot);
     assert.deepEqual(fs.readdirSync(cacheRoot), [key]);
     assert.deepEqual(fs.readdirSync(path.join(cacheRoot, key)).sort(), ['manifest.json', 'tiff-to-heic']);

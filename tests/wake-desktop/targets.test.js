@@ -23,7 +23,12 @@ function sandbox(t) {
     assert.ifError(result.error);
     const trace = JSON.parse(fs.readFileSync(tracePath, 'utf8'));
     if (!wake) assert.deepEqual(trace, [], 'management must not use networking');
-    return { ...result, trace, body: json ? JSON.parse(result.status === 0 ? result.stdout : result.stderr) : undefined };
+    if (!json) return { ...result, trace, body: undefined };
+    const parsed = JSON.parse(result.status === 0 ? result.stdout : result.stderr);
+    // Success is one line: flat {"status":"ready",...} for preflight, {"result":{...}} otherwise.
+    if (result.status === 0) assert.equal(result.stdout, `${JSON.stringify(parsed)}\n`);
+    if (result.status === 0 && parsed.status !== 'ready') assert.deepEqual(Object.keys(parsed), ['result']);
+    return { ...result, trace, body: result.status === 0 && parsed.status !== 'ready' ? parsed.result : parsed };
   }
   function write(config) {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
@@ -132,9 +137,11 @@ test('management help and preflight do not write or network and need no wake pla
   fail(s.run(['rename', '--name=absent', '--new-name=new', '--preflight']), 'target_unknown');
   s.write('{');
   for (const command of ['register', 'update', 'rename', 'remove', 'list']) {
-    const result = s.run([command, '--help'], { json: false, scenario: 'old-node' });
-    assert.equal(result.status, 0);
-    assert.match(result.stdout, /Usage:/);
+    for (const flag of ['--help', '-h']) {
+      const result = s.run([command, flag], { json: false, scenario: 'old-node' });
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /Usage:/);
+    }
   }
   const result = s.run(['list'], { json: false });
   assert.equal(result.status, 2);

@@ -37,6 +37,15 @@ from ste_data import (
 )
 
 
+def run_result(stdout: str | bytes) -> dict:
+    """Return the payload of one {"result": {...}} stdout line, the --json run envelope."""
+    text = stdout.decode() if isinstance(stdout, bytes) else stdout
+    assert text.count("\n") == 1 and text.endswith("\n"), text
+    envelope = json.loads(text)
+    assert list(envelope) == ["result"], envelope
+    return envelope["result"]
+
+
 def json_bytes(value: dict) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
 
@@ -470,7 +479,7 @@ class ReadinessValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config, generated, _ = make_bundle(Path(directory))
             result = validate_bundle(generated, config)
-        self.assertEqual(result["dictionary_rows"], 2)
+        self.assertEqual(result["dictionaryRows"], 2)
 
     def test_missing_directory_and_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -558,7 +567,7 @@ class ReadinessValidationTests(unittest.TestCase):
             self.assertEqual(len(hashed), len(set(hashed)))
             self.assertIn((generated / "dictionary.jsonl").resolve(), hashed)
             self.assertEqual(identity, validate_bundle(generated, config))
-            self.assertEqual(identity["dictionary_rows"], len(rows))
+            self.assertEqual(identity["dictionaryRows"], len(rows))
             dictionary_path = generated / "dictionary.jsonl"
             self.assertEqual(rows, list(read_jsonl(dictionary_path)))
             self.assertEqual(load_dictionary(rows=rows), load_dictionary(dictionary_path))
@@ -577,7 +586,7 @@ class ReadinessValidationTests(unittest.TestCase):
                 ste_data.ensure_references_loaded()
         self.assertEqual(caught.exception.code, "references_invalid")
         self.assertIn("reference validation could not complete: disk gone", caught.exception.condition)
-        identity = {"dictionary_rows": 1}
+        identity = {"dictionaryRows": 1}
         with mock.patch.object(ste_data, "validate_bundle_rows", return_value=(identity, [{}])):
             self.assertIs(ste_data.ensure_references_ready(), identity)
 
@@ -682,7 +691,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                 self.assertTrue(all(error[key] for key in ("code", "condition", "remedy")))
                 ready = subprocess.run([sys.executable, str(scripts / name), "--preflight", "--json"], input="unused", capture_output=True, text=True)
                 self.assertEqual(ready.returncode, 0, ready.stderr)
-                self.assertEqual(json.loads(ready.stdout), {"ready": True})
+                self.assertEqual(ready.stdout, '{"status": "ready"}\n')
 
     def test_validate_references_cli_contract(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -691,20 +700,21 @@ class RuntimeEntryPointTests(unittest.TestCase):
             invalid = subprocess.run([sys.executable, script, "--json", "--bogus"], capture_output=True, text=True)
             self.assertEqual(invalid.returncode, 2)
             self.assertEqual(invalid.stdout, "")
+            self.assertEqual(invalid.stderr.count("\n"), 1, invalid.stderr)
             error = json.loads(invalid.stderr)["error"]
-            self.assertEqual(error["code"], "invalid_arguments")
+            self.assertEqual(error["code"], "usage_error")
             self.assertIn("--bogus", error["condition"])
             self.assertIn("validate_references.py --help", error["remedy"])
             plain = subprocess.run([sys.executable, script, "--bogus"], capture_output=True, text=True)
             self.assertEqual(plain.returncode, 2)
-            self.assertTrue(plain.stderr.startswith("ERROR [invalid_arguments]: "), plain.stderr)
+            self.assertTrue(plain.stderr.startswith("ERROR [usage_error]: "), plain.stderr)
             self.assertNotIn("usage:", plain.stderr)
             normal = subprocess.run([sys.executable, script, "--json"], capture_output=True, text=True)
             self.assertEqual(normal.returncode, 0, normal.stderr)
             ready = subprocess.run([sys.executable, script, "--preflight", "--json"], capture_output=True, text=True)
             self.assertEqual(ready.returncode, 0, ready.stderr)
-            self.assertEqual(json.loads(ready.stdout), json.loads(normal.stdout))
-            self.assertEqual(json.loads(ready.stdout)["status"], "ready")
+            self.assertEqual(json.loads(ready.stdout), {"status": "ready", **run_result(normal.stdout)})
+            self.assertEqual(ready.stdout.count("\n"), 1, ready.stdout)
             usage = subprocess.run([sys.executable, script, "--help"], capture_output=True, text=True)
             self.assertEqual(usage.returncode, 0)
             self.assertIn("--preflight", usage.stdout)
@@ -742,11 +752,11 @@ class RuntimeEntryPointTests(unittest.TestCase):
                     payload = json.loads(result.stderr)
                     error = payload["error"]
                     self.assertEqual(error["code"], "references_missing")
-                    self.assertTrue(error["requires_online_download"])
+                    self.assertTrue(error["requiresOnlineDownload"])
                     self.assertIn("generated directory does not exist", error["condition"])
-                    self.assertTrue(Path(error["generated_data_location"]).is_absolute())
-                    self.assertIn("initialize_references.py", error["initialization_command"])
-                    self.assertIn("ASD-STE100", error["issue_identity"])
+                    self.assertTrue(Path(error["generatedDataLocation"]).is_absolute())
+                    self.assertIn("initialize_references.py", error["remedy"])
+                    self.assertIn("ASD-STE100", error["issueIdentity"])
 
     def test_missing_source_config_uses_a_structured_diagnostic(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -807,7 +817,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
             document.write_text("Use.", encoding="utf-8")
             result = self.run_public(scripts, document, "ste_check.py", json_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        payload = json.loads(result.stdout)
+        payload = run_result(result.stdout)
         self.assertEqual(payload["outcome"], "pass")
         self.assertEqual(payload["summary"], {
             "files": 1,
@@ -841,7 +851,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                     document.write_text(text, encoding="utf-8")
                     result = self.run_public(scripts, document, "ste_check.py", json_output=True)
                     self.assertEqual(result.returncode, status, result.stderr)
-                    self.assertEqual(json.loads(result.stdout)["files"][0]["outcome"], outcome)
+                    self.assertEqual(run_result(result.stdout)["files"][0]["outcome"], outcome)
 
     def test_stdin_is_strict_utf8_independent_of_inherited_encoding(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -860,8 +870,8 @@ class RuntimeEntryPointTests(unittest.TestCase):
                                     env={**os.environ, "PYTHONIOENCODING": "latin-1"})
             document.write_text(text, encoding="utf-8")
             expected = subprocess.run([sys.executable, str(scripts / "ste_check.py"), str(document), "--mode", "procedural", "--json"], capture_output=True)
-            actual_file = json.loads(result.stdout)["files"][0]
-            expected_file = json.loads(expected.stdout)["files"][0]
+            actual_file = run_result(result.stdout)["files"][0]
+            expected_file = run_result(expected.stdout)["files"][0]
             actual_file["path"] = expected_file["path"]
             self.assertEqual(actual_file, expected_file)
 
@@ -879,7 +889,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                 text=True, capture_output=True, check=False,
             )
         self.assertEqual(result.returncode, 1, result.stderr)
-        payload = json.loads(result.stdout)
+        payload = run_result(result.stdout)
         self.assertEqual([item["path"] for item in payload["files"]], [str(second), str(first), str(third)])
         self.assertEqual([item["outcome"] for item in payload["files"]], ["review", "pass", "fail"])
         self.assertEqual(payload["summary"], {
@@ -906,7 +916,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                 text=True, capture_output=True, check=False,
             )
         self.assertEqual(result.returncode, 0, result.stderr)
-        payload = json.loads(result.stdout)
+        payload = run_result(result.stdout)
         self.assertEqual(payload["summary"]["unique_unknown_terms"], 1)
         self.assertEqual(
             [item["findings"][0]["source"]["start"]["offset"] for item in payload["files"]], [0, 0]
@@ -950,7 +960,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
         self.assertEqual(invalid_result.returncode, 2)
         self.assertEqual(json.loads(invalid_result.stderr)["error"]["inputs"][0]["condition"], "invalid UTF-8")
         self.assertEqual(stdin_result.returncode, 2)
-        self.assertEqual(json.loads(stdin_result.stderr)["error"]["code"], "invalid_arguments")
+        self.assertEqual(json.loads(stdin_result.stderr)["error"]["code"], "usage_error")
 
     def test_invalid_arguments_and_terms_use_structured_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -967,7 +977,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                 text=True, capture_output=True, check=False,
             )
         self.assertEqual(argument_result.returncode, 2)
-        self.assertEqual(json.loads(argument_result.stderr)["error"]["code"], "invalid_arguments")
+        self.assertEqual(json.loads(argument_result.stderr)["error"]["code"], "usage_error")
         self.assertEqual(terms_result.returncode, 2)
         self.assertEqual(json.loads(terms_result.stderr)["error"]["code"], "terms_invalid")
 
@@ -1023,10 +1033,10 @@ class RuntimeEntryPointTests(unittest.TestCase):
         self.assertEqual(default_result.returncode, 0, default_result.stderr)
         self.assertEqual(software_only.returncode, 0, software_only.stderr)
         default_categories = {
-            item["category"] for item in json.loads(default_result.stdout)["files"][0]["findings"]
+            item["category"] for item in run_result(default_result.stdout)["files"][0]["findings"]
         }
         software_categories = {
-            item["category"] for item in json.loads(software_only.stdout)["files"][0]["findings"]
+            item["category"] for item in run_result(software_only.stdout)["files"][0]["findings"]
         }
         self.assertIn("unknown_term", default_categories)
         self.assertIn("overused_term", default_categories)
@@ -1042,7 +1052,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                 text=True, capture_output=True, check=False,
             )
         self.assertEqual(result.returncode, 2)
-        self.assertEqual(json.loads(result.stderr)["error"]["code"], "invalid_arguments")
+        self.assertEqual(json.loads(result.stderr)["error"]["code"], "usage_error")
 
     def test_ste_lookup_resolves_a_software_terminology_entry_as_json(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1052,7 +1062,7 @@ class RuntimeEntryPointTests(unittest.TestCase):
                 text=True, capture_output=True, check=False,
             )
         self.assertEqual(result.returncode, 0, result.stderr)
-        payload = json.loads(result.stdout)
+        payload = run_result(result.stdout)
         self.assertEqual(len(payload["matches"]), 1)
         match = payload["matches"][0]
         self.assertEqual(match["source"], "software_terms")
@@ -1247,9 +1257,9 @@ class InitializerRecoveryTests(unittest.TestCase):
             initialize_references, "run_builder", self.fake_build
         ):
             result = initialize_references.initialize(None, True, self.config, self.generated)
-        self.assertEqual(result["dictionary_rows"], 2)
+        self.assertEqual(result["dictionaryRows"], 2)
         self.assertFalse((self.generated / "sentinel.txt").exists())
-        self.assertEqual(validate_bundle(self.generated, self.config)["dictionary_rows"], 2)
+        self.assertEqual(validate_bundle(self.generated, self.config)["dictionaryRows"], 2)
 
     def test_missing_pypdfium2_fails_before_running_the_extractor(self):
         self.dependency_check.side_effect = initialize_references.InitializationError(
@@ -1276,7 +1286,7 @@ class InitializerRecoveryTests(unittest.TestCase):
         download.assert_not_called()
         extract.assert_not_called()
         build.assert_not_called()
-        self.assertEqual(result["dictionary_rows"], 2)
+        self.assertEqual(result["dictionaryRows"], 2)
         self.assertEqual(before, {file.name: (file.read_bytes(), file.stat().st_mtime_ns) for file in self.generated.iterdir()})
 
     def test_local_pdf_does_not_download(self):
@@ -1304,8 +1314,8 @@ class InitializerRecoveryTests(unittest.TestCase):
         download.assert_not_called()
         extract.assert_not_called()
         build.assert_not_called()
-        self.assertEqual(result["dictionary_rows"], 2)
-        self.assertEqual(validate_bundle(self.generated, self.config)["dictionary_rows"], 2)
+        self.assertEqual(result["dictionaryRows"], 2)
+        self.assertEqual(validate_bundle(self.generated, self.config)["dictionaryRows"], 2)
         self.assertFalse((self.generated / "unrelated.txt").exists())
 
     def test_invalid_import_leaves_the_existing_bundle_unchanged(self):
@@ -1328,7 +1338,7 @@ class InitializerRecoveryTests(unittest.TestCase):
             )
         self.assertEqual(status, 2)
         error = json.loads(stderr.getvalue())["error"]
-        self.assertEqual(error["code"], "invalid_arguments")
+        self.assertEqual(error["code"], "usage_error")
         self.assertIn("not allowed", error["condition"])
 
     def test_invalid_import_reports_that_work_did_not_start(self):
@@ -1355,14 +1365,14 @@ class InitializerRecoveryTests(unittest.TestCase):
             None, legacy_generated, self.config, self.generated
         )
 
-        self.assertEqual(result["source_mode"], "import")
-        self.assertEqual(result["generated_data_location"], str(self.generated.resolve()))
+        self.assertEqual(result["sourceMode"], "import")
+        self.assertEqual(result["generatedDataLocation"], str(self.generated.resolve()))
         self.assert_existing_survives()
 
     def test_json_preflight_does_not_dispatch_initialization(self):
         result = {
-            "source_mode": "download",
-            "generated_data_location": str(self.generated),
+            "sourceMode": "download",
+            "generatedDataLocation": str(self.generated),
             "source": {"issue": 9},
         }
         with mock.patch.object(initialize_references, "preflight", return_value=result), mock.patch.object(
@@ -1378,9 +1388,9 @@ class InitializerRecoveryTests(unittest.TestCase):
 
     def test_json_success_reports_the_installed_artifact(self):
         result = {
-            "generated_data_location": str(self.generated),
-            "dictionary_rows": 2,
-            "dictionary_sha256": "a" * 64,
+            "generatedDataLocation": str(self.generated),
+            "dictionaryRows": 2,
+            "dictionarySha256": "a" * 64,
             "source": {"issue": 9},
         }
         with mock.patch.object(initialize_references, "initialize", return_value=result), mock.patch(
@@ -1388,7 +1398,7 @@ class InitializerRecoveryTests(unittest.TestCase):
         ) as stdout:
             status = initialize_references.main(["--json"])
         self.assertEqual(status, 0)
-        self.assertEqual(json.loads(stdout.getvalue()), {"status": "ready", **result})
+        self.assertEqual(stdout.getvalue(), json.dumps({"result": result}, ensure_ascii=False, sort_keys=True) + "\n")
 
     def test_child_progress_never_contaminates_success_stdout(self):
         completed = subprocess.CompletedProcess(["builder"], 0, stdout="building\n", stderr="")
@@ -1410,7 +1420,7 @@ class InitializerRecoveryTests(unittest.TestCase):
             None, None, self.config, self.generated
         )
 
-        self.assertEqual(result["source_mode"], "existing")
+        self.assertEqual(result["sourceMode"], "existing")
         self.dependency_check.assert_not_called()
 
     def test_preflight_and_real_run_match_for_invalid_source_config(self):

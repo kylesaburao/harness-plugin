@@ -128,7 +128,13 @@ use `{"error":{"code","condition","remedy"}}`. A capability preflight can includ
 `cleanupFailures: [{path, code, condition}]`, preserving the primary error and exit
 status. Plain output includes the same paths and filesystem codes. A published artifact
 remains a successful `result` with `cleanupFailures` and exit `1`. A passed readiness
-check with cleanup failure remains `preflight` with `cleanupFailures` and exit `1`.
+check with cleanup failure remains a `"status":"ready"` report with `cleanupFailures`
+and exit `1`.
+
+A passed JSON preflight prints one flat line, `{"status":"ready",...}`, with the
+platform and resolved commands and, for an input-aware preflight, the input paths,
+output directory, dynamic range, output format and depth, dimensions, expected frame
+count, requested window, and first and last PTS beside `status`.
 
 A successful JSON run returns `{"result": ...}` with supplied and resolved input paths,
 selected stream, output directory, source and output color properties, PNG or HEIC

@@ -48,7 +48,7 @@ def main(argv=None) -> int:
         return 2
     dictionary = merge_layers(load_dictionary(), software_entries, ("asd", "software"))
     if args.preflight:
-        print(json.dumps({"ready": True}) if args.json else "READY: references and terminology validated")
+        print(json.dumps({"status": "ready"}) if args.json else "READY: references and terminology validated")
         return 0
     key = args.word.casefold()
     matches = list(dictionary.by_headword.get(key, []))
@@ -64,7 +64,7 @@ def main(argv=None) -> int:
     }
     matches = list(unique.values())
     if args.json:
-        print(json.dumps({"query": args.word, "matches": matches}, ensure_ascii=False, indent=2, sort_keys=True))
+        print(json.dumps({"result": {"query": args.word, "matches": matches}}, ensure_ascii=False, sort_keys=True))
     elif not matches:
         print(f"No dictionary or software-terminology entry for {args.word!r}.")
     else:

@@ -37,7 +37,7 @@ test('isolated artifact runs beneath an ESM parent and installs backup dependenc
   }
   const sampler = run('skills/random-sampler/scripts/sample.mjs', ['--json'], '{"op":"integer","min":0,"maxExclusive":1}');
   assert.equal(sampler.status, 0, sampler.stderr);
-  assert.equal(JSON.parse(sampler.stdout).value, 0);
+  assert.equal(JSON.parse(sampler.stdout).result.value, 0);
   const preflight = run('skills/random-sampler/scripts/sample.mjs', ['--preflight', '--json']);
   assert.equal(preflight.status, 0, preflight.stderr);
   const backup = 'skills/back-up-directories/scripts/backup.js';
@@ -66,7 +66,8 @@ process.stdout.write('test-cli');
   const advisor = run('skills/harness-advisor/scripts/claude-advisor.js', ['--native-absent', '--model', 'opus', '--reasoning-effort', 'high', '--prompt', prompt, '--preflight', '--json']);
   assert.equal(advisor.status, 0, advisor.stderr);
   assert.ok(JSON.parse(advisor.stdout).checks.includes('advisor_contract_readable_nonempty'));
-  assert.equal(JSON.parse(advisor.stdout).runtime_controls, 'unverified');
+  assert.equal(JSON.parse(advisor.stdout).status, 'ready');
+  assert.equal(JSON.parse(advisor.stdout).runtimeControls, 'unverified');
   assert.deepEqual(JSON.parse(advisor.stdout).tools, []);
   assert.equal(Object.hasOwn(JSON.parse(advisor.stdout), 'workspace'), false);
   assert.equal(Object.hasOwn(JSON.parse(advisor.stdout), 'observations'), false);
