@@ -36,6 +36,55 @@ function qualifyWakeDesktop() {
   assert.equal(unknown.status, 2, unknown.stderr);
   assert.equal(JSON.parse(unknown.stderr).error.code, 'target_unknown');
 }
+// One-line JSON error envelope with empty stdout: the unified CLI contract.
+function failure(result, status, code) {
+  assert.equal(result.status, status, result.stderr);
+  assert.equal(result.stdout, '');
+  assert.equal(result.stderr.endsWith('\n'), true);
+  assert.equal(result.stderr.trimEnd().includes('\n'), false, result.stderr);
+  const { error } = JSON.parse(result.stderr);
+  assert.equal(error.code, code, result.stderr);
+  for (const field of ['condition', 'remedy']) assert.equal(typeof error[field], 'string');
+  return error;
+}
+// An isolated PATH that holds no media tools, so every runner reports the same failures.
+function withoutTools() {
+  const bin = path.join(home, 'empty-bin');
+  fs.mkdirSync(bin, { recursive: true });
+  return { ...env, PATH: bin };
+}
+function runWith(environment, relative, args) {
+  const result = spawnSync(process.execPath, [path.join(plugin, relative), ...args], { cwd: home, env: environment, encoding: 'utf8', timeout: 15000 });
+  assert.ifError(result.error);
+  return result;
+}
+function qualifyGif() {
+  // Reaching preflight means the Node floor check passed; no conversion starts.
+  for (const [script, backend] of [['mov-to-gif-gifski.js', 'gifski'], ['mov-to-gif.js', 'gifsicle']]) {
+    const relative = `skills/create-discord-emoji-gif/scripts/node/${script}`;
+    assert.match(success(relative, ['--help']), /^Usage: /);
+    failure(run(relative, ['--bogus', '--json']), 2, 'usage_error');
+    const missing = failure(runWith(withoutTools(), relative, ['--preflight', '--json']), 2, 'preflight_failed');
+    for (const entry of missing.failures) {
+      assert.equal(entry.code, 'command_missing');
+      for (const field of ['condition', 'remedy']) assert.equal(typeof entry[field], 'string');
+    }
+    assert.deepEqual(missing.failures.map(entry => entry.condition),
+      ['ffmpeg', 'ffprobe', backend].map(name => `required command not found: ${name}`));
+  }
+  process.stdout.write(`GIF runtime floor passed on Node ${process.versions.node}: help, usage error and missing-tool preflight for both converters.\n`);
+}
+function qualifyFrames() {
+  const relative = 'skills/extract-video-frames/scripts/extract-video-frames.js';
+  assert.match(success(relative, ['--help']), /^Usage: /);
+  failure(run(relative, ['--bogus', '--json']), 2, 'usage_error');
+  failure(run(relative, ['--json']), 2, 'usage_error');
+  // Preflight checks the Node floor first, then the platform: Linux stops there,
+  // macOS stops at the missing sw_vers on the isolated PATH.
+  failure(runWith(withoutTools(), relative, ['--preflight', '--json']), 2,
+    process.platform === 'darwin' ? 'command_missing' : 'platform_unsupported');
+  process.stdout.write(`Frame extraction runtime floor passed on Node ${process.versions.node}: help, usage errors and platform preflight.\n`);
+}
 function qualifyBackup() {
   assert.ok(Number(process.versions.node.split('.')[0]) >= 24, 'Backup requires Node >=24.0.0');
   fs.writeFileSync(path.join(home, 'package.json'), '{"type":"module"}\n');
@@ -82,8 +131,23 @@ function qualifyBackup() {
   assert.deepEqual(fs.readdirSync(path.join(home, 'output')), []);
   process.stdout.write(`Backup runtime floor passed on Node ${process.versions.node}: isolated generated plan, missing dependency, user-level lockfile install, preflight output creation, real archive and replication.\n`);
 }
+const MODES = new Set(['--backup', '--gif', '--frames', '--wake']);
+const selected = process.argv.slice(2);
+if (selected.length > 1 || (selected.length === 1 && !MODES.has(selected[0]))) {
+  process.stderr.write(`Usage: runtime-floor.js [${[...MODES].join('|')}]\n`);
+  fs.rmSync(home, { recursive: true, force: true });
+  process.exit(2);
+}
+const mode = selected[0];
 try {
-  if (process.argv.includes('--backup')) qualifyBackup();
+  assert.ok(Number(process.versions.node.split('.')[0]) >= 24, 'Runtime floor qualification requires Node >=24.0.0');
+  if (mode === '--backup') qualifyBackup();
+  else if (mode === '--gif') qualifyGif();
+  else if (mode === '--frames') qualifyFrames();
+  else if (mode === '--wake') {
+    qualifyWakeDesktop();
+    process.stdout.write(`Wake-desktop runtime floor passed on Node ${process.versions.node}: target management and wake validation.\n`);
+  }
   else {
   assert.ok(Number(process.versions.node.split('.')[0]) >= 24, 'This Stage 2 qualification requires Node >=24');
   qualifyWakeDesktop();

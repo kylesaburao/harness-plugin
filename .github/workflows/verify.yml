@@ -76,3 +76,42 @@ jobs:
         run: |
           git diff --exit-code
           git diff --cached --exit-code
+
+  floors:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The single declared skill runtime floor (.nvmrc, package.json engines, each skill's floor check).
+        node-version: ['24.0.0']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up the repository runtime for the build
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run build
+      - name: Switch to the floor runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Confirm the floor runtime is active
+        env:
+          FLOOR: ${{ matrix.node-version }}
+        run: test "$(node --version)" = "v$FLOOR"
+      - run: node tests/distribution/runtime-floor.js
+      - run: node tests/distribution/runtime-floor.js --backup
+      - run: node tests/distribution/runtime-floor.js --wake
+      - run: node tests/distribution/runtime-floor.js --gif
+      - run: node tests/distribution/runtime-floor.js --frames
+      - name: Verify tracked checkout remained unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code

@@ -119,6 +119,20 @@ Use `./scripts/dev exec sh -c 'node --test tests/bump-version/*.test.js tests/di
 
 The default build/setup/test sequence must leave all tracked files, including `dist/` and `src/harness/package.json`, unchanged. Candidate validation intentionally does not use `--tracked`, because new generated files in `.build/harness/` are ignored. Publication combines a fresh distribution comparison with indexed byte/mode validation; neither check substitutes for the other.
 
+## Runtime floors
+
+`tests/distribution/runtime-floor.js` runs the built skills on the declared Node.js runtime floor, 24.0.0. It is not a `*.test.js` file, so the gate does not run it. Run it directly after `npm run build`, with one mode per invocation:
+
+```sh
+node tests/distribution/runtime-floor.js            # wake-desktop, random-sampler, harness-advisor
+node tests/distribution/runtime-floor.js --backup   # back-up-directories, including the lockfile install
+node tests/distribution/runtime-floor.js --wake     # wake-desktop target management and validation
+node tests/distribution/runtime-floor.js --gif      # both GIF converters: help, usage error, missing-tool preflight
+node tests/distribution/runtime-floor.js --frames   # extract-video-frames: help, usage errors, platform preflight
+```
+
+Each mode uses a temporary home, and an isolated `PATH` where tool presence would otherwise vary by machine. Each mode asserts the unified JSON envelopes. The GIF and frame modes do not convert media. A local run on a newer Node.js checks only the script. The PR `floors` job builds the candidate on the `.nvmrc` runtime, switches to exactly 24.0.0, and runs every mode.
+
 ## Interpret results
 
 Prerequisites run first and stop the gate on failure. Python tests overlap the dedicated full GIF search, then remaining Node files share a process-isolated pool sized to available parallelism. Tests that change process-global state remain sequential within their files.
