@@ -1,0 +1,6 @@
+interface:
+  display_name: "Extract Video Frames"
+  short_description: "Extract lossless SDR or HDR video frames"
+  default_prompt: "Use $extract-video-frames to extract every full-quality frame from this video."
+policy:
+  allow_implicit_invocation: true
