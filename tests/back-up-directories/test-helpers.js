@@ -31,10 +31,14 @@ function successfulArchiveFactory(contents = 'zip-data') {
   };
 }
 
-async function runCli(t, args, { input = '', environment = {}, timeoutMs = 10_000 } = {}) {
+// Write errors a child can cause by exiting (or closing stdin) before the
+// parent finishes writing its input. The exit code still reports the outcome.
+const IGNORED_STDIN_ERROR_CODES = new Set(['EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED']);
+
+async function runNode(t, nodeArgs, { input = '', environment = {}, timeoutMs = 10_000 } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const child = spawn(process.execPath, [SCRIPT, ...args], {
+  const child = spawn(process.execPath, nodeArgs, {
     env: { ...process.env, ...environment },
     stdio: ['pipe', 'pipe', 'pipe'],
     signal: controller.signal,
@@ -45,17 +49,26 @@ async function runCli(t, args, { input = '', environment = {}, timeoutMs = 10_00
   });
   let stdout = '';
   let stderr = '';
+  let stdinError = null;
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
+  child.stdin.on('error', (error) => {
+    if (!IGNORED_STDIN_ERROR_CODES.has(error.code)) stdinError ??= error;
+  });
   child.stdin.end(input);
   const exitCode = await new Promise((resolve, reject) => {
     child.once('error', reject);
     child.once('close', resolve);
   });
   clearTimeout(timeout);
+  if (stdinError) throw stdinError;
   return { exitCode, stdout, stderr };
+}
+
+function runCli(t, args, options) {
+  return runNode(t, [SCRIPT, ...args], options);
 }
 
 module.exports = {
@@ -63,4 +76,5 @@ module.exports = {
   directoryDetails,
   successfulArchiveFactory,
   runCli,
+  runNode,
 };
