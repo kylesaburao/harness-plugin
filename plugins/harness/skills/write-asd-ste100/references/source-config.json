@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "source": {
+    "title": "ASD-STE100 Simplified Technical English, Standard for Technical Documentation",
+    "issue": 9,
+    "issue_date": "2025-01-15",
+    "publisher": "ASD Simplified Technical English Maintenance Group",
+    "url": "https://www.asd-ste100.org/assets/files/ASD-STE100_ISSUE9.pdf",
+    "pdf_sha256": "d1f4ea9e7cd6e46b47aa9057209f99e78c0e9cfc4e27a5b07895b05c1a166431"
+  },
+  "extraction": {
+    "page_count": 434,
+    "physical_page_start": 149,
+    "physical_page_end": 433,
+    "content_y_min": 80.0,
+    "content_y_max": 700.0,
+    "even_left_margin": 50.4,
+    "odd_left_margin": 72.0,
+    "column_offsets": [0.0, 102.7, 237.6, 367.3, 507.0],
+    "column_boundary_tolerance": 1.0,
+    "glyph_space_threshold": 1.25
+  },
+  "dictionary": {
+    "sha256": "40ba24a8a7adc103893aff06e15000f1c236f2f15718587726664776ddae96e6",
+    "part_of_speech_rows": 2195,
+    "approved_rows": 878,
+    "unapproved_rows": 1317,
+    "declared_approved_words": 875,
+    "declared_unapproved_words": 1274,
+    "required_source_anchors": ["2-1-A1", "2-1-Y1"],
+    "reconciliation": {
+      "approved_multi_word_rows_not_in_word_count": ["COME ON (v)", "GO OFF (v)", "PUT ON (v)"],
+      "unapproved_multi_word_rows_not_in_word_count": [
+        "according to (prep)", "account for (v)", "as to (prep)", "back and forth (adv)",
+        "back off (v)", "brush on (v)", "by means of (prep)", "carry out (v)",
+        "chance (by chance) (n)", "close to (adv)", "color code (v)", "confine to (v)",
+        "consist of (v)", "dispose of (v)", "due to (prep)", "free from (adj)",
+        "get away (v)", "get down (v)", "get into (v)", "get off (v)", "get to (v)",
+        "have to (v)", "hold back (v)", "hold off (v)", "hook up (v)",
+        "instead of (prep)", "make certain (v)", "next to (prep)", "prior to (prep)",
+        "process (in the process of) (prep)", "rear of (prep)", "rope off (v)",
+        "shut down (v)", "slow down (v)", "subsequent to (prep)", "switch off (v)",
+        "switch on (v)", "take care (v)", "top off (v)", "turn off (v)", "turn on (v)",
+        "turn over (v)", "up to (prep)"
+      ]
+    },
+    "known_source_cases": {
+      "spelling_variant": "MATT (or MATTE) (adj)",
+      "wrapped_across_pages": "INTERCHANGEABLE (adj), physical pages 286-287",
+      "wrapped_headwords": ["ELECTROMAGNETICALLY (adv)", "UNSATISFACTORILY (adv)"],
+      "blank_dictionary_pages": [432],
+      "final_data_page": 433,
+      "extractor_migration_2026_08": {
+        "note": "dictionary.sha256 was re-pinned when extract_dictionary.swift (PDFKit) was replaced by extract_dictionary.py (pypdfium2). Geometry parity is exact (22496/22496 lines). Two dictionary rows differ from the PDFKit-era hash, both from the same mechanism: PDFKit's per-row column-1 line-box y for a headword anchor (e.g. 'BY (prep)') can sit up to ~2pt above or below pypdfium2's loose-char-box y for that same row, while column 2-4 body-text y values match exactly between the two extractors. When an anchor's y and the next column's first example line's y are within that ~2pt band, the anchor-boundary cutoff in build_dictionary.py's find_anchors() can land on either side depending on which extractor produced the y. The pypdfium2 attribution is the semantically correct one in both known cases.",
+        "reattributed_examples": [
+          "2-1-B10: 'DIVIDE THE VALUE BY TWO.' moved from 'butt (v)' ste_examples to 'BY (prep)' ste_examples, where it belongs.",
+          "2-1-N1: 'Neither unit must operate.' / 'Neither of the units must operate.' moved from 'need (v)' non_ste_examples to the two 'neither' (adj/pron) entries, where they belong."
+        ]
+      }
+    }
+  }
+}
