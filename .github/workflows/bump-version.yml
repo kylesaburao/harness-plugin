@@ -19,7 +19,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Run hosted test gate
+        run: node scripts/run-tests.js --skip-gif
+
   bump:
+    needs: test
     runs-on: ubuntu-latest
     # Skip runs triggered by the bot's own bump commit, so this doesn't loop. In practice a push
     # made with the default GITHUB_TOKEN never re-triggers push events, so this is insurance for
