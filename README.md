@@ -47,6 +47,8 @@ codex plugin marketplace add kylesaburao/harness-plugin
 codex plugin add harness@harness-plugin
 ```
 
+Some skills generate data on first use and store it under `~/.harness-plugin/`. That directory survives plugin upgrades and is shared by both harnesses. Uninstalling the plugin does not remove it, so delete `~/.harness-plugin/` by hand if you want the space back.
+
 ## Versioning
 
 Pushing to `main` bumps the patch version automatically. To bump minor or major instead, add `[bump:minor]` or `[bump:major]` to a commit subject.

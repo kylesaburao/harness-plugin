@@ -34,6 +34,36 @@ Bash, Python, or another runtime only when a concrete platform API, maintained l
 existing artifact makes Node materially worse, and document that reason in the skill. Do
 not rewrite an existing executable only to make its runtime match this default.
 
+## User-level persistence
+
+A skill never writes inside `plugins/harness/`. Installing the plugin copies the whole plugin directory into the harness's version-keyed plugin cache, neither Claude Code nor Codex supports excluding files from that copy, and the next plugin upgrade replaces the cached tree. Anything a skill writes into its own installed directory is therefore per-harness and destroyed on upgrade.
+
+Everything a skill needs to persist across invocations or across plugin upgrades goes under a single user-level root instead:
+
+```
+~/.harness-plugin/<skill-name>/
+```
+
+`<skill-name>` is the skill's directory name under `plugins/harness/skills/`, so the mapping is mechanical. Codex and Claude Code share this root, so both harnesses read and write the same state. A skill owns exactly its own subtree and never touches another skill's. Nothing under the root is needed for plugin installation or skill discovery — only for a skill to actually run — which is what keeps installation hermetic.
+
+`write-asd-ste100` is the first skill to use this. Its generated ASD-STE100 dictionary bundle lives at `~/.harness-plugin/write-asd-ste100/bundles/<source-config-sha256>/`.
+
+### Two artifact classes
+
+The root holds two kinds of thing, and they have different contracts.
+
+**Initialization artifacts** are data a skill cannot work without, generated once and expensive to rebuild — the ASD dictionary bundle is the example. A missing, incomplete, stale, or modified artifact is a hard failure, reported through the `### Preflight contract` shape below: exit status 2, a stable error code, the failed condition, the absolute path to the generated data, and the exact initialization command. The `SKILL.md` tells the agent to relay that diagnosis rather than diagnose independently.
+
+**Configuration and stored arguments** are settings a user chose to save — predefined options, predefined command arguments. Absence is normal and never an error. A skill falls back to its defaults and runs correctly on a machine where the root does not exist at all. Precedence is explicit arguments, then stored configuration, then defaults. No skill consumes stored configuration yet; when one does, JSON with a `schema_version` field is the default format, matching the precedent in `plugins/harness/skills/write-asd-ste100/references/source-config.json` and `scripts/initialize_references.py`. This is deliberately not the `plugin-dev:plugin-settings` `.claude/<name>.local.md` pattern, which is project-scoped and Claude-specific where this root is user-scoped and harness-neutral.
+
+### Keying and durability
+
+Key a directory by a hash of whatever determines its contents, not by plugin version. `write-asd-ste100` keys its bundle by the SHA-256 of the tracked `references/source-config.json` (`plugins/harness/skills/write-asd-ste100/scripts/ste_data.py:58`), so a plain version bump reuses the existing bundle and two bundles for differing configurations coexist. Replacement is atomic: stage a new copy beside the destination, validate the staged copy, then `os.replace` it into place, so a failed run leaves installed state untouched (`initialize_references.py`, `replace_generated`). An artifact carries a manifest binding its files to their source with hashes and byte counts, so validation is self-contained.
+
+Nothing prunes stale entries. Changing `source-config.json` orphans the previous bundle indefinitely. The whole root is safe to delete — a skill regenerates its initialization artifacts or falls back to defaults. No secrets or credentials belong here; these are plain unencrypted files in the user's home directory.
+
+The pre-existing in-tree location `plugins/harness/skills/write-asd-ste100/references/generated/` is where the bundle lived before it moved to the user-level root. It is now valid only as an `--import-from` source, and an imported bundle is validated against the current source configuration before it is copied (`initialize_references.py`, `validate_import_source`).
+
 ## Plugin contents catalog
 
 `README.md`'s "Plugin contents" section is the canonical, human-scannable catalog of what the plugin ships - skills and output styles, each with a one-line purpose. Adding, removing, or renaming a skill or output style requires updating that table in the same commit; `tests/inventory/readme-inventory.test.js` enforces it.
