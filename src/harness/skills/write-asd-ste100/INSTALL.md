@@ -63,7 +63,8 @@ Relay these details without deleting retained paths or retrying initialization a
 ## Install the comment parser for JavaScript and TypeScript
 
 Prose and Python checks do not need this step. To check comments in `.js`, `.mjs`, `.cjs`, `.jsx`,
-`.ts`, `.mts`, `.cts`, `.tsx`, or `.d.ts` files, the skill needs Node.js 24.0.0 or newer and the
+`.ts`, `.mts`, `.cts`, `.tsx`, `.d.ts`, `.d.mts`, or `.d.cts` files, or standard input with an
+explicit JavaScript-family `--input-format`, the skill needs Node.js 24.0.0 or newer and the
 `@babel/parser` package at the exact version pinned in this skill's `package.json` and
 `package-lock.json`. Install it once, outside the plugin, with a network connection:
 

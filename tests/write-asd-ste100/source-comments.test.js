@@ -128,7 +128,7 @@ test('an installed skill copy runs as CommonJS beneath an ESM parent', needsPars
   assert.deepEqual(JSON.parse(result.stdout).result.files, [{ id: 3, comments: [{ kind: 'line', start: 3, end: 7 }] }]);
 });
 
-test('each comment appears once from the flat comment collection', needsParser, () => {
+test('every comment is reported once, in source order, and the hashbang is not a comment', needsParser, () => {
   const text = '#!/usr/bin/env node\n/** a */\nfunction f(/* b */ x) { // c\n  return x; /* d */\n}\n// e\n';
   assert.deepEqual(commentTexts(text), [
     ['block', '/** a */'], ['block', '/* b */'], ['line', '// c'], ['block', '/* d */'], ['line', '// e'],

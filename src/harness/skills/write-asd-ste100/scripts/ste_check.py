@@ -706,8 +706,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--input-format", choices=INPUT_FORMATS, default="auto",
         help="How every input is read. auto (default) selects by file suffix: .md, .markdown, and .txt "
-        "are prose, and Python, JavaScript, and TypeScript sources are checked by their comments only. "
-        "Standard input and other names need an explicit format.",
+        "are prose, and Python, JavaScript, and TypeScript sources are checked by their comments only "
+        "(not Python docstrings, which are strings). Standard input and other names need an explicit format.",
     )
     parser.add_argument("--terms", type=Path)
     parser.add_argument(
@@ -715,7 +715,8 @@ def main(argv: list[str] | None = None) -> int:
         help=f"Comma-separated vocabulary layers to check, drawn from {', '.join(LAYERS)} (default: all)",
     )
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--preflight", action="store_true", help="Validate references and selected terminology without reading input")
+    parser.add_argument("--preflight", action="store_true", help="Validate references, selected terminology, and the source parser runtime that the "
+         "input formats select, without reading input")
     json_output = "--json" in argv
     try:
         args = parser.parse_args(argv)

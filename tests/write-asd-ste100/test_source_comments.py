@@ -96,6 +96,33 @@ def categories(result: dict) -> list[str]:
     return [item["category"] for item in result["findings"]]
 
 
+def analysis_of(text: str, path: str) -> ste_source.SourceAnalysis:
+    spec = ste_source.resolve_inputs([path], "auto")[0]
+    [analysis] = ste_source.prepare_sources([(spec, text)])
+    return analysis
+
+
+def marked_comment_characters(text: str, markers: tuple[str, ...]) -> set[int]:
+    """Comment offsets of a fixture whose comment markers appear nowhere else.
+
+    A line marker runs to the end of its line, and "/*" runs through "*/".
+    This deliberately simple scan is independent of the extractor under test.
+    """
+    characters: set[int] = set()
+    index = 0
+    while index < len(text):
+        starts = [(text.find(marker, index), marker) for marker in markers]
+        starts = [(start, marker) for start, marker in starts if start >= 0]
+        if not starts:
+            break
+        start, marker = min(starts)
+        end = text.index("*/", start) + 2 if marker == "/*" else text.find("\n", start)
+        end = len(text) if end < 0 else end
+        characters.update(range(start, end))
+        index = end
+    return characters
+
+
 class InputRoutingTests(unittest.TestCase):
     def resolve(self, path: str, requested: str = "auto") -> ste_source.InputSpec:
         [spec] = ste_source.resolve_inputs([path], requested)
@@ -308,23 +335,43 @@ class RegionBoundaryTests(unittest.TestCase):
         text = "# ```\n# Utilize it.\nx = 1\n# Utilize it.\n"
         self.assertEqual(summary(source_result(text, "a.py")), [("unapproved_word", "Utilize", 4, 3)])
 
-    def test_findings_never_span_executable_code(self):
-        # In this fixture "#" appears only where a comment starts, so the comment
-        # characters are known without the extractor.
-        text = (FIXTURES / "mixed.py").read_text(encoding="utf-8")
-        comment_characters = set()
-        offset = 0
-        for line in text.splitlines(keepends=True):
-            if "#" in line:
-                comment_characters.update(range(offset + line.index("#"), offset + len(line.rstrip("\n"))))
-            offset += len(line)
-        result = source_result(text, "mixed.py", report_unknown_terms=True)
+    def assert_only_comments_are_checked(self, path: str, markers: tuple[str, ...]) -> None:
+        text = (FIXTURES / path).read_text(encoding="utf-8")
+        comments = marked_comment_characters(text, markers)
+        # Every nonblank character the rules can see lies inside a comment.
+        for region in analysis_of(text, path).regions:
+            visible = [region.start + index for index, character in enumerate(region.masked_text)
+                       if not character.isspace()]
+            self.assertEqual([index for index in visible if index not in comments], [], region)
+        result = source_result(text, path, report_unknown_terms=True)
         self.assertGreater(len(result["findings"]), 10)
         for item in result["findings"]:
             covered = range(item["source"]["start"]["offset"], item["source"]["end"]["offset"])
-            outside = [index for index in covered if index not in comment_characters and not text[index].isspace()]
+            outside = [index for index in covered if index not in comments and not text[index].isspace()]
             self.assertEqual(outside, [], item)
-        self.assertEqual(result["analysis"]["commentCount"], text.count("#"))
+
+    def test_python_regions_and_findings_hold_only_comment_text(self):
+        self.assert_only_comments_are_checked("mixed.py", ("#",))
+
+    @requires_parser
+    def test_typescript_regions_and_findings_hold_only_comment_text(self):
+        self.assert_only_comments_are_checked("mixed.ts", ("//", "/*"))
+
+    @requires_parser
+    def test_a_line_comment_ended_by_a_unicode_line_separator_never_joins_code(self):
+        for separator in ("\u2028", "\u2029"):
+            with self.subTest(separator=hex(ord(separator))):
+                text = f"// Use the unit{separator} utilize(); x = 1;\n// Use the tool.\n"
+                result = source_result(text, "a.js")
+                self.assertEqual(categories(result), [])
+                regions = analysis_of(text, "a.js").regions
+                self.assertEqual([region.masked_text.strip() for region in regions], ["Use the unit", "Use the tool."])
+
+    def test_a_byte_order_mark_does_not_split_the_first_run(self):
+        self.assertIn("passive_voice", categories(source_result("\ufeff# The unit is\n# installed.\n", "a.py")))
+        self.assertEqual(len(analysis_of("\ufeff# The unit is\n# installed.\n", "a.py").regions), 1)
+        if PARSER_READY:
+            self.assertIn("passive_voice", categories(source_result("\ufeff// The unit is\n// installed.\n", "a.js")))
 
 
 class DirectiveTests(unittest.TestCase):
@@ -334,7 +381,7 @@ class DirectiveTests(unittest.TestCase):
             "# -*- coding: utf-8 -*-\n"
             "x = 1  # type: ignore  utilize\n"
             "y = 2  # noqa: E501 utilize\n"
-            "z = 3  # noqa\n"
+            "z = 3  # NOQA\n"
             "# ruff: noqa: F401 utilize\n"
             "# pylint: disable=invalid-name utilize\n"
             "# mypy: ignore-errors utilize\n"
@@ -455,6 +502,12 @@ class DocumentationCommentTests(unittest.TestCase):
         result = source_result("/** Use {@link utilize the utilize} with the tool. */\nconst x = 1;\n", "a.js")
         self.assertEqual(result["findings"], [])
 
+    def test_an_apostrophe_in_link_text_keeps_the_section_checkable(self):
+        text = "/**\n * See {@link Foo|the parser's options} to utilize it.\n */\nconst x = 1;\n"
+        result = source_result(text, "a.js")
+        self.assertEqual(summary(result), [("unapproved_word", "utilize", 2, text.splitlines()[1].index("utilize") + 1)])
+        self.assertEqual(result["analysis"]["skipped"], [])
+
 
 @requires_parser
 class JavaScriptFamilyExtractionTests(unittest.TestCase):
@@ -533,7 +586,7 @@ class JavaScriptFamilyExtractionTests(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
         self.assertEqual([item["path"] for item in raised.exception.inputs], ["b.ts", "a.py", "d.jsx"])
 
-    def test_check_reads_no_project_configuration_and_does_not_change_the_source(self):
+    def test_check_never_executes_or_changes_the_source_in_a_configured_project(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
             (project / "babel.config.js").write_text("throw new Error('configuration loaded');\n", encoding="utf-8")

@@ -421,7 +421,7 @@ def js_comment_spans(entries: list[tuple[int, InputSpec, str]]) -> dict[int, lis
 
 # --- Comment prose policy ----------------------------------------------------------------
 
-PY_DIRECTIVE = re.compile(r"(?:type:\s*\S|noqa\s*(?::|$)|(?:ruff|pylint|mypy|pyright|fmt|isort):\s*\S)")
+PY_DIRECTIVE = re.compile(r"(?:type:\s*\S|(?i:noqa)\s*(?::|$)|(?:ruff|pylint|mypy|pyright|fmt|isort):\s*\S)")
 PY_ENCODING = re.compile(r"#.*?coding[:=][ \t]*[-\w.]+")
 JS_DIRECTIVE = re.compile(
     r"(?:@ts-(?:check|nocheck|ignore|expect-error)(?![\w-])"
@@ -432,6 +432,10 @@ JS_DIRECTIVE = re.compile(
     r"|[@#]__PURE__(?!\w)"
     r"|[#@]\s*source(?:Mapping)?URL=)"
 )
+# What may separate two line comments of one run: nothing but one line feed and
+# indentation. JavaScript also ends a line comment at U+2028 or U+2029, so a run
+# is never joined across those or across anything else on the line.
+RUN_GAP = re.compile(r"[ \t\f]*\n[ \t\f]*")
 TRIPLE_SLASH_DIRECTIVE = re.compile(r"<(?:reference|amd-module|amd-dependency)\b")
 SPDX = re.compile(r"SPDX-License-Identifier:")
 LABEL = re.compile(r"(?:TODO|FIXME|NOTE|HACK|XXX)(?![\w-]):?")
@@ -483,8 +487,12 @@ def trim(text: str, start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
-def balanced_end(text: str, start: int, limit: int) -> int | None:
-    """End of the {...} or [...] group opening at start, honoring quotes and escapes."""
+def balanced_end(text: str, start: int, limit: int, quotes: bool = True) -> int | None:
+    """End of the {...} or [...] group opening at start.
+
+    Type and name scaffolds honor quotes and escapes. Inline {@link ...} text
+    is prose, where an apostrophe is not a quote, so callers pass quotes=False.
+    """
     stack = [CLOSERS[text[start]]]
     quote = None
     index = start + 1
@@ -495,7 +503,7 @@ def balanced_end(text: str, start: int, limit: int) -> int | None:
                 index += 1
             elif character == quote:
                 quote = None
-        elif character in "'\"`":
+        elif quotes and character in "'\"`":
             quote = character
         elif character in CLOSERS:
             stack.append(CLOSERS[character])
@@ -571,12 +579,15 @@ class CommentPolicy:
             return "license"
         return None
 
+    def line_start(self, offset: int) -> int:
+        """Start of the offset's line; the first line starts after any BOM."""
+        return max(self.line_starts[self.line_of(offset)], self.origin)
+
     def standalone(self, comment: CommentSpan) -> bool:
-        line_start = self.line_starts[self.line_of(comment.start)]
-        return not self.text[line_start:comment.start].strip()
+        return not self.text[self.line_start(comment.start):comment.start].strip()
 
     def run_key(self, comment: CommentSpan) -> tuple[str, str]:
-        line_start = self.line_starts[self.line_of(comment.start)]
+        line_start = self.line_start(comment.start)
         return self.text[line_start:comment.start], self.text[comment.start:comment.start + self.marker_length(comment)]
 
     def line_run(self, run: list[CommentSpan]) -> None:
@@ -723,7 +734,7 @@ class CommentPolicy:
             found = masked.find("{@", index, prose_end)
             if found < 0:
                 break
-            closed = balanced_end(masked, found, prose_end)
+            closed = balanced_end(masked, found, prose_end, quotes=False)
             if closed is None:
                 self.skip("unsupported_doc_structure", start + section_start, start + section_end, masked, start)
                 return
@@ -757,7 +768,7 @@ class CommentPolicy:
                 self.line_run([comment])
                 continue
             if run and not (
-                self.line_of(comment.start) == self.line_of(run[-1].start) + 1
+                RUN_GAP.fullmatch(self.text, run[-1].end, comment.start)
                 and self.run_key(comment) == self.run_key(run[-1])
             ):
                 self.line_run(run)

@@ -128,7 +128,8 @@ function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), {
       command('install ASD-STE100 comment parser', 'npm', ['ci', '--omit=dev', '--prefix', steRoot], repoRoot),
     ]),
     // The helper's own readiness check, against the same home as the install.
-    { ...command('probe ASD-STE100 comment parser', 'node', [
+    // process.execPath matches the Node.js that setup-tests.js probes with.
+    { ...command('probe ASD-STE100 comment parser', process.execPath, [
       path.join(steSkill, 'scripts/extract-js-comments.js'), '--preflight', '--json',
     ], repoRoot), home },
     command('create or reuse Python virtual environment', 'python3', [
