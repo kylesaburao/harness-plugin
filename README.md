@@ -5,16 +5,18 @@ The two `.claude-plugin/` and `.codex-plugin/` directories are thin packaging la
 
 ## Install
 
-Claude Code:
+Run these commands in a terminal, outside Claude Code or Codex.
 
-```
-/plugin marketplace add kylesaburao/harness-plugin
-/plugin install harness@harness-plugin
+### Claude Code
+
+```sh
+claude plugin marketplace add kylesaburao/harness-plugin
+claude plugin install harness@harness-plugin
 ```
 
-Codex:
+### Codex
 
-```
+```sh
 codex plugin marketplace add kylesaburao/harness-plugin
 codex plugin add harness@harness-plugin
 ```

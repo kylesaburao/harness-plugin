@@ -22,6 +22,13 @@ The target also has to be configured for it: Wake-on-LAN enabled in firmware, an
 address must belong to the wake-capable interface, which is normally the wired one. A
 laptop on Wi-Fi generally will not wake.
 
+Running from inside WSL2 is riskier than the preflight can detect. WSL2's default NAT
+networking gives the Linux side its own virtual network, so the broadcast socket opens
+successfully and the preflight passes, but the magic packet may never reach the physical
+LAN's broadcast domain. A preflight pass under WSL2 does not confirm the packet can arrive;
+only a successful wake does. Windows 11's mirrored networking mode avoids this by sharing
+the host's network directly.
+
 ## Workflow
 
 1. Every path below is relative to the skill directory, not the current working directory.

@@ -169,6 +169,9 @@ test('plain and JSON preflight report the selected dependencies', () => {
 });
 
 test('JSON preflight identifies a missing gifski command', () => {
+  const expectedRemedy = process.platform === 'darwin'
+    ? 'brew install gifski'
+    : 'cargo install gifski, or install the prebuilt binary from https://gif.ski';
   const result = run(BASH, [SCRIPT, '--preflight', '--json'], {
     env: { ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' },
   });
@@ -177,7 +180,7 @@ test('JSON preflight identifies a missing gifski command', () => {
   assert.equal(report.error.code, 'preflight_failed');
   assert.ok(report.error.failures.some(
     (failure) => failure.condition === 'required command not found: gifski'
-      && failure.remedy === 'brew install gifski',
+      && failure.remedy === expectedRemedy,
   ));
 });
 

@@ -26,6 +26,12 @@ plugins/harness/skills/<skill>/
 
 The no-dual-copy rule applies here too. A script has one home, under the skill that runs it, and other things point at that path rather than keeping a second copy.
 
+New skill executables use Node.js by default. Use the oldest supported Node.js version that
+provides the required standard-library APIs, and document that minimum in the skill. Use
+Bash, Python, or another runtime only when a concrete platform API, maintained library, or
+existing artifact makes Node materially worse, and document that reason in the skill. Do
+not rewrite an existing executable only to make its runtime match this default.
+
 ## Tests
 
 Tests live at the repository root, in `tests/<skill-name>/`, never inside the skill.
@@ -61,13 +67,3 @@ The diagnostic shape matches `plugins/harness/skills/write-asd-ste100/scripts/st
 ## Versioning
 
 No `VERSION` file, no manual version bumps, no sync script. `plugins/harness/.codex-plugin/plugin.json` carries a static `version` field that is never incremented. The git commit history on `main` is the actual update signal.
-
-This is a deliberate deviation from a more elaborate proposal that used a synced `VERSION` file. It was tested, not assumed. See below.
-
-**Verified, local source:** with a `codex plugin marketplace add <local-path>` install (source type `local`), re-running `codex plugin add harness@harness-plugin` after editing `skills/hello-world/SKILL.md` overwrote the cached copy under `plugins/cache/<marketplace>/<plugin>/<version>/` with the new content, even though `version` in `.codex-plugin/plugin.json` was unchanged. `codex plugin marketplace upgrade` refused on a local-source marketplace ("not configured as a Git marketplace"). That command only applies to Git-sourced marketplaces, i.e. installs done via `owner/repo` or a Git URL. Test performed in an isolated `CODEX_HOME`, not against the real user config.
-
-**Verified, Git-hosted source:** `codex plugin marketplace add kylesaburao/harness-plugin` followed by editing `skills/hello-world/SKILL.md`, committing, pushing to `main`, then `codex plugin marketplace upgrade harness-plugin`. The cached copy picked up the new content with `version` unchanged. Confirmed by the user on a real Codex install. No CI version-stamping needed.
-
-## Out of scope for now
-
-`scripts/validate.py`, `scripts/sync-version.py`, `VERSION`, CI, `tests/evals/`, and platform-specific `claude/`/`codex/` subdirectories under `plugins/harness/`. Add these only when an actual need appears.

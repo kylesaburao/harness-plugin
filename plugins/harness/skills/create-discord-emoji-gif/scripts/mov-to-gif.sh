@@ -181,13 +181,35 @@ print_warnings_plain() {
   done
 }
 
-# Homebrew ships ffmpeg with libvmaf, which the search depends on.
+is_macos() {
+  [[ ${OSTYPE:-} == darwin* ]]
+}
+
+# Homebrew ships ffmpeg with libvmaf, which the search depends on. On Linux both ffmpeg
+# and gifsicle are ordinary apt packages, but the distribution ffmpeg build commonly
+# omits libvmaf; check_ffmpeg_capabilities below gives that case a more specific remedy.
 remedy_for_command() {
-  case $1 in
-    ffmpeg|ffprobe) printf 'brew install ffmpeg' ;;
-    gifsicle) printf 'brew install gifsicle' ;;
-    *) printf 'repair PATH so the base system %s is reachable' "$1" ;;
-  esac
+  if is_macos; then
+    case $1 in
+      ffmpeg|ffprobe) printf 'brew install ffmpeg' ;;
+      gifsicle) printf 'brew install gifsicle' ;;
+      *) printf 'repair PATH so the base system %s is reachable' "$1" ;;
+    esac
+  else
+    case $1 in
+      ffmpeg|ffprobe) printf 'sudo apt install ffmpeg' ;;
+      gifsicle) printf 'sudo apt install gifsicle' ;;
+      *) printf 'repair PATH so the base system %s is reachable' "$1" ;;
+    esac
+  fi
+}
+
+install_remedy() {
+  if is_macos; then
+    printf 'brew install ffmpeg gifsicle'
+  else
+    printf 'sudo apt install ffmpeg gifsicle'
+  fi
 }
 
 report_preflight_failures() {
@@ -196,7 +218,7 @@ report_preflight_failures() {
 
   if (( json_output == 1 )); then
     printf '{"error":{"code":"preflight_failed","condition":"%s preflight ' "$count" >&2
-    printf 'check(s) failed","remedy":"brew install ffmpeg gifsicle","failures":[' >&2
+    printf 'check(s) failed","remedy":"%s","failures":[' "$(json_escape "$(install_remedy)")" >&2
     while (( index < count )); do
       (( index == 0 )) || printf ',' >&2
       printf '{"code":"%s","condition":"%s","remedy":"%s"}' \
@@ -257,14 +279,20 @@ check_ffmpeg_capabilities() {
   if ! listing=$(ffmpeg -hide_banner "$flag" 2>&1); then
     record_failure ffmpeg_probe_failed \
       "ffmpeg could not report its available ${kind}s" \
-      'brew reinstall ffmpeg'
+      "$(is_macos && printf 'brew reinstall ffmpeg' || printf 'reinstall ffmpeg from your package manager or a static build')"
     return
   fi
   for capability in "$@"; do
     if ! capability_list_contains "$listing" "$capability"; then
-      record_failure ffmpeg_capability_missing \
-        "ffmpeg is missing required $kind: $capability" \
-        'install an ffmpeg build that includes it, for example brew install ffmpeg'
+      if [[ "$capability" == libvmaf ]]; then
+        record_failure ffmpeg_capability_missing \
+          "ffmpeg is missing required $kind: $capability" \
+          "$(is_macos && printf 'brew reinstall ffmpeg' || printf 'install an ffmpeg build with libvmaf enabled, for example a static build from https://johnvansickle.com/ffmpeg/, jellyfin-ffmpeg, or a source build configured with --enable-libvmaf; the distribution ffmpeg package commonly omits it')"
+      else
+        record_failure ffmpeg_capability_missing \
+          "ffmpeg is missing required $kind: $capability" \
+          "$(is_macos && printf 'brew reinstall ffmpeg' || printf 'install an ffmpeg build that includes it')"
+      fi
     fi
   done
 }
@@ -272,12 +300,6 @@ check_ffmpeg_capabilities() {
 preflight() {
   local -a required_commands=(ffmpeg ffprobe gifsicle awk mktemp wc dirname cp mv rm)
   local command_name
-
-  if [[ ${OSTYPE:-} != darwin* ]]; then
-    record_failure os_unsupported \
-      "macOS is required, detected OSTYPE=${OSTYPE:-unknown}" \
-      'run this skill on macOS; the search depends on macOS ffmpeg builds and /private/tmp'
-  fi
 
   for command_name in "${required_commands[@]}"; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
@@ -454,7 +476,7 @@ readonly output_dir
 inspect_input_video "$input"
 emit_warnings
 
-work_dir=$(mktemp -d "${TMPDIR:-/private/tmp}/mov-to-gif.XXXXXX")
+work_dir=$(mktemp -d "${TMPDIR:-/tmp}/mov-to-gif.XXXXXX")
 output_tmp=''
 cleanup_started=0
 pending_count=0

@@ -69,7 +69,6 @@ for (const scriptName of SCRIPTS) {
       '--preflight', '--json', path.join(suiteDir, 'missing.mp4'),
     ], {
       PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
-      OSTYPE: 'darwin',
     });
     assert.equal(result.status, 2, result.stderr);
     assert.equal(JSON.parse(result.stderr).error.code, 'input_unusable');

@@ -190,12 +190,54 @@ print_warnings_plain() {
   done
 }
 
+is_macos() {
+  [[ ${OSTYPE:-} == darwin* ]]
+}
+
 remedy_for_command() {
-  case $1 in
-    ffmpeg|ffprobe) printf 'brew install ffmpeg' ;;
-    gifski) printf 'brew install gifski' ;;
-    *) printf 'repair PATH so the base system %s is reachable' "$1" ;;
-  esac
+  if is_macos; then
+    case $1 in
+      ffmpeg|ffprobe) printf 'brew install ffmpeg' ;;
+      gifski) printf 'brew install gifski' ;;
+      *) printf 'repair PATH so the base system %s is reachable' "$1" ;;
+    esac
+  else
+    case $1 in
+      ffmpeg|ffprobe) printf 'sudo apt install ffmpeg (or use a build with libvmaf if the VMAF filter check fails)' ;;
+      gifski) printf 'cargo install gifski, or install the prebuilt binary from https://gif.ski' ;;
+      *) printf 'repair PATH so the base system %s is reachable' "$1" ;;
+    esac
+  fi
+}
+
+digest_command_remedy() {
+  if is_macos; then
+    printf 'confirm shasum is on PATH (it ships with the system Perl), or brew install coreutils for sha256sum'
+  else
+    printf 'install coreutils (sha256sum) or perl (shasum)'
+  fi
+}
+
+install_remedy() {
+  if is_macos; then
+    printf 'brew install ffmpeg gifski'
+  else
+    printf 'sudo apt install ffmpeg; cargo install gifski (or install the prebuilt binary from https://gif.ski)'
+  fi
+}
+
+digest_cmd=()
+
+resolve_digest_command() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest_cmd=(sha256sum)
+    return 0
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    digest_cmd=(shasum -a 256)
+    return 0
+  fi
+  return 1
 }
 
 report_preflight_failures() {
@@ -204,7 +246,7 @@ report_preflight_failures() {
 
   if (( json_output == 1 )); then
     printf '{"error":{"code":"preflight_failed","condition":"%s preflight ' "$count" >&2
-    printf 'check(s) failed","remedy":"brew install ffmpeg gifski","failures":[' >&2
+    printf 'check(s) failed","remedy":"%s","failures":[' "$(json_escape "$(install_remedy)")" >&2
     while (( index < count )); do
       (( index == 0 )) || printf ',' >&2
       printf '{"code":"%s","condition":"%s","remedy":"%s"}' \
@@ -267,14 +309,20 @@ check_ffmpeg_capabilities() {
   if ! listing=$(ffmpeg -hide_banner "$flag" 2>&1); then
     record_failure ffmpeg_probe_failed \
       "ffmpeg could not report its available ${kind}s" \
-      'brew reinstall ffmpeg'
+      "$(is_macos && printf 'brew reinstall ffmpeg' || printf 'reinstall ffmpeg from your package manager or a static build')"
     return
   fi
   for capability in "$@"; do
     if ! capability_list_contains "$listing" "$capability"; then
-      record_failure ffmpeg_capability_missing \
-        "ffmpeg is missing required $kind: $capability" \
-        'install an ffmpeg build that includes it, for example brew install ffmpeg'
+      if [[ "$capability" == libvmaf ]]; then
+        record_failure ffmpeg_capability_missing \
+          "ffmpeg is missing required $kind: $capability" \
+          "$(is_macos && printf 'brew reinstall ffmpeg' || printf 'install an ffmpeg build with libvmaf enabled, for example a static build from https://johnvansickle.com/ffmpeg/, jellyfin-ffmpeg, or a source build configured with --enable-libvmaf; the distribution ffmpeg package commonly omits it')"
+      else
+        record_failure ffmpeg_capability_missing \
+          "ffmpeg is missing required $kind: $capability" \
+          "$(is_macos && printf 'brew reinstall ffmpeg' || printf 'install an ffmpeg build that includes it')"
+      fi
     fi
   done
 }
@@ -287,13 +335,13 @@ check_gifski_capabilities() {
   if ! version_output=$(gifski --version 2>&1) || [[ -z "$version_output" ]]; then
     record_failure gifski_probe_failed \
       'gifski is present but could not report its version' \
-      'brew reinstall gifski'
+      "$(is_macos && printf 'brew reinstall gifski' || printf 'reinstall gifski, for example with cargo install gifski or the prebuilt binary from https://gif.ski')"
     return
   fi
   if ! help_output=$(gifski --help 2>&1); then
     record_failure gifski_probe_failed \
       'gifski is present but could not report its options' \
-      'brew reinstall gifski'
+      "$(is_macos && printf 'brew reinstall gifski' || printf 'reinstall gifski, for example with cargo install gifski or the prebuilt binary from https://gif.ski')"
     return
   fi
 
@@ -302,7 +350,7 @@ check_gifski_capabilities() {
     if ! gifski_help_has_option "$help_output" "$option"; then
       record_failure gifski_capability_missing \
         "gifski is missing required option: $option" \
-        'brew upgrade gifski'
+        "$(is_macos && printf 'brew upgrade gifski' || printf 'upgrade gifski, for example with cargo install gifski or the prebuilt binary from https://gif.ski')"
     fi
   done
 }
@@ -323,14 +371,8 @@ gifski_help_has_option() {
 }
 
 preflight() {
-  local -a required_commands=(gifski ffmpeg ffprobe awk mktemp wc dirname cp mv rm shasum)
+  local -a required_commands=(gifski ffmpeg ffprobe awk mktemp wc dirname cp mv rm)
   local command_name
-
-  if [[ ${OSTYPE:-} != darwin* ]]; then
-    record_failure os_unsupported \
-      "macOS is required, detected OSTYPE=${OSTYPE:-unknown}" \
-      'run this skill on macOS; the search depends on macOS ffmpeg builds and /private/tmp'
-  fi
 
   for command_name in "${required_commands[@]}"; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
@@ -339,6 +381,12 @@ preflight() {
         "$(remedy_for_command "$command_name")"
     fi
   done
+
+  if ! resolve_digest_command; then
+    record_failure command_missing \
+      'no SHA-256 digest command found on PATH (checked sha256sum, shasum)' \
+      "$(digest_command_remedy)"
+  fi
 
   if command -v ffmpeg >/dev/null 2>&1; then
     check_ffmpeg_capabilities filter fps scale format setpts libvmaf
@@ -405,7 +453,7 @@ file_bytes() {
 
 file_digest() {
   local digest_line
-  digest_line=$(shasum -a 256 "$1")
+  digest_line=$("${digest_cmd[@]}" "$1")
   printf '%s\n' "${digest_line%% *}"
 }
 
@@ -540,9 +588,9 @@ inspect_input_video "$input"
 emit_warnings
 
 if ! work_dir=$(mktemp -d \
-  "${TMPDIR:-/private/tmp}/mov-to-gif-gifski.XXXXXX" 2>/dev/null); then
+  "${TMPDIR:-/tmp}/mov-to-gif-gifski.XXXXXX" 2>/dev/null); then
   fail work_directory_unusable \
-    "could not create a work directory under ${TMPDIR:-/private/tmp}" \
+    "could not create a work directory under ${TMPDIR:-/tmp}" \
     'set TMPDIR to a writable local directory and try again'
 fi
 output_tmp=''
