@@ -15,6 +15,7 @@ const {
   findReleaseByRunId,
   inspectPublication,
   isRelevantPath,
+  parseIndexRecords,
   releaseRange,
   testedInventory,
   validateCommittedRelease,
@@ -856,5 +857,33 @@ test('CLI entry points validate arguments before inspecting Git', () =>
     assert.equal(result.status, 2, result.stderr);
     assert.match(result.stderr, /ERROR \[/);
     assert.doesNotMatch(result.stderr, /not a git repository/);
+  }
+});
+
+test('index parsing accepts well-formed ls-files records', () => {
+  const oid = 'a'.repeat(40);
+  const entries = parseIndexRecords(Buffer.from(`100644 ${oid} 0\tdist/a.js\x00100755 ${'b'.repeat(64)} 0\tdist/b.sh\x00`));
+  assert.deepEqual([...entries.values()], [
+    { mode: '100644', type: 'blob', objectId: oid, name: 'dist/a.js' },
+    { mode: '100755', type: 'blob', objectId: 'b'.repeat(64), name: 'dist/b.sh' },
+  ]);
+  assert.equal(parseIndexRecords(Buffer.alloc(0)).size, 0);
+});
+
+test('index parsing rejects malformed ls-files output', () => {
+  const oid = 'c'.repeat(40);
+  const cases = [
+    [`100644 ${oid} 0\tdist/a.js`, 'MALFORMED_INDEX_RECORD', /not NUL terminated/],
+    [`10064 ${oid} 0\tdist/a.js\x00`, 'MALFORMED_INDEX_RECORD', /malformed index metadata/],
+    [`100644 ${'G'.repeat(40)} 0\tdist/a.js\x00`, 'MALFORMED_INDEX_RECORD', /malformed index metadata/],
+    [`100644 ${oid} 4\tdist/a.js\x00`, 'MALFORMED_INDEX_RECORD', /malformed index metadata/],
+    [`100644 ${oid}\tdist/a.js\x00`, 'MALFORMED_INDEX_RECORD', /malformed index metadata/],
+    [`100644 ${oid} 0\t\x00`, 'MALFORMED_INDEX_RECORD', /empty path/],
+    [`100644 ${oid} 0 dist/a.js\x00`, 'MALFORMED_INDEX_RECORD', /malformed index record/],
+    [`100644 ${oid} 2\tdist/a.js\x00`, 'UNMERGED_INDEX_ENTRY', /unmerged/],
+    [`100644 ${oid} 0\tdist/a.js\x00100644 ${oid} 0\tdist/a.js\x00`, 'DUPLICATE_INDEX_ENTRY', /duplicate/],
+  ];
+  for (const [output, code, message] of cases) {
+    assert.throws(() => parseIndexRecords(Buffer.from(output)), (error) => error.code === code && message.test(error.message), output);
   }
 });

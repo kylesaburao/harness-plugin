@@ -339,8 +339,19 @@ function protectedSignature(repositoryRoot, commit)
   )).join('');
 }
 
+// Parses `git ls-files --stage -z` output. Git never emits the malformed shapes
+// rejected here; the checks keep a corrupt or truncated index from being read
+// as a shorter, valid-looking inventory.
 function parseIndexRecords(buffer)
 {
+  if (buffer.length > 0 && buffer[buffer.length - 1] !== 0)
+  {
+    policyFailure(
+      'MALFORMED_INDEX_RECORD',
+      'Git index output is not NUL terminated',
+      'repair the Git index and retry',
+    );
+  }
   const entries = new Map();
   for (const record of splitNul(buffer))
   {
@@ -353,9 +364,9 @@ function parseIndexRecords(buffer)
         'repair the Git index and retry',
       );
     }
-    const metadata = record.slice(0, separator).split(' ');
     const name = record.slice(separator + 1);
-    if (metadata.length !== 3)
+    const metadata = /^(\d{6}) ([0-9a-f]+) ([0-3])$/.exec(record.slice(0, separator));
+    if (!metadata)
     {
       policyFailure(
         'MALFORMED_INDEX_RECORD',
@@ -363,7 +374,15 @@ function parseIndexRecords(buffer)
         'repair the Git index and retry',
       );
     }
-    const [mode, objectId, stage] = metadata;
+    if (!name)
+    {
+      policyFailure(
+        'MALFORMED_INDEX_RECORD',
+        'Git index contains an empty path',
+        'repair the Git index and retry',
+      );
+    }
+    const [, mode, objectId, stage] = metadata;
     if (stage !== '0')
     {
       policyFailure(
@@ -1789,6 +1808,7 @@ module.exports = {
   findReleaseByRunId,
   indexEntries,
   isRelevantPath,
+  parseIndexRecords,
   readBlobs,
   releaseRange,
   validateCommittedRelease,
