@@ -453,25 +453,60 @@ async function acquireRunLock(lockPath = resolveRunLockPath()) {
   }
 }
 
-async function cleanupStartupArtifacts(plan: BackupPlan) {
+interface StartupCleanupDependencies {
+  removeFile?: typeof fsp.rm;
+  lstat?: (file: string) => Promise<{ isFile(): boolean; uid: number }>;
+  uid?: number | null;
+}
+const RETAINABLE_CLEANUP_CODES = new Set(['EPERM', 'EACCES']);
+
+// Removes this user's stale temporary artifacts. On POSIX, files owned by
+// another user (for example in a shared sticky temporary directory) are
+// skipped. A permission failure leaves the file in place and is returned as a
+// retained path instead of failing startup; any other failure is raised.
+async function cleanupStartupArtifacts(plan: BackupPlan, dependencies: StartupCleanupDependencies = {}): Promise<CleanupFailure[]> {
+  const removeFile = dependencies.removeFile || fsp.rm;
+  const lstat = dependencies.lstat || ((file: string) => fsp.lstat(file));
+  const uid = dependencies.uid !== undefined ? dependencies.uid
+    : (typeof process.getuid === 'function' ? process.getuid() : null);
   const directories = new Map<string, ValidatedDirectory>();
   for (const directory of [plan.output, ...plan.targets]) directories.set(directory.identity, directory);
 
+  const retained: CleanupFailure[] = [];
   for (const directory of directories.values()) {
     await assertDirectoryUnchanged(directory);
     const entries = await fsp.readdir(directory.canonicalPath, { withFileTypes: true });
-    const removals = [];
+    const candidates: string[] = [];
     for (const entry of entries) {
       if (!TEMPORARY_FILE_PATTERN.test(entry.name)) continue;
-      const entryPath = path.join(directory.canonicalPath, entry.name);
-      let isFile = entry.isFile();
-      if (!isFile && direntTypeIsUnknown(entry)) {
-        const details = await fsp.lstat(entryPath);
-        isFile = details.isFile();
-      }
-      if (isFile) removals.push(fsp.rm(entryPath, { force: true }));
+      if (!entry.isFile() && !direntTypeIsUnknown(entry)) continue;
+      candidates.push(path.join(directory.canonicalPath, entry.name));
     }
-    await Promise.all(removals);
+    const outcomes = await Promise.allSettled(candidates.map(async (entryPath) => {
+      const details = await lstat(entryPath);
+      if (!details.isFile()) return;
+      if (uid !== null && details.uid !== uid) return;
+      await removeFile(entryPath, { force: true });
+    }));
+    const unexpected: unknown[] = [];
+    outcomes.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled') return;
+      const code = failureDetails(outcome.reason).code;
+      if (code === 'ENOENT') return;
+      if (typeof code === 'string' && RETAINABLE_CLEANUP_CODES.has(code)) {
+        retained.push({ path: candidates[index]!, error: outcome.reason });
+      } else {
+        unexpected.push(outcome.reason);
+      }
+    });
+    if (unexpected.length) throw unexpected[0];
+  }
+  return retained;
+}
+
+function reportRetainedStartupArtifacts(retained: CleanupFailure[]) {
+  for (const item of retained) {
+    console.error(`Warning: Retained stale temporary artifact ${item.path}: ${failureDetails(item.error).code || failureDetails(item.error).message}`);
   }
 }
 
@@ -784,7 +819,7 @@ async function main() {
       context.throwIfInterrupted();
       runLock = await acquireRunLock(lockPath);
       context.throwIfInterrupted();
-      await cleanupStartupArtifacts(plan);
+      reportRetainedStartupArtifacts(await cleanupStartupArtifacts(plan));
       context.throwIfInterrupted();
     } catch (caught) {
       const error = mutableFailure(caught);
