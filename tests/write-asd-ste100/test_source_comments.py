@@ -66,10 +66,18 @@ class Vocabulary:
     dictionary = load_dictionary(path)
 
 
+def spec(path: str, input_format: str = "auto") -> ste_source.InputSpec:
+    return ste_source.resolve_inputs([path], input_format)[0]
+
+
+def analysis_of(text: str, path: str, input_format: str = "auto") -> ste_source.SourceAnalysis:
+    [analysis] = ste_source.prepare_sources([(spec(path, input_format), text)])
+    return analysis
+
+
 def source_result(text: str, path: str, mode: str = "descriptive", input_format: str = "auto",
                   report_unknown_terms: bool = False) -> dict:
-    spec = ste_source.resolve_inputs([path], input_format)[0]
-    [analysis] = ste_source.prepare_sources([(spec, text)])
+    analysis = analysis_of(text, path, input_format)
     dictionary = Vocabulary.dictionary
     return ste_check.check_source(
         text, analysis, mode, dictionary.by_headword, dictionary.approved_forms, dictionary.unapproved, {},
@@ -94,12 +102,6 @@ def summary(result: dict) -> list[tuple[str, str, int, int]]:
 
 def categories(result: dict) -> list[str]:
     return [item["category"] for item in result["findings"]]
-
-
-def analysis_of(text: str, path: str) -> ste_source.SourceAnalysis:
-    spec = ste_source.resolve_inputs([path], "auto")[0]
-    [analysis] = ste_source.prepare_sources([(spec, text)])
-    return analysis
 
 
 def marked_comment_characters(text: str, markers: tuple[str, ...]) -> set[int]:
@@ -240,12 +242,12 @@ class PythonExtractionTests(unittest.TestCase):
         }
         for name, text in cases.items():
             with self.subTest(name=name):
-                spec = ste_source.resolve_inputs(["bad.py"], "auto")[0]
+                bad = spec("bad.py")
                 with warnings.catch_warnings(record=True) as caught, \
                         mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
                     warnings.simplefilter("always")
                     with self.assertRaises(InvocationError) as raised:
-                        ste_source.prepare_sources([(spec, text)])
+                        ste_source.prepare_sources([(bad, text)])
                 self.assertEqual(raised.exception.code, "source_parse_failed")
                 self.assertEqual(raised.exception.status, 2)
                 [failure] = raised.exception.inputs
@@ -584,9 +586,8 @@ class JavaScriptFamilyExtractionTests(unittest.TestCase):
         }
         for path, text in cases.items():
             with self.subTest(path=path):
-                spec = ste_source.resolve_inputs([path], "auto")[0]
                 with self.assertRaises(InvocationError) as raised:
-                    ste_source.prepare_sources([(spec, text)])
+                    ste_source.prepare_sources([(spec(path), text)])
                 self.assertEqual(raised.exception.code, "source_parse_failed")
                 [failure] = raised.exception.inputs
                 self.assertEqual(failure["path"], path)
@@ -594,10 +595,10 @@ class JavaScriptFamilyExtractionTests(unittest.TestCase):
 
     def test_one_helper_process_serves_a_mixed_batch_and_failures_keep_caller_order(self):
         inputs = [
-            (ste_source.resolve_inputs(["b.ts"], "auto")[0], "const = ;\n"),
-            (ste_source.resolve_inputs(["a.py"], "auto")[0], "x = (\n"),
-            (ste_source.resolve_inputs(["c.js"], "auto")[0], "// Use it.\n"),
-            (ste_source.resolve_inputs(["d.jsx"], "auto")[0], "<a>\n"),
+            (spec("b.ts"), "const = ;\n"),
+            (spec("a.py"), "x = (\n"),
+            (spec("c.js"), "// Use it.\n"),
+            (spec("d.jsx"), "<a>\n"),
         ]
         real_run = subprocess.run
         with mock.patch.object(ste_source.subprocess, "run", side_effect=real_run) as run:
@@ -617,11 +618,10 @@ class JavaScriptFamilyExtractionTests(unittest.TestCase):
                 f"require('fs').writeFileSync({json.dumps(str(marker))}, 'x'); // Utilize it.\n".encode()
             )
             before = source.read_bytes()
-            spec = ste_source.resolve_inputs([str(source)], "auto")[0]
             previous = os.getcwd()
             os.chdir(project)
             try:
-                [analysis] = ste_source.prepare_sources([(spec, source.read_text(encoding="utf-8"))])
+                [analysis] = ste_source.prepare_sources([(spec(str(source)), source.read_text(encoding="utf-8"))])
             finally:
                 os.chdir(previous)
             self.assertEqual(analysis.comment_count, 1)
@@ -666,6 +666,11 @@ class CoordinateTests(unittest.TestCase):
     def test_utf16_conversion(self):
         text = "a😀b"
         self.assertEqual(ste_source.utf16_to_code_points(text, [0, 1, 3, 4]), {0: 0, 1: 1, 3: 2, 4: 3})
+        self.assertEqual(ste_source.utf16_to_code_points("a😀", [1, 3]), {1: 1, 3: 2})
+        self.assertEqual(ste_source.utf16_to_code_points("", [0]), {0: 0})
+        for text, invalid, message in (("a😀", 2, "inside a surrogate pair"), ("a😀", 4, "beyond the end")):
+            with self.subTest(text=text, offset=invalid), self.assertRaisesRegex(ValueError, message):
+                ste_source.utf16_to_code_points(text, [invalid])
         for invalid in (2, 5):
             with self.subTest(offset=invalid), self.assertRaises(ValueError):
                 ste_source.utf16_to_code_points(text, [invalid])
@@ -699,7 +704,7 @@ class EmptyCoverageTests(unittest.TestCase):
 
 class HelperProtocolTests(unittest.TestCase):
     def setUp(self):
-        self.spec = ste_source.resolve_inputs(["a.js"], "auto")[0]
+        self.spec = spec("a.js")
 
     def run_with_stdout(self, payload, returncode=0, stderr=b""):
         completed = subprocess.CompletedProcess([], returncode, payload if isinstance(payload, bytes) else json.dumps(payload).encode(), stderr)
@@ -755,8 +760,9 @@ class HelperProtocolTests(unittest.TestCase):
                     ste_source.prepare_sources([(self.spec, "// x\n")])
         error = raised.exception
         self.assertEqual((error.code, error.status), ("source_parser_failed", 1))
-        self.assertEqual(error.details["timeoutSeconds"], 0.5)
-        self.assertEqual(error.details["inputPaths"], ["a.js"])
+        self.assertEqual(error.details, {"task": ste_source.JS_TASK, "timeoutSeconds": 0.5, "inputPaths": ["a.js"]})
+        self.assertEqual(error.remedy, "split these JavaScript-family inputs into smaller explicit batches "
+                                       "and run the checker again")
 
 
 class SourceCliTests(unittest.TestCase):

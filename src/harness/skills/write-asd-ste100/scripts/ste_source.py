@@ -203,32 +203,35 @@ def helper_path() -> Path:
     return JS_HELPER
 
 
-def parser_failure(condition: str, **evidence: Any) -> InvocationError:
+def parser_failure(
+    condition: str,
+    remedy: str = "run the same command again; if it fails again, split the JavaScript-family inputs "
+    "into smaller batches and report the failure",
+    **evidence: Any,
+) -> InvocationError:
     return InvocationError(
         "source_parser_failed",
         condition,
-        remedy="run the same command again; if it fails again, split the JavaScript-family inputs "
-        "into smaller batches and report the failure",
+        remedy=remedy,
         details={"task": JS_TASK, **evidence},
         status=1,
     )
 
 
-def run_helper(arguments: list[str], request: bytes | None, paths: list[str]) -> dict:
+def run_helper(arguments: list[str], paths: list[str], request: bytes = b"") -> dict:
     """Run the helper once and return its stdout JSON, or raise the relayed diagnosis."""
     command = [node_executable(paths), str(helper_path()), *arguments, "--json"]
     try:
         completed = subprocess.run(
-            command, input=request if request is not None else b"", capture_output=True,
+            command, input=request, capture_output=True,
             timeout=JS_HELPER_TIMEOUT_SECONDS, shell=False, check=False,
         )
     except subprocess.TimeoutExpired:
-        raise InvocationError(
-            "source_parser_failed",
+        raise parser_failure(
             f"JavaScript-family comment extraction did not finish within {JS_HELPER_TIMEOUT_SECONDS} seconds",
             remedy="split these JavaScript-family inputs into smaller explicit batches and run the checker again",
-            details={"task": JS_TASK, "timeoutSeconds": JS_HELPER_TIMEOUT_SECONDS, "inputPaths": paths},
-            status=1,
+            timeoutSeconds=JS_HELPER_TIMEOUT_SECONDS,
+            inputPaths=paths,
         ) from None
     except OSError as error:
         raise parser_failure(f"the comment extraction helper could not start: {error.strerror or error}") from None
@@ -259,7 +262,7 @@ def run_helper(arguments: list[str], request: bytes | None, paths: list[str]) ->
 
 def check_js_readiness(paths: list[str]) -> None:
     """The helper's own preflight: Node.js version and the user-level parser install."""
-    status = run_helper(["--preflight"], None, paths)
+    status = run_helper(["--preflight"], paths)
     if not isinstance(status, dict) or status.get("status") != "ready":
         raise parser_failure("the comment extraction helper preflight printed an unexpected report")
 
@@ -335,20 +338,16 @@ def utf16_to_code_points(text: str, boundaries: Iterable[int]) -> dict[int, int]
     mapping: dict[int, int] = {}
     pending = 0
     units = 0
-    for index, character in enumerate(text):
+    # index == len(text) is the end-of-input boundary, handled by the same check.
+    for index in range(len(text) + 1):
         while pending < len(targets) and targets[pending] <= units:
             if targets[pending] < units:
                 raise ValueError(f"offset {targets[pending]} falls inside a surrogate pair")
             mapping[targets[pending]] = index
             pending += 1
-        if pending == len(targets):
-            return mapping
-        units += 2 if ord(character) > 0xFFFF else 1
-    while pending < len(targets) and targets[pending] <= units:
-        if targets[pending] < units:
-            raise ValueError(f"offset {targets[pending]} falls inside a surrogate pair")
-        mapping[targets[pending]] = len(text)
-        pending += 1
+        if pending == len(targets) or index == len(text):
+            break
+        units += 2 if ord(text[index]) > 0xFFFF else 1
     if pending < len(targets):
         raise ValueError(f"offset {targets[pending]} is beyond the end of the input")
     return mapping
@@ -364,7 +363,7 @@ def js_comment_spans(entries: list[tuple[int, InputSpec, str]]) -> dict[int, lis
             for number, spec, view in entries
         ],
     }
-    response = run_helper([], json.dumps(request, ensure_ascii=False).encode("utf-8"), paths)
+    response = run_helper([], paths, json.dumps(request, ensure_ascii=False).encode("utf-8"))
 
     def malformed(condition: str) -> InvocationError:
         return parser_failure(f"the comment extraction helper returned a malformed result: {condition}")
@@ -680,11 +679,8 @@ class CommentPolicy:
                 if tag:
                     boundaries.append((tag[1], offset + indent))
             offset += len(line)
-        sections = []
-        for number, (tag, start) in enumerate(boundaries):
-            end = boundaries[number + 1][1] if number + 1 < len(boundaries) else len(masked)
-            sections.append((tag, start, end))
-        return sections
+        ends = [start for _, start in boundaries[1:]] + [len(masked)]
+        return [(tag, start, end) for (tag, start), end in zip(boundaries, ends)]
 
     def documentation(self, start: int, masked: str) -> None:
         for tag, section_start, section_end in self.sections(masked):
@@ -761,46 +757,33 @@ class CommentPolicy:
 
     def analyze(self, comments: list[CommentSpan]) -> None:
         run: list[CommentSpan] = []
+
+        def flush() -> None:
+            if run:
+                self.line_run(run)
+                run.clear()
+
         for comment in comments:
             if comment.kind == "block":
-                if run:
-                    self.line_run(run)
-                    run = []
+                flush()
                 self.block(comment)
                 continue
             reason = self.line_directive(comment)
             if reason is not None:
-                if run:
-                    self.line_run(run)
-                    run = []
+                flush()
                 self.skip(reason, comment.start, comment.end)
                 continue
             if not self.standalone(comment):
-                if run:
-                    self.line_run(run)
-                    run = []
+                flush()
                 self.line_run([comment])
                 continue
             if run and not (
                 RUN_GAP.fullmatch(self.text, run[-1].end, comment.start)
                 and self.run_key(comment) == self.run_key(run[-1])
             ):
-                self.line_run(run)
-                run = []
+                flush()
             run.append(comment)
-        if run:
-            self.line_run(run)
-
-
-def analyze_comments(text: str, input_format: str, comments: list[CommentSpan], origin: int) -> SourceAnalysis:
-    policy = CommentPolicy(text, PYTHON if input_format == PYTHON else "javascript", origin)
-    policy.analyze(comments)
-    return SourceAnalysis(
-        input_format=input_format,
-        comment_count=len(comments),
-        regions=tuple(policy.regions),
-        skipped=tuple(sorted(policy.skipped, key=lambda item: (item.start, item.end))),
-    )
+        flush()
 
 
 def parse_failure(spec: InputSpec, text: str, error: SourceParseError) -> dict[str, Any]:
@@ -824,13 +807,13 @@ def prepare_sources(inputs: list[tuple[InputSpec, str]]) -> list[SourceAnalysis 
     """
     analyses: list[SourceAnalysis | None] = [None] * len(inputs)
     failures: dict[int, dict[str, Any]] = {}
-    views: dict[int, tuple[str, int]] = {}
+    origins: dict[int, int] = {}
     js_entries: list[tuple[int, InputSpec, str]] = []
     for number, (spec, text) in enumerate(inputs):
         if not spec.is_source:
             continue
         view, origin = parser_view(text)
-        views[number] = (view, origin)
+        origins[number] = origin
         if spec.input_format == PYTHON:
             try:
                 spans = python_comment_spans(view, spec.path)
@@ -843,7 +826,7 @@ def prepare_sources(inputs: list[tuple[InputSpec, str]]) -> list[SourceAnalysis 
     if js_entries:
         for number, extracted in js_comment_spans(js_entries).items():
             spec, text = inputs[number]
-            origin = views[number][1]
+            origin = origins[number]
             if isinstance(extracted, SourceParseError):
                 failures[number] = parse_failure(spec, text, shifted(extracted, origin))
             else:
@@ -866,5 +849,13 @@ def shifted(error: SourceParseError, origin: int) -> SourceParseError:
 
 
 def analysis_for(spec: InputSpec, text: str, spans: list[CommentSpan], origin: int) -> SourceAnalysis:
-    canonical = [CommentSpan(span.kind, span.start + origin, span.end + origin) for span in spans]
-    return analyze_comments(text, spec.input_format, canonical, origin)
+    """Apply the comment policy to parser-view spans shifted into canonical offsets."""
+    comments = [CommentSpan(span.kind, span.start + origin, span.end + origin) for span in spans]
+    policy = CommentPolicy(text, PYTHON if spec.input_format == PYTHON else "javascript", origin)
+    policy.analyze(comments)
+    return SourceAnalysis(
+        input_format=spec.input_format,
+        comment_count=len(comments),
+        regions=tuple(policy.regions),
+        skipped=tuple(sorted(policy.skipped, key=lambda item: (item.start, item.end))),
+    )

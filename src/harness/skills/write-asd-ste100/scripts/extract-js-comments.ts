@@ -383,5 +383,3 @@ function main(argv: string[]): void {
 }
 
 if (require.main === module) main(process.argv.slice(2));
-
-export { checkReadiness, parserOptions, validateRequest };

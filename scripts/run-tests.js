@@ -131,7 +131,7 @@ function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), {
     // process.execPath matches the Node.js that setup-tests.js probes with.
     { ...command('probe ASD-STE100 comment parser', process.execPath, [
       path.join(steSkill, 'scripts/extract-js-comments.js'), '--preflight', '--json',
-    ], repoRoot), home },
+    ], repoRoot), env: { HOME: home } },
     command('create or reuse Python virtual environment', 'python3', [
       '-m', 'venv', '.venv',
     ], repoRoot),
@@ -141,10 +141,7 @@ function buildSetupPlan(repoRoot, target = 'development', home = os.homedir(), {
     command('initialize ASD-STE100 references', python, [
       path.join(selected, 'skills/write-asd-ste100/scripts/initialize_references.py'),
     ], repoRoot),
-  ].map(({ home: probeHome, ...spec }) => ({
-    ...spec,
-    env: { ...process.env, ...(probeHome === undefined ? {} : { HOME: probeHome }), HARNESS_TEST_TARGET: target },
-  }));
+  ].map(spec => ({ ...spec, env: { ...process.env, ...spec.env, HARNESS_TEST_TARGET: target } }));
 }
 
 function buildNodeTestGroups(repoRoot, skipGif)
