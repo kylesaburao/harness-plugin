@@ -372,6 +372,8 @@ def js_comment_spans(entries: list[tuple[int, InputSpec, str]]) -> dict[int, lis
     result = response.get("result") if isinstance(response, dict) and list(response) == ["result"] else None
     if not isinstance(result, dict):
         raise malformed("missing result envelope")
+    if set(result) != {"protocolVersion", "offsetEncoding", "files"}:
+        raise malformed("unexpected result entries")
     if result.get("protocolVersion") != PROTOCOL_VERSION or result.get("offsetEncoding") != "utf16":
         raise malformed("unexpected protocol version or offset encoding")
     files = result.get("files")
@@ -422,7 +424,9 @@ def js_comment_spans(entries: list[tuple[int, InputSpec, str]]) -> dict[int, lis
 # --- Comment prose policy ----------------------------------------------------------------
 
 PY_DIRECTIVE = re.compile(r"(?:type:\s*\S|(?i:noqa)\s*(?::|$)|(?:ruff|pylint|mypy|pyright|fmt|isort):\s*\S)")
-PY_ENCODING = re.compile(r"#.*?coding[:=][ \t]*[-\w.]+")
+# PEP 263 forms such as "-*- coding: utf-8 -*-" and "vim: set fileencoding=utf-8".
+# "coding" must start a word, so "decoding:" or "encoding:" in prose stays checkable.
+PY_ENCODING = re.compile(r"#.*?(?<![A-Za-z])(?:fileen)?coding[:=][ \t]*[-\w.]+")
 JS_DIRECTIVE = re.compile(
     r"(?:@ts-(?:check|nocheck|ignore|expect-error)(?![\w-])"
     r"|eslint-(?:disable(?:-next-line|-line)?|enable|env)(?![\w-])"
@@ -435,7 +439,7 @@ JS_DIRECTIVE = re.compile(
 # What may separate two line comments of one run: nothing but one line feed and
 # indentation. JavaScript also ends a line comment at U+2028 or U+2029, so a run
 # is never joined across those or across anything else on the line.
-RUN_GAP = re.compile(r"[ \t\f]*\n[ \t\f]*")
+RUN_GAP = re.compile(r"[^\S\n\u2028\u2029]*\n[^\S\n\u2028\u2029]*")
 TRIPLE_SLASH_DIRECTIVE = re.compile(r"<(?:reference|amd-module|amd-dependency)\b")
 SPDX = re.compile(r"SPDX-License-Identifier:")
 LABEL = re.compile(r"(?:TODO|FIXME|NOTE|HACK|XXX)(?![\w-]):?")
@@ -566,7 +570,7 @@ class CommentPolicy:
         if self.language == PYTHON:
             if comment.start == self.origin and raw.startswith("#!"):
                 return "tool_directive"
-            if self.line_of(comment.start) - self.line_of(self.origin) <= 1 and PY_ENCODING.match(raw):
+            if self.encoding_declaration(comment, raw):
                 return "tool_directive"
             if PY_DIRECTIVE.match(body):
                 return "tool_directive"
@@ -582,6 +586,16 @@ class CommentPolicy:
     def line_start(self, offset: int) -> int:
         """Start of the offset's line; the first line starts after any BOM."""
         return max(self.line_starts[self.line_of(offset)], self.origin)
+
+    def encoding_declaration(self, comment: CommentSpan, raw: str) -> bool:
+        """A standalone comment on line 1, or on line 2 after a blank or comment-only line 1."""
+        line = self.line_of(comment.start) - self.line_of(self.origin)
+        if line > 1 or not self.standalone(comment) or not PY_ENCODING.match(raw):
+            return False
+        if line == 1:
+            first = self.text[self.origin:self.line_starts[self.line_of(self.origin) + 1]].strip()
+            return not first or first.startswith("#")
+        return True
 
     def standalone(self, comment: CommentSpan) -> bool:
         return not self.text[self.line_start(comment.start):comment.start].strip()

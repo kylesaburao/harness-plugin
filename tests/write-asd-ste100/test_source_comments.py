@@ -367,6 +367,13 @@ class RegionBoundaryTests(unittest.TestCase):
                 regions = analysis_of(text, "a.js").regions
                 self.assertEqual([region.masked_text.strip() for region in regions], ["Use the unit", "Use the tool."])
 
+    @requires_parser
+    def test_unusual_indentation_still_forms_a_run(self):
+        for indent in ("\u00a0\u00a0", "\v"):
+            with self.subTest(indent=repr(indent)):
+                text = f"{indent}// The unit is\n{indent}// installed.\n"
+                self.assertIn("passive_voice", categories(source_result(text, "a.js")))
+
     def test_a_byte_order_mark_does_not_split_the_first_run(self):
         self.assertIn("passive_voice", categories(source_result("\ufeff# The unit is\n# installed.\n", "a.py")))
         self.assertEqual(len(analysis_of("\ufeff# The unit is\n# installed.\n", "a.py").regions), 1)
@@ -396,9 +403,20 @@ class DirectiveTests(unittest.TestCase):
         self.assertEqual((analysis["commentCount"], analysis["regionCount"]), (12, 0))
         self.assertEqual([item["reason"] for item in analysis["skipped"]], ["tool_directive"] * 11 + ["license"])
 
+    def test_encoding_declarations_follow_pep_263_placement(self):
+        for text in ("# vim: set fileencoding=utf-8 : utilize\n", "#!/usr/bin/env python3\n# coding=utf-8 utilize\n",
+                     "\n# -*- coding: latin-1 -*- utilize\n"):
+            with self.subTest(text=text):
+                result = source_result(text, "a.py")
+                self.assertEqual(result["findings"], [])
+                self.assertEqual(result["analysis"]["regionCount"], 0)
+
     def test_a_directive_name_in_an_ordinary_sentence_stays_checkable(self):
         for text in ("# noqa markers utilize the linter.\n", "# Use the type: utilize it.\n",
-                     "x = 1\ny = 2\n# -*- coding: utf-8 -*- utilize\n"):
+                     "x = 1\ny = 2\n# -*- coding: utf-8 -*- utilize\n",
+                     "x = 1  # -*- coding: utf-8 -*- utilize\n",
+                     "x = 1\n# -*- coding: utf-8 -*- utilize\n",
+                     "# The decoding: step and encoding: step utilize it.\n"):
             with self.subTest(text=text):
                 self.assertIn("unapproved_word", categories(source_result(text, "a.py")))
 
@@ -697,6 +715,8 @@ class HelperProtocolTests(unittest.TestCase):
         for name, payload in {
             "not json": b"{",
             "wrong version": {"result": {"protocolVersion": 2, "offsetEncoding": "utf16", "files": []}},
+            "unexpected result entry": {"result": {"protocolVersion": 1, "offsetEncoding": "utf16",
+                                                   "files": [{"id": 0, "comments": []}], "extra": True}},
             "missing id": self.result([]),
             "duplicate id": self.result([{"id": 0, "comments": []}, {"id": 0, "comments": []}]),
             "unexpected key": self.result([{"id": 0, "comments": [], "extra": 1}]),
