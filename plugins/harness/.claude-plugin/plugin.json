@@ -1,6 +1,6 @@
 {
   "name": "harness",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Shared Agent Skills, packaged for Claude Code and Codex from one canonical implementation.",
   "author": {
     "name": "Kyle Saburao"
