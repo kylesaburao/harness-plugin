@@ -53,10 +53,7 @@ for (const skill of skills) {
 
 const withOpenAiMetadata = skills.filter(skill => fs.existsSync(path.join(skillsRoot, skill, 'agents/openai.yaml')));
 
-// Item 2.3 of REVIEW_FIX_PLAN.md rewrites the bare `$<skill>` prompts; remove the todo marker with that change.
-test('every agents/openai.yaml default prompt names the registered $harness:<skill>', {
-  todo: 'pending item 2.3: seven openai.yaml files still use a bare $<skill> mention',
-}, () => {
+test('every agents/openai.yaml default prompt names the registered $harness:<skill>', () => {
   assert.ok(withOpenAiMetadata.length > 0);
   const wrong = [];
   for (const skill of withOpenAiMetadata) {
