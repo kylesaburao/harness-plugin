@@ -399,6 +399,17 @@ for (const format of ['rgb48be', 'rgba64be', 'gray16be', 'yuv420p']) {
   });
 }
 
+// Codex sandbox constraint (verified 2026-09-13): the two native HDR tests below
+// and the native HEIC10 alpha test require host access for real macOS Core Image
+// HEIC encoding. The identical command failed all three in the Codex sandbox
+// with heic_encode_failed / "HEIC encoding failed: nilError", then passed all
+// three with escalated execution. The exact denied OS service was not identified.
+// Reproduce or verify from the repository root with:
+// node --test --test-name-pattern='native .*HEIC10' tests/extract-video-frames/lifecycle.test.js
+// If this signature occurs in the sandbox, rerun that command with authorized
+// escalation before diagnosing an encoder defect or following its repair remedy.
+// A sandbox failure is not a pass. Keep the assertions and platform skips intact,
+// and investigate any failure that also occurs outside the sandbox.
 for (const [transfer, dynamicRange] of [['smpte2084', 'hdr-pq'], ['arib-std-b67', 'hdr-hlg']]) {
   test(`native ${dynamicRange} publishes verified HEIC10 frames`, { skip: process.platform !== 'darwin' || !realFfmpeg }, t => {
     const root = temporaryRoot(t);
@@ -417,6 +428,9 @@ for (const [transfer, dynamicRange] of [['smpte2084', 'hdr-pq'], ['arib-std-b67'
   });
 }
 
+// Same Codex sandbox constraint as the native HDR tests above: real HEIC encoding
+// can fail with heic_encode_failed / nilError before the HDR alpha rejection check.
+// Use the focused escalated rerun above to distinguish this from a code defect.
 test('native HEIC10 encoder drops TIFF alpha and HDR alpha CLI rejects during preparation', { skip: process.platform !== 'darwin' || !realFfmpeg }, t => {
   const root = temporaryRoot(t);
   const tiff = path.join(root, 'alpha.tiff');
