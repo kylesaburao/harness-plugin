@@ -4,6 +4,8 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { resolveCommand } = require('../../../shared/node/resolve-command');
+const { mediaFailed, childDetails } = require('../../../shared/node/media-result');
 const { spawn } = require('node:child_process');
 
 const MINIMUM_NODE = Object.freeze([20, 6, 0]);
@@ -138,14 +140,6 @@ function assertSourceUnchanged(paths) {
     throw new DraftError('source_changed', 'input became inaccessible during extraction', 'restore a stable source file, then run again', EXIT.FAILED);
   }
   if (!sameIdentity(paths.sourceIdentity, current)) throw new DraftError('source_changed', 'input identity, size, or modification time changed during extraction', 'wait until the source file is stable, then run again', EXIT.FAILED);
-}
-
-function resolveCommand(name, env = process.env) {
-  for (const directory of (env.PATH || '').split(path.delimiter)) {
-    const candidate = path.join(directory || '.', name);
-    try { fs.accessSync(candidate, fs.constants.X_OK); return fs.realpathSync(candidate); } catch {}
-  }
-  return null;
 }
 
 function commandRemedy() {
@@ -289,9 +283,6 @@ async function toolchainPreflight(manager, platform) {
   if (failures.length) throw new DraftError('preflight_failed', `${failures.length} toolchain preflight check(s) failed`, commandRemedy(), EXIT.CANNOT_START, { failures });
   return { platform, commands };
 }
-
-function mediaFailed(result) { return result.code !== 0 || Boolean(result.signal) || Boolean(result.stderr?.trim()); }
-function childDetails(task, result) { return { task, childExitCode: result.code, childSignal: result.signal ?? null, stderr: result.stderr }; }
 
 async function readJson(manager, command, args, code, condition, remedy, exitCode = EXIT.CANNOT_START) {
   const result = await manager.run(command, args);

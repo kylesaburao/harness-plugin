@@ -69,14 +69,22 @@ test('Python launch errors and Node file crashes still yield a complete final re
 test('interruption preserves the first signal, stops scheduling, and terminates active children', async t => {
   const f = fixture(t);
   const pidFile = path.join(f.root, 'pid');
+  const descendantPidFile = path.join(f.root, 'descendant-pid');
+  const descendantReadyFile = path.join(f.root, 'descendant-ready');
   const original = f.options.stderr.write;
   f.options.stderr.write = text => {
     original(text);
-    if (String(text).includes('child ready')) { f.signals.emit('SIGTERM'); f.signals.emit('SIGINT'); }
+    if (String(text).includes('child ready')) {
+      f.signals.emit('SIGTERM');
+      f.signals.emit('SIGINT');
+    }
   };
-  const status = await runGate({ root: f.root, prerequisites: [{ label: 'waiting prerequisite', command: process.execPath, args: ['-e', `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));console.error('child ready');setInterval(()=>{},1000);`] }], groups: { alpha: ['unused.test.js'] }, python: pythonSpec(f), concurrency: 2 }, f.options);
+  const descendant = `const fs=require('fs');process.on('SIGTERM',()=>setTimeout(()=>process.exit(0),250));fs.writeFileSync(${JSON.stringify(descendantReadyFile)},'');setInterval(()=>{},1000);`;
+  const leader = `const fs=require('fs');const {spawn}=require('child_process');const child=spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:'ignore'});fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));fs.writeFileSync(${JSON.stringify(descendantPidFile)},String(child.pid));const ready=()=>{if(fs.existsSync(${JSON.stringify(descendantReadyFile)}))console.error('child ready');else setTimeout(ready,5)};ready();setInterval(()=>{},1000);`;
+  const status = await runGate({ root: f.root, prerequisites: [{ label: 'waiting prerequisite', command: process.execPath, args: ['-e', leader] }], groups: { alpha: ['unused.test.js'] }, python: pythonSpec(f), concurrency: 2 }, f.options);
   assert.equal(status, 143);
   assert.throws(() => process.kill(Number(fs.readFileSync(pidFile)), 0), { code: 'ESRCH' });
+  assert.throws(() => process.kill(Number(fs.readFileSync(descendantPidFile)), 0), { code: 'ESRCH' });
   assert.match(f.output(), /Unrun \| alpha/);
   assert.equal(f.signals.listenerCount('SIGTERM'), 0);
 });

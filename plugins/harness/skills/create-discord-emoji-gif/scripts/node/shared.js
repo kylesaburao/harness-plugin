@@ -4,6 +4,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { resolveCommand } = require('../../../../shared/node/resolve-command');
+const { mediaFailed, childDetails } = require('../../../../shared/node/media-result');
 
 const MAX_EXACT_INTEGER = 9007199254740991n;
 
@@ -98,14 +100,6 @@ function platformPolicy(platform, backend) {
   return { os: platform === 'darwin' ? 'darwin' : 'linux', commandRemedy, installRemedy, libvmafRemedy };
 }
 
-function resolveCommand(name, env = process.env) {
-  for (const directory of (env.PATH || '').split(path.delimiter)) {
-    const candidate = path.join(directory || '.', name);
-    try { fs.accessSync(candidate, fs.constants.X_OK); return fs.realpathSync(candidate); } catch {}
-  }
-  return null;
-}
-
 async function probe(manager, task, command, args) {
   const result = await manager.runOwned(task, command, args, { stdout: 'capture', stderr: 'capture' });
   return { ...result, output: result.stdout + result.stderr };
@@ -192,9 +186,6 @@ async function checkGifsiclePreflight(manager, platform, env) {
 function validateInput(input) {
   try { if (!fs.statSync(input).isFile()) throw new Error(); } catch { throw new StartupError('input_unusable', `input is not a regular file: ${input}`, 'pass the path of an existing video file'); }
 }
-
-function mediaFailed(result) { return result.code !== 0 || Boolean(result.signal) || Boolean(result.stderr?.trim()); }
-function childDetails(task, result) { return { task, childExitCode: result.code, childSignal: result.signal ?? null, stderr: result.stderr }; }
 
 async function inspectInput(manager, commands, input) {
   const stream = await manager.runOwned('input-stream', commands.ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=index', '-of', 'csv=p=0', input], { stdout: 'capture', stderr: 'capture' });
@@ -327,7 +318,7 @@ function cleanupArtifacts({ workDir, outputTemp, config }) {
 }
 
 function subprocessError(code, condition, remedy, task, result) {
-  return new RunError(code, condition, remedy, { task, childExitCode: result.code, childSignal: result.signal ?? null, stderr: result.stderr });
+  return new RunError(code, condition, remedy, childDetails(task, result));
 }
 
 function errorDetails(error) {

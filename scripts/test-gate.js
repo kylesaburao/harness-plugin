@@ -31,8 +31,9 @@ async function runGate({ root, prerequisites, groups, fullSearch, python, exclud
   const children = new Set();
   let interrupted = 0;
   let escalation;
-  const kill = (child, signal) => {
-    try { process.kill(-child.pid, signal); } catch (error) { if (error.code !== 'ESRCH') child.kill(signal); }
+  const kill = (record, signal) => {
+    if (record.pgid === null) { record.child.kill(signal); return; }
+    try { process.kill(-record.pgid, signal); } catch (error) { if (error.code !== 'ESRCH') record.child.kill(signal); }
   };
   const handlers = ['SIGHUP', 'SIGINT', 'SIGTERM'].map(signal => {
     const handler = () => {
@@ -102,7 +103,8 @@ async function runGate({ root, prerequisites, groups, fullSearch, python, exclud
         // A fresh process group lets interruption reach test children as well.
         child = spawn(spec.command, spec.args, { cwd: root, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
       } catch (cause) { resolve({ status: null, error: cause }); return; }
-      children.add(child);
+      const record = { child, pgid: process.platform === 'win32' || !Number.isInteger(child.pid) ? null : child.pid };
+      children.add(record);
       child.on('error', cause => { error = cause; });
       child.stderr.on('data', chunk => stderr.write(chunk));
       const lines = structured ? readline.createInterface({ input: child.stdout }) : null;
@@ -112,9 +114,23 @@ async function runGate({ root, prerequisites, groups, fullSearch, python, exclud
       });
       else child.stdout.on('data', chunk => stdout.write(chunk));
       child.on('close', (status, signal) => {
-        children.delete(child);
-        if (error) stderr.write(`ERROR [COMMAND_FAILED]: ${error.message}\n`);
-        resolve({ status: error ? null : status, signal, error });
+        const finish = () => {
+          children.delete(record);
+          if (error) stderr.write(`ERROR [COMMAND_FAILED]: ${error.message}\n`);
+          resolve({ status: error ? null : status, signal, error });
+        };
+        const waitForGroup = () => {
+          try {
+            process.kill(-record.pgid, 0);
+            setTimeout(waitForGroup, 10);
+          } catch (cause) {
+            if (cause.code === 'EPERM') { setTimeout(waitForGroup, 10); return; }
+            if (cause.code !== 'ESRCH') error ??= cause;
+            finish();
+          }
+        };
+        if (record.pgid === null) finish();
+        else waitForGroup();
       });
     });
   }
