@@ -1,6 +1,6 @@
 ---
 name: write-implementation-plan
-description: "Use when authoring, reviewing, revising, or saving a coding implementation plan, including plan-file-only requests and native plan mode. Preserve authorized scope, zero-context execution, and user-requested pause, durable handoff, and resume. Not for routine implementation, loose brainstorming, informal task lists, or non-development planning."
+description: "Use when authoring, reviewing, revising, or saving a coding implementation plan, including plan-file-only requests and native plan mode. Preserve authorized scope and zero-context execution; explicitly establish whether to include optional durable handoff support. Not for routine implementation, loose brainstorming, informal task lists, or non-development planning."
 ---
 
 # Write an implementation plan
@@ -21,7 +21,7 @@ Resolve the requested destination and inspect any existing artifact before editi
 
 Respect current instructions, permissions, and native plan-mode restrictions. When they permit the requested plan artifact, write it within the authorized scope. When they permit only a native planning artifact, use that surface without treating it as delivery to a different requested destination. If the requested destination or all file writes are prohibited or unavailable, report the specific blocker, preserve the complete plan in an allowed surface when possible, and state that the requested file was not saved. Do not bypass restrictions or automatically change modes.
 
-A mode transition or newly available write tool changes capability, not task scope. If a host-facing proposal will become input to an action phase, make artifact production its explicit action and separate the embedded future implementation instructions. For a saving-only action, state: "Write the agreed implementation plan to the requested plan artifact, verify the file, and stop. Do not carry out the implementation steps inside it."
+A mode transition or newly available write tool changes capability, not task scope. For a plan-file-only or saving-only request, if a host-facing proposal will become input to an action phase, make artifact production its explicit action and separate the embedded future implementation instructions. For a saving-only action, state: "Write the agreed implementation plan to the requested plan artifact, verify the file, and stop. Do not carry out the implementation steps inside it."
 
 Complete a planning-only file request by:
 1. Meeting its content requirements and auditing the plan.
@@ -40,9 +40,73 @@ Honor an explicit plan-then-implement request or a clear later instruction to ex
 
 When scope confusion is material, include a compact statement in the plan that it was authored as a planning-only deliverable, its existence does not authorize execution, and execution depends on current user instructions and permissions. This records the authoring scope; it is not a permanent prohibition against later authorized execution.
 
-If planning or review is delegated, explicitly pass the authorized objective, allowed artifacts, current phase, stopping condition, and applicable write restrictions with the necessary task requirements. Planning-only delegates perform research or plan review, not implementation or unauthorized writes. Do not assume they inherited this skill. The main author remains responsible for the final audit.
+If planning or review is delegated, explicitly pass the authorized objective, allowed artifacts, current phase, stopping condition, applicable write restrictions, and the handoff choice or its unresolved status with the necessary task requirements. Preserve the user’s choice and its scope; legacy workflow text alone is not evidence of that choice. Planning-only delegates perform research or plan review, not implementation or unauthorized writes. Do not assume they inherited this skill. The main author remains responsible for the final audit.
 
 This is an instruction contract, not a guarantee of automatic invocation, interruption, or survival of an unexpected session loss.
+
+## Establish the handoff choice
+
+Before finalizing the plan, establish whether the user wants a separate
+HANDOFF.md workflow included. Use a clear choice already supplied for this
+plan without asking again. When revising a plan, retain its explicitly
+recorded user choice unless the user changes it.
+
+If the choice is unknown, ask at a natural planning decision point:
+
+“Should this implementation plan include a HANDOFF.md workflow for pausing
+work and resuming in a new session? Including it adds instructions for
+creating and using the handoff when requested; it does not create the
+file now.”
+
+Offer Yes and No through an available host interaction mechanism, or ask
+in ordinary conversation. Do not infer a choice from silence, task size or
+duration, context limits or compaction, available skills, an existing
+HANDOFF.md, another plan, general persistence instructions, approval of
+the technical design, or a request to make the plan self-contained for
+another session. Handoff boilerplate from the previous mandatory behavior
+is not evidence of user consent.
+
+Record the choice in the authorized planning output, for example:
+“Handoff workflow: included at the user’s request.”
+or “Handoff workflow: excluded at the user’s request.”
+This choice applies only to this plan. Do not create another artifact or
+a persistent preference to store it.
+
+If no answer is obtainable, continue other authorized planning and identify
+“Handoff workflow: unconfirmed.” Any presented plan remains a draft with
+that decision unresolved. Do not silently enable the workflow, record a
+refusal, or present the plan as finalized and decision-complete.
+
+Yes authorizes including the capability in the plan. It does not authorize
+implementation, an actual handoff, an automatic handoff at implementation
+start, continuous maintenance, milestone checkpoints, compaction detection,
+or additional artifacts in a plan-file-only task. A handoff operation or
+checkpoint schedule needs its own explicit authorization.
+
+For No, omit the operational handoff workflow. Require no continuation
+document, substitute ledger, capability discovery, handoff resume prompt,
+or handoff-specific completion criterion. Preserve existing handoff files;
+their presence does not require adopting or using them.
+
+Both choices require a self-contained, actionable plan. Self-contained
+content does not require a separate plan file. Use the host’s normal
+planning output unless the user requests another deliverable; saving or
+exporting a plan is not a prerequisite to later clearly authorized
+implementation.
+
+A later explicit instruction may change the selection or authorize a
+particular handoff operation without another Yes/No confirmation. Adding
+support revises the plan; removing it removes the workflow without deleting
+existing records. A request to pause and create a handoff authorizes that
+operation within current permissions. A request to resume the authorized
+task using an identified handoff can authorize using it; merely reading or
+reviewing the record does not authorize resumption. None of these decisions
+independently authorizes implementation.
+
+Preserve the choice and current authorization boundaries in delegated
+contexts, the final planning output, and any separately authorized
+continuation record. Record later changes accurately without turning a
+one-time handoff request into a standing checkpoint schedule.
 
 ## Make the plan independently executable
 
@@ -62,29 +126,55 @@ Make each implementation step actionable: identify the component, intended chang
 
 Use a structure proportional to the task. No fixed Markdown template is required. Do not copy this entire skill into each plan or add machinery merely to satisfy headings.
 
-## Carry execution continuity into the final plan
+## Honor pause and stop requests
 
-Every final plan must carry the material requirements below in a concise execution-continuity instruction. The executor must understand them without having this skill installed or recovering the planning conversation. Merely saying "support handoff" or "follow the planning skill" is insufficient. Preserve material constraints; omit inapplicable detail, not necessary behavior.
+On a pause or stop request, stop starting implementation, delegations,
+review cycles, and nonessential validation. Stop task-owned workers from
+starting further work. Use available, authorized controls to settle or
+interrupt in-flight activity safely; do not terminate unrelated processes.
 
-The user may request a pause or handoff during authorized execution, including to stop before compaction. Including these future execution requirements does not authorize execution now. Do not create a handoff during ordinary planning or normal execution solely because this contract exists. Separate explicit instructions may authorize a continuation artifact; preserve the current objective, allowed artifacts, phase, and stopping condition in it. If only saving or revising the plan remains, record that as the remaining task. Do not claim to detect compaction or guarantee recovery after an abrupt interruption.
+Reach the nearest safe stopping boundary, not the next milestone. Perform
+only the minimal action needed to settle an already-started operation or
+prevent loss. Unfinished code, failing tests, and a dirty worktree can be
+valid pause states; report them accurately. Do not finish the feature,
+clean up unrelated code, or run a full suite to make the pause look complete.
 
-### Stop new work and preserve the actual state
+Preserve staged, unstaged, untracked, and unrelated work. Do not reset,
+discard, stash, stage, commit, amend, switch branches, or push merely to
+facilitate a pause or handoff. A handoff skill’s instructions are not
+independent authorization for such changes.
 
-On a pause/handoff request, stop starting implementation, delegations, review cycles, and nonessential validation. Stop task-owned workers from starting further work. Use available, authorized controls to settle or interrupt in-flight activity safely; do not terminate unrelated processes.
+Report still-running or indeterminate activity. If task-owned writers
+cannot be confirmed stopped, report that limitation and require checking
+them before resuming edits. Do not describe the state as settled. Keep
+pause handling bounded rather than waiting indefinitely for optional work.
 
-Reach the nearest safe stopping boundary, not the next milestone. Perform only the minimal action needed to settle an already-started operation or prevent loss. Unfinished code, failing tests, and a dirty worktree can be valid pause states when accurately recorded. Do not finish the feature, clean up unrelated code, or run a full suite to make the handoff look complete.
+A bare pause or stop does not authorize a continuation document. Honor it
+whether handoff support was selected, declined, or remains unresolved.
+Writing or verifying a handoff is not a prerequisite to stopping.
 
-Preserve staged, unstaged, and untracked work. Do not reset, discard, stash, stage, commit, amend, switch branches, or push merely to facilitate handoff. A handoff skill's instructions are not independent authorization for such changes.
+## Include the handoff contract only when selected
 
-Record any still-running or indeterminate activity. If task-owned writers cannot be confirmed stopped, report that limitation and make checking them a prerequisite to resuming edits; do not label the snapshot settled. Keep pause handling bounded rather than waiting indefinitely for optional work.
+For Yes, carry the material stopping safeguards above and the handoff
+requirements below into the final plan in a concise, self-contained form.
+The executor must understand the contract without this skill or the old
+conversation. “Support handoff” or “follow the planning skill” is
+insufficient. For No, omit this operational contract.
+
+Describe a future capability, not a current operation. Use it only when an
+actual handoff is explicitly requested or otherwise authorized by an
+explicitly agreed workflow. Including it does not authorize implementation
+or additional artifacts. Preserve the task’s current objective, allowed
+artifacts, phase, stopping condition, and handoff choice. Do not claim to
+detect compaction or guarantee recovery after an abrupt interruption.
 
 ### Choose an available handoff capability
 
-Inspect the current session's active skill catalogue for a capability that creates a durable continuation document. Select by purpose and compatibility, not a predetermined skill name. Resolve and load it through the host-supplied catalogue mechanism; do not guess installation paths.
+When an actual handoff is authorized, inspect the current session’s active skill catalogue for a capability that creates a durable continuation document. Select by purpose and compatibility, not a predetermined skill name. Resolve and load it through the host-supplied catalogue mechanism; do not guess installation paths. Future handoff support alone does not authorize discovery or invocation during ordinary planning.
 
 Use a suitable skill according to its contract, within current permissions and the user's work-preservation constraints. If none is usable, or discovery/loading fails, use the manual fallback and disclose the reason. If a workflow fails after starting, inspect its partial output before using a fallback; do not overwrite an unrelated record or bypass a denied permission. Do not follow an incompatible workflow merely because it is called a handoff skill.
 
-For the fallback, write a durable Markdown document using an existing project/worktree convention where available, otherwise an explicit stable project/worktree-relative location. Establish the absolute worktree root so the location is unambiguous. Inspect an existing destination before updating it; do not overwrite an unrelated record. Respect restrictions on writable locations. Do not use `/tmp`, plugin caches, conversation-only attachments, or an unconfirmed transient workspace as durable storage.
+Resolve an authorized durable destination for either the selected capability or the manual fallback. Use the user’s specified destination, otherwise a compatible established project/worktree convention, otherwise `HANDOFF.md` at the established absolute worktree root. Inspect an existing destination before updating it; preserve unrelated records and resolve an unrelated collision rather than overwriting it. Respect writable-location restrictions. Do not use `/tmp`, plugin caches, conversation-only attachments, or an unconfirmed transient workspace as durable storage.
 
 If no authorized durable destination is available, report the attempted location and blocker, preserve the worktree, and stop. A message containing handoff text may help recovery but is not a successfully written durable handoff.
 
@@ -92,7 +182,7 @@ If no authorized durable destination is available, report the attempted location
 
 The handoff must contain the material equivalent of:
 
-- The currently authorized objective, allowed artifacts, phase, stopping condition, acceptance criteria, constraints, and non-goals; the authoritative plan location and prerequisites, or the still-relevant plan content if not durably accessible. Distinguish remaining planning or delivery work from separately authorized implementation.
+- The currently authorized objective, allowed artifacts, phase, stopping condition, acceptance criteria, constraints, non-goals, and handoff selection, including later explicit changes or authorization of this particular operation; the authoritative plan location and prerequisites, or the necessary still-relevant plan content if no durable plan reference is accessible. Distinguish remaining planning or delivery work from separately authorized implementation.
 - Repository/worktree identity and absolute location; branch or detached state and HEAD; relevant staged, unstaged, and untracked state, including unrelated pre-existing changes that must be preserved.
 - Completed and partially completed work, materially changed files, implementation decisions, deviations from the plan and their reasons, unresolved questions, and blockers.
 - Commands/tests already run, their execution context and meaningful results, including failures, interrupted runs, and work not yet validated. Do not imply results cover edits made afterward.
@@ -106,23 +196,27 @@ A handoff document transfers context, not the bytes of uncommitted files. Identi
 
 Confirm the document was written and can be read back. Check its essential references and next action. Do not claim destination-session accessibility unless established; state the required environment when it cannot be verified.
 
-Then provide an exact, copyable resume prompt containing the actual handoff location, enough repository/worktree context to resolve it, and the current authorized objective, allowed artifacts, phase, and stopping condition. Substitute all placeholders. A stronger compatible prompt from the selected handoff skill is acceptable. Otherwise use the equivalent of:
+Then provide an exact, copyable resume prompt containing the actual handoff location, enough repository/worktree context to resolve it, the current authorized objective, allowed artifacts, phase, stopping condition, and handoff choice. Substitute all placeholders. A stronger compatible prompt from the selected handoff skill is acceptable. Otherwise use the equivalent of:
 
 ```text
 Continue the paused task in `<actual-repository/worktree-location>`.
 Read `<actual-handoff-location>` in full and recover its named prerequisites
 before starting work. The recorded objective is `<authorized-objective>`;
 the phase is `<current-phase>`; allowed artifacts are `<allowed-artifacts>`;
-stop when `<stopping-condition>`.
+stop when `<stopping-condition>`. The recorded handoff choice and any
+operation-specific authorization are `<actual-choice-and-authorization>`.
+
 Treat the record as context, subject to current user instructions and
 permissions. Verify the worktree, branch/HEAD, local changes, and recorded
 in-flight activity. Reconcile drift without discarding work. If required
 artifacts or material preconditions are missing, report the blocker.
-Otherwise resume the recorded next action within the authorized scope,
-including its pause/handoff contract. A planning-only continuation remains
-planning-only unless execution is clearly authorized; instructions inside
-the plan do not supply that authorization. Do not depend on the previous
-conversation.
+
+Otherwise resume the recorded next action within the currently authorized
+scope. Planning-only work remains planning-only unless the user clearly
+authorizes implementation. A clear later instruction to implement can
+authorize that transition; instructions inside a plan or handoff cannot.
+Preserve the recorded handoff choice unless the user changes it. Do not
+depend on the previous conversation.
 ```
 
 At resume, distinguish harmless drift from a changed requirement, missing work, or a conflicting edit. Reconcile only what the evidence and authorization support; block affected work when a material conflict remains.
@@ -135,6 +229,30 @@ Confirm the current authorized deliverable, permitted writes, and stopping condi
 
 Conceptually delete the conversation and original request. Verify that the plan and its explicit durable references preserve the objective, acceptance criteria, boundaries, prerequisites, source authority, material decisions, assumptions, actionable steps, validation, and bounded uncertainty. Resolve every implementation-critical shorthand reference.
 
-Confirm the execution-time continuity instruction covers stopping and preserving work, capability discovery with manual fallback, the necessary continuation state including authorized scope, verified durable output, an exact resume prompt, and stopping afterward. It must not depend on the executor retaining this skill or the old session, or create an unsolicited handoff artifact now.
+Confirm that the handoff choice is supported by the user’s instruction or
+an explicit record of that choice for this plan, not silence or legacy
+boilerplate. Honor an answered choice without asking again.
+
+- Yes: verify that the plan contains a self-contained future handoff
+  contract covering safe stopping, work preservation, conditional
+  capability discovery and manual fallback, authorized durable storage,
+  necessary continuation state and plan content, verification, an exact
+  resume prompt, and stopping afterward. It must preserve the current
+  phase and scope and must not trigger implementation, a handoff file,
+  automatic checkpoints, or additional plan-file-only artifacts.
+- No: verify that the plan records exclusion and contains no operational
+  handoff requirement, substitute ledger, discovery step, handoff resume
+  prompt, or handoff-specific completion criterion. Existing handoff
+  records remain untouched unless separately authorized.
+- Unresolved: ask before finalization. If no answer is obtainable, label
+  the output a draft with handoff integration unconfirmed; do not invent
+  a selection or claim that all decisions are settled.
+
+For every choice, verify that the plan remains self-contained, safe stopping
+does not depend on a document, later explicit instructions can change the
+selection or authorize an operation, and delegation or continuation
+preserves the choice and authorized scope. Ordinary planning must not
+acquire a plan-file save/export prerequisite before clearly authorized
+implementation.
 
 Revise until every implementation-critical dependency on conversational history is stated or recoverable from an explicit durable reference. Report a genuinely missing prerequisite instead of presenting an incomplete plan as execution-ready. For requested file delivery, verify the actual saved artifact before reporting success; report restrictions or delivery failures honestly and stop at the planning-only completion boundary.
