@@ -95,3 +95,5 @@ about guarantees. Points that change what you should tell the user:
   is the operator's call after confirming no backup is running. Do not delete it for them.
 - The tool is a same-user interactive utility. Its configuration and directory paths are
   trusted input, so it is not suitable for privileged services or cross-user operation.
+
+With `--json`, completion reports the source, retained archive (or `null`), staging removal, copy paths, and archive bytes. Relay these fields. The preview, confirmation prompt, and progress use stderr. The confirmation requirement still applies.

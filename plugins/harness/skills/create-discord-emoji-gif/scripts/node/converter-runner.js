@@ -47,21 +47,34 @@ async function runConverter({
       throw new shared.StartupError('work_directory_unusable', `could not create a work directory under ${env.TMPDIR || os.tmpdir()}`, 'set TMPDIR to a writable local directory and try again');
     }
     state = { ...outputState, input: parsed.positional[0], config, manager, commands: preflight.commands, workDir, outputTemp: '', json: parsed.json, scriptName };
-    const uninstall = manager.installSignalHandlers((_signal, exitCode) => {
-      shared.cleanupArtifacts(state);
-      process.exit(exitCode);
-    });
-    try {
-      await convert(state);
-    } finally {
+    const uninstall = manager.installSignalHandlers(() => {});
+    let payload;
+    let failure;
+    try { payload = await convert(state); }
+    catch (error) { failure = error; }
+    finally {
+      if (failure || manager.cancelling) await manager.cancel(manager.cancelSignal || 'SIGTERM');
       uninstall();
     }
-    shared.cleanupArtifacts(state);
-    return 0;
+    const signalExit = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 }[manager.interruptionSignal];
+    const cleanupFailures = shared.cleanupArtifacts(state);
+    if (signalExit) {
+      if (cleanupFailures.length) shared.emitError(new shared.RunError('interrupted', `interrupted by ${manager.interruptionSignal}`, 'remove the reported temporary paths', { cleanupFailures }), parsed.json);
+      return signalExit;
+    }
+    if (failure) {
+      if (cleanupFailures.length) failure.cleanupFailures = cleanupFailures;
+      shared.emitError(failure, parsed.json);
+      return failure.exitCode || 1;
+    }
+    if (cleanupFailures.length) payload.cleanupFailures = cleanupFailures;
+    shared.emitResult(payload, parsed.json);
+    return cleanupFailures.length ? 1 : 0;
   } catch (error) {
     if (state) {
       try { await state.manager.cancel('SIGTERM'); } catch {}
-      shared.cleanupArtifacts(state);
+      const cleanupFailures = shared.cleanupArtifacts(state);
+      if (cleanupFailures.length) error.cleanupFailures = cleanupFailures;
     }
     shared.emitError(error, parsed.json || error.json);
     return error.exitCode || 1;

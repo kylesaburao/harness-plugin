@@ -125,7 +125,7 @@ To reduce runtime, pin the frame rate with `MIN_FPS=15 MAX_FPS=15`.
 - Exit `0` means the preflight passed or the conversion succeeded.
 - Exit `2` means work did not start because of usage, runtime, environment, input, or
   output validation. Relay the reported remedy.
-- Exit `1` means conversion work started and failed. Apply only the backend fallback
+- Exit `1` means conversion work started and failed, or publication succeeded but cleanup failed. Apply only the backend fallback
   rules above.
 - `SIGHUP`, `SIGINT`, and `SIGTERM` exit with `129`, `130`, and `143` after tracked
   child processes close and cleanup finishes.
@@ -151,3 +151,5 @@ source. Each GIF frame uses a palette with at most 256 entries.
   filesystem, and real-conversion verification are blocked until an actual WSL2 host is
   available. Do not describe WSL2 as verified from Docker or mocked platform tests.
 - Windows: unsupported.
+
+If a result contains `cleanupFailures`, the artifact was published. Relay its report and the remaining temporary paths, then stop. If an error contains `cleanupFailures`, relay the primary error and these secondary failures. Preserve subprocess task, exit code, signal, and nested cause fields when present.

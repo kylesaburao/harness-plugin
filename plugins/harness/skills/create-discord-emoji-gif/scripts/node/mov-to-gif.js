@@ -19,7 +19,7 @@ function selectWinner(results) {
 
 async function checked(state, task, command, args, options, code, condition, remedy) {
   const result = await state.manager.runOwned(task, command, args, { ...options, stderr: 'capture' });
-  if (result.code !== 0) throw new shared.RunError(code, `${condition}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, remedy);
+  if (result.code !== 0) throw shared.subprocessError(code, `${condition}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, remedy, task, result);
   return result;
 }
 
@@ -74,7 +74,7 @@ async function evaluateColorTask(state, item) {
     }
     if (!state.config.keepWork) fs.rmSync(palette, { force: true });
   } catch (error) {
-    throw new shared.RunError('worker_failed', `worker failed: ${task}: ${error.condition || error.message}`, error.remedy || 'run the conversion again and inspect the reported worker failure');
+    throw new shared.RunError('worker_failed', `worker failed: ${task}: ${error.condition || error.message}`, error.remedy || 'run the conversion again and inspect the reported worker failure', { cause: error });
   }
 }
 
@@ -88,7 +88,7 @@ async function convert(state) {
   if (!winner) throw new shared.RunError('no_candidate', `no candidate fit below ${state.config.maxBytes} bytes`, 'increase MAX_BYTES, reduce GIF_SIZE, or reduce the FPS range');
   const verified = await shared.publishVerified(winner.path, state.output, 'mov-to-gif', temporary => shared.verifyFinalGif(state.manager, state.commands, temporary, { size: state.config.gifSize, maxBytes: state.config.maxBytes, bytes: winner.bytes, digest: winner.digest, score: winner.score, workDir: state.workDir }), temporary => { state.outputTemp = temporary; });
   const payload = shared.resultPayload({ script: state.scriptName, backend: 'gifsicle', input: state.input, output: state.output, config: state.config, winner, verified });
-  shared.emitResult(payload, state.json);
+  return payload;
 }
 
 async function main(argv = process.argv.slice(2), env = process.env) {

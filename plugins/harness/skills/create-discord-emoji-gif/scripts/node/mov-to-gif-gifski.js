@@ -46,14 +46,14 @@ function selectWinner(results) {
 async function prepareReference(state) {
   const target = path.join(state.workDir, 'vmaf-reference.mkv');
   const result = await state.manager.runOwned('vmaf-reference', state.commands.ffmpeg, ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,fps=24,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'yuv420p', '-color_range', 'pc', '-f', 'matroska', target], { stderr: 'capture' });
-  if (result.code !== 0) throw new shared.RunError('reference_failed', `could not prepare the VMAF reference${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the ffmpeg decode or filter error, then run again');
+  if (result.code !== 0) throw shared.subprocessError('reference_failed', `could not prepare the VMAF reference${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the ffmpeg decode or filter error, then run again', 'vmaf-reference', result);
 }
 
 async function prepareSourceCache(state, fps) {
   const target = path.join(state.workDir, `source-f${fps}.y4m`);
   fs.rmSync(target, { force: true });
   const result = await state.manager.runOwned(`source-f${fps}`, state.commands.ffmpeg, ['-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=yuv444p,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'rawvideo', '-pix_fmt', 'yuv444p', '-f', 'yuv4mpegpipe', '-y', target], { stderr: 'capture' });
-  if (result.code !== 0) throw new shared.RunError('source_prepare_failed', `could not prepare the source cache for ${fps} FPS${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported ffmpeg decode or filter error, then run the same conversion again');
+  if (result.code !== 0) throw shared.subprocessError('source_prepare_failed', `could not prepare the source cache for ${fps} FPS${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported ffmpeg decode or filter error, then run the same conversion again', `source-f${fps}`, result);
   return target;
 }
 
@@ -61,7 +61,7 @@ async function encodeCandidate(state, fps, candidate, source, target, task) {
   fs.rmSync(target, { force: true });
   const env = { ...process.env, RAYON_NUM_THREADS: String(state.rayonThreads) };
   const result = await state.manager.runOwned(task, state.commands.gifski, ['--quiet', '--fps', String(fps), '--width', String(state.config.gifSize), '--height', String(state.config.gifSize), '--quality', String(candidate.quality), '--motion-quality', String(candidate.motionQuality), '--lossy-quality', String(candidate.lossyQuality), '--repeat', '0', '--output', target, '-'], { stdin: { path: source }, stderr: 'capture', env });
-  if (result.code !== 0) throw new shared.RunError('candidate_encode_failed', `candidate encode failed for ${task}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported gifski error, then run the same conversion again');
+  if (result.code !== 0) throw shared.subprocessError('candidate_encode_failed', `candidate encode failed for ${task}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the reported gifski error, then run the same conversion again', task, result);
   if (!fs.existsSync(target)) throw new shared.RunError('candidate_encode_failed', `gifski reported success but did not create ${task}`, 'repair or reinstall gifski, then run the same conversion again');
 }
 
@@ -108,7 +108,7 @@ async function convert(state) {
   if (!winner) throw new shared.RunError('no_candidate', `no candidate fit below ${state.config.maxBytes} bytes`, 'increase MAX_BYTES, reduce GIF_SIZE or the FPS range, or lower MIN_QUALITY');
   const verified = await shared.publishVerified(winner.path, state.output, 'mov-to-gif-gifski', temporary => shared.verifyFinalGif(state.manager, state.commands, temporary, { size: state.config.gifSize, maxBytes: state.config.maxBytes, bytes: winner.bytes, digest: winner.digest }), temporary => { state.outputTemp = temporary; });
   const payload = shared.resultPayload({ script: state.scriptName, backend: 'gifski', input: state.input, output: state.output, config: state.config, winner, verified });
-  shared.emitResult(payload, state.json);
+  return payload;
 }
 
 async function main(argv = process.argv.slice(2), env = process.env) {

@@ -9,12 +9,8 @@ import json
 import re
 import stat
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from typing import NoReturn
+from typing import Any
 
 from ste_data import (
     LAYERS,
@@ -27,6 +23,8 @@ from ste_data import (
     merge_layers,
     report_reference_error,
 )
+
+from ste_cli import InvocationError, Parser, report_invocation_error
 
 WORD = re.compile(r"[A-Za-z]+(?:-[A-Za-z]+)*(?:'[A-Za-z]+)?")
 SENTENCE = re.compile(r"[^.!?]+[.!?]?")
@@ -419,18 +417,6 @@ def plain_message(item: Finding) -> str:
     return "Possible multi-word noun with more than three words."
 
 
-@dataclass(frozen=True)
-class InvocationError(Exception):
-    code: str
-    condition: str
-    inputs: list[dict[str, str]] | None = None
-
-
-class Parser(argparse.ArgumentParser):
-    def error(self, message: str) -> NoReturn:
-        raise InvocationError("invalid_arguments", message)
-
-
 def input_condition(error: OSError) -> str:
     if error.errno == errno.ENOENT:
         return "file does not exist"
@@ -545,22 +531,6 @@ def print_plain(result: dict) -> None:
         print(f"  {key}: {result['summary'][key]}")
 
 
-def report_invocation_error(error: InvocationError, json_output: bool) -> None:
-    details: dict[str, Any] = {"code": error.code}
-    if error.inputs is not None:
-        details["inputs"] = error.inputs
-    else:
-        details["condition"] = error.condition
-    if json_output:
-        print(json.dumps({"error": details}, ensure_ascii=False, indent=2), file=sys.stderr)
-        return
-    if error.inputs is not None:
-        for item in error.inputs:
-            print(f"ERROR [{error.code}]: {item['path']}: {item['condition']}", file=sys.stderr)
-        return
-    print(f"ERROR [{error.code}]: {error.condition}", file=sys.stderr)
-
-
 def layer_list(value: str) -> list:
     tokens = [token.strip() for token in value.split(",") if token.strip()]
     invalid = [token for token in tokens if token not in LAYERS]
@@ -574,17 +544,22 @@ def layer_list(value: str) -> list:
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     parser = Parser(prog="ste_check.py")
-    parser.add_argument("files", nargs="+", help="Files to check, or - as the sole standard-input path")
-    parser.add_argument("--mode", choices=("procedural", "descriptive", "mixed"), required=True)
+    parser.add_argument("files", nargs="*", help="Files to check, or - as the sole standard-input path")
+    parser.add_argument("--mode", choices=("procedural", "descriptive", "mixed"))
     parser.add_argument("--terms", type=Path)
     parser.add_argument(
         "--layers", type=layer_list, default=list(LAYERS),
         help=f"Comma-separated vocabulary layers to check, drawn from {', '.join(LAYERS)} (default: all)",
     )
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--preflight", action="store_true", help="Validate references and selected terminology without reading input")
     json_output = "--json" in argv
     try:
         args = parser.parse_args(argv)
+        if not args.preflight and (not args.files or not args.mode):
+            parser.error("files and --mode are required unless --preflight is supplied")
+        if "-" in args.files and args.files != ["-"]:
+            parser.error("- is valid only as the sole input")
     except InvocationError as error:
         report_invocation_error(error, json_output)
         return 2
@@ -593,13 +568,18 @@ def main(argv: list[str] | None = None) -> int:
     except ReferencesError as error:
         report_reference_error(error, args.json)
         return 2
-    if "-" in args.files and args.files != ["-"]:
-        report_invocation_error(
-            InvocationError("invalid_arguments", "- is valid only as the sole input"), args.json
-        )
+    try:
+        inputs = [] if args.preflight else read_inputs(args.files)
+    except InvocationError as error:
+        report_invocation_error(error, args.json)
         return 2
     try:
-        inputs = read_inputs(args.files)
+        terms = {}
+        if "project" in args.layers:
+            try:
+                terms = load_terms(args.terms)
+            except ValueError as error:
+                raise InvocationError("terms_invalid", str(error), remedy=f"correct the terminology file {args.terms} or omit --terms")
     except InvocationError as error:
         report_invocation_error(error, args.json)
         return 2
@@ -619,11 +599,9 @@ def main(argv: list[str] | None = None) -> int:
             report_invocation_error(InvocationError("software_terms_invalid", str(error)), args.json)
             return 2
     merged = merge_layers(dictionary, software_entries, layers)
-    try:
-        terms = load_terms(args.terms) if "project" in layers else {}
-    except ValueError as error:
-        report_invocation_error(InvocationError("terms_invalid", str(error)), args.json)
-        return 2
+    if args.preflight:
+        print(json.dumps({"ready": True}) if args.json else "READY: references and terminology validated")
+        return 0
     report_unknown_terms = "asd" in layers
     results = [
         (path, check_file(

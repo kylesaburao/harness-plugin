@@ -117,8 +117,8 @@ test('raw preflight failures become stable exit-2 diagnostics', { skip: process.
   await assert.rejects(subject.prepare(manager, { input: null }, encoderDirectory), { code: 'preflight_failed', exitCode: 2 });
 });
 
-for (const [signal, exitCode] of [['SIGTERM', 143]]) {
-  test(`CLI ${signal} terminates HDR encoding, cleans TIFF/HEIC/helper partials, and exits ${exitCode}`, { skip: process.platform !== 'darwin' || !realFfmpeg }, async t => {
+for (const [signal, exitCode, phase] of [['SIGTERM', 143, 'encoding'], ['SIGTERM', 143, 'verification']]) {
+  test(`CLI ${signal} terminates HDR ${phase}, cleans TIFF/HEIC/helper partials, and exits ${exitCode}`, { skip: process.platform !== 'darwin' || !realFfmpeg }, async t => {
     const root = temporaryRoot(t);
     const bin = path.join(root, 'bin');
     const input = path.join(root, 'clip.mov');
@@ -129,19 +129,28 @@ for (const [signal, exitCode] of [['SIGTERM', 143]]) {
     assert.equal(generated.status, 0, generated.stderr);
     writeExecutable(path.join(bin, 'sw_vers'), '#!/bin/sh\necho 26.0\n');
     const fakeEncoder = path.join(bin, 'fake-encoder');
-    writeExecutable(fakeEncoder, fakeEncoderScript(started, terminated));
+    writeExecutable(fakeEncoder, fakeEncoderScript(started, terminated, phase === 'verification'));
     writeExecutable(path.join(bin, 'swiftc'), `#!/bin/sh\ncp ${JSON.stringify(fakeEncoder)} "$3"\nchmod +x "$3"\n`);
     writeExecutable(path.join(bin, 'sips'), `#!/bin/sh\necho "$6"\necho '  pixelWidth: 16'\necho '  pixelHeight: 16'\necho '  bitsPerSample: 10'\necho '  profile: Rec. ITU-R BT.2100 HLG'\n`);
+    if (phase === 'verification') writeExecutable(path.join(bin, 'sips'), `#!${process.execPath}
+const fs = require('node:fs');
+const file = process.argv.at(-1);
+process.stdout.write(file + '\\n  pixelWidth: 16\\n  pixelHeight: 16\\n  bitsPerSample: 10\\n  profile: Rec. ITU-R BT.2100 HLG\\n');
+if (file.includes('.partial-') && file.endsWith('frame-000002.heic')) {
+  fs.writeFileSync(${JSON.stringify(terminated)}, 'SIGTERM');
+  process.kill(process.ppid, 'SIGTERM');
+}
+`);
     const script = path.resolve(__dirname, '../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
     const child = spawn(process.execPath, [script, '--json', input], { env: { ...process.env, TMPDIR: root, PATH: `${bin}${path.delimiter}${process.env.PATH}` }, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', chunk => { stderr += chunk; });
-    try { await waitForPath(started); } catch (error) {
+    if (phase === 'encoding') try { await waitForPath(started); } catch (error) {
       child.kill('SIGKILL');
       if (child.exitCode === null) await new Promise(resolve => child.once('close', resolve));
       assert.fail(`${error.message}\n${stderr}`);
     }
-    child.kill(signal);
+    if (phase === 'encoding') child.kill(signal);
     const status = await new Promise((resolve, reject) => {
       child.once('error', reject);
       child.once('close', code => resolve(code));
@@ -159,12 +168,12 @@ function writeExecutable(filename, contents) {
   fs.writeFileSync(filename, contents, { mode: 0o755 });
 }
 
-function fakeEncoderScript(started, terminated) {
+function fakeEncoderScript(started, terminated, finish = false) {
   return `#!${process.execPath}
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.writeFileSync(args[1], 'partial heic');
-if (args[1].includes('preflight-frame')) process.exit(0);
+if (${finish} || args[1].includes('preflight-frame')) process.exit(0);
 else {
   fs.writeFileSync(${JSON.stringify(started)}, 'started');
   for (const signal of ['SIGHUP', 'SIGINT', 'SIGTERM']) process.on(signal, () => {
@@ -208,4 +217,25 @@ test('result truthfully reports the artifact contract', () => {
   };
   const result = subject.resultPayload(state, { probes: [] });
   assert.deepEqual([result.output.format, result.frames, result.orientation.filters], ['heic', 2, ['hflip', 'transpose=clock']]);
+});
+
+test('interruption is terminal and preserves the first signal', async () => {
+  const manager = new subject.ProcessManager();
+  await manager.interrupt('SIGINT');
+  await manager.interrupt('SIGTERM');
+  await assert.rejects(manager.run(process.execPath, ['-e', 'process.exit(0)']), { code: 'interrupted', exitCode: 130 });
+  assert.equal(manager.signal, 'SIGINT');
+});
+
+test('interruption escalates and waits for an uncooperative child to close', async () => {
+  const manager = new subject.ProcessManager({ killTimeout: 50 });
+  let ready;
+  const started = new Promise(resolve => { ready = resolve; });
+  const running = manager.run(process.execPath, ['-e', "process.on('SIGTERM', () => {}); process.stderr.write('ready'); setInterval(() => {}, 1000)"], { progress: ready });
+  await started;
+  const stopped = manager.interrupt('SIGTERM');
+  const result = await running;
+  await stopped;
+  assert.equal(result.signal, 'SIGKILL');
+  assert.equal(manager.active.size, 0);
 });

@@ -224,7 +224,7 @@ function parseVmafScore(text) {
 
 async function scoreCandidate(manager, commands, workDir, candidate, task) {
   const result = await manager.runOwned(`${task}-vmaf`, commands.ffmpeg, ['-hide_banner', '-nostdin', '-threads', '1', '-filter_complex_threads', '1', '-i', path.join(workDir, 'vmaf-reference.mkv'), '-i', candidate, '-lavfi', '[0:v]fps=24,setpts=PTS-STARTPTS[ref];[1:v]fps=24,setpts=PTS-STARTPTS[dist];[dist][ref]libvmaf=n_threads=1', '-f', 'null', '-'], { stderr: 'capture' });
-  if (result.code !== 0) throw new RunError('vmaf_failed', `VMAF scoring failed for ${task}: ${result.stderr.trim()}`, 'fix the reported ffmpeg libvmaf error, then run the same conversion again');
+  if (result.code !== 0) throw subprocessError('vmaf_failed', `VMAF scoring failed for ${task}: ${result.stderr.trim()}`, 'fix the reported ffmpeg libvmaf error, then run the same conversion again', task, result);
   return parseVmafScore(result.stderr);
 }
 
@@ -232,7 +232,7 @@ function sha256File(file) { return crypto.createHash('sha256').update(fs.readFil
 
 async function probeValue(manager, command, task, args) {
   const result = await manager.runOwned(task, command, args, { stdout: 'capture', stderr: 'capture' });
-  if (result.code !== 0) throw new RunError('verification_failed', `verification failed, ffprobe could not read ${task}`, 'reinstall ffmpeg, then run the conversion again');
+  if (result.code !== 0) throw subprocessError('verification_failed', `verification failed, ffprobe could not read ${task}`, 'reinstall ffmpeg, then run the conversion again', task, result);
   return result.stdout.trim();
 }
 
@@ -278,19 +278,34 @@ async function publishVerified(source, output, prefix, verify, onTemporary = () 
   }
 }
 function cleanupArtifacts({ workDir, outputTemp, config }) {
-  if (outputTemp) { try { fs.rmSync(outputTemp, { force: true }); } catch {} }
-  if (workDir && fs.existsSync(workDir) && !config.keepWork) fs.rmSync(workDir, { recursive: true, force: true });
+  const failures = [];
+  for (const target of [outputTemp, config.keepWork ? null : workDir].filter(Boolean)) {
+    try { fs.rmSync(target, { recursive: true, force: true }); }
+    catch (error) { failures.push({ path: target, code: error.code, condition: error.message }); }
+  }
   if (workDir && fs.existsSync(workDir) && config.keepWork) process.stderr.write(`Kept work directory: ${workDir}\n`);
+  return failures;
+}
+
+function subprocessError(code, condition, remedy, task, result) {
+  return new RunError(code, condition, remedy, { task, childExitCode: result.code, childSignal: result.signal ?? null, stderr: result.stderr });
+}
+
+function errorDetails(error) {
+  const payload = { code: error.code || 'unexpected_failure', condition: error.condition || error.message, remedy: error.remedy || 'run the conversion again and inspect the reported failure' };
+  for (const key of ['failures', 'task', 'childExitCode', 'childSignal', 'stderr', 'cleanupFailures']) if (error[key] !== undefined) payload[key] = error[key];
+  if (error.cause) payload.cause = errorDetails(error.cause);
+  return payload;
 }
 
 function emitError(error, json = false) {
-  const payload = { code: error.code || 'unexpected_failure', condition: error.condition || error.message, remedy: error.remedy || 'run the conversion again and inspect the reported failure' };
-  if (error.failures) payload.failures = error.failures;
+  const payload = errorDetails(error);
   if (json) process.stderr.write(`${JSON.stringify({ error: payload })}\n`);
   else if (payload.failures) {
     process.stderr.write(`ERROR [${payload.code}]: ${payload.condition}\n`);
     for (const failure of payload.failures) process.stderr.write(`  [${failure.code}] ${failure.condition}\n      Remedy: ${failure.remedy}\n`);
   } else process.stderr.write(`ERROR [${payload.code}]: ${payload.condition}\nRemedy: ${payload.remedy}\n`);
+  if (!json) for (const key of ['task', 'childExitCode', 'childSignal', 'stderr', 'cause', 'cleanupFailures']) if (payload[key] !== undefined) process.stderr.write(`${key}: ${JSON.stringify(payload[key])}\n`);
 }
 function emitWarnings(warnings, json) {
   if (!warnings.length) return;
@@ -371,6 +386,7 @@ function emitResult(payload, json = false) {
     'Verification: complete. ffprobe measured every value above, and the digest was confirmed',
     'on the published file after rename. No further inspection is required.',
   ];
+  if (payload.cleanupFailures?.length) lines.push(`Cleanup incomplete: ${JSON.stringify(payload.cleanupFailures)}`);
   process.stdout.write(`${lines.join('\n')}\n`);
 }
 function preflightError(state) {
@@ -383,4 +399,4 @@ function usage(backend, basename) {
   return `Usage: ${basename} [OPTIONS] INPUT_VIDEO [OUTPUT.gif]\n\nOptions:\n  --preflight [INPUT_VIDEO]\n                  Check the environment and optional input, convert nothing, then exit\n  --json          Report readiness and errors as JSON\n  --help, -h      Print this message\n  --              Stop option parsing\n\nEnvironment:\n  MAX_BYTES       Strict byte ceiling (default: 256000, maximum: ${MAX_EXACT_INTEGER})\n  GIF_SIZE        Square width and height (default: 128, maximum: ${MAX_EXACT_INTEGER})\n  MIN_FPS         Minimum frame rate (default: 15, maximum: ${MAX_EXACT_INTEGER})\n  MAX_FPS         Maximum frame rate (default: 24, maximum: ${maxFpsMaximum})\n  JOBS            Parallel work limit (default: logical CPUs minus 2, minimum 1, maximum: ${MAX_EXACT_INTEGER})\n${quality}  KEEP_WORK       Keep the work directory when set to 1 (default: unset)\n\nAll positive integers have an exact-value ceiling of ${MAX_EXACT_INTEGER}.\n\nExit status:\n  0    Success or passed preflight\n  1    Conversion work started and failed\n  2    Work did not start\n  129  SIGHUP\n  130  SIGINT\n  143  SIGTERM\n`;
 }
 
-module.exports = { StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, platformPolicy, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, sha256File, verifyFinalGif, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, resultPayload, emitResult, preflightError, usage };
+module.exports = { subprocessError, errorDetails, StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, platformPolicy, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, sha256File, verifyFinalGif, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, resultPayload, emitResult, preflightError, usage };

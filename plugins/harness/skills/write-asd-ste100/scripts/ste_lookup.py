@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
-import argparse
 import json
+import sys
+from ste_cli import InvocationError, Parser, report_invocation_error
 from ste_data import (
     SOURCE_ASD,
     ReferencesError,
@@ -17,12 +18,20 @@ from ste_data import (
 )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(prog="ste_lookup.py")
-    parser.add_argument("word")
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    parser = Parser(prog="ste_lookup.py")
+    parser.add_argument("word", nargs="?")
     parser.add_argument("--part-of-speech", choices=sorted(VALID_PARTS))
     parser.add_argument("--json", action="store_true")
-    args = parser.parse_args()
+    parser.add_argument("--preflight", action="store_true", help="Validate references without a lookup")
+    try:
+        args = parser.parse_args(argv)
+        if not args.word and not args.preflight:
+            parser.error("word is required unless --preflight is supplied")
+    except InvocationError as error:
+        report_invocation_error(error, "--json" in argv)
+        return 2
 
     try:
         ensure_references_ready()
@@ -38,6 +47,9 @@ def main() -> int:
         )
         return 2
     dictionary = merge_layers(load_dictionary(), software_entries, ("asd", "software"))
+    if args.preflight:
+        print(json.dumps({"ready": True}) if args.json else "READY: references and terminology validated")
+        return 0
     key = args.word.casefold()
     matches = list(dictionary.by_headword.get(key, []))
     if not matches:

@@ -15,7 +15,8 @@ const STE_SCRIPTS = 'plugins/harness/skills/write-asd-ste100/scripts';
 
 const USAGE = `Usage: run-tests.js [--skip-gif]
 
-Run the repository test gate.
+Run the repository test gate using existing dependencies.
+Prepare a checkout first with: node scripts/setup-tests.js
 
 With no arguments, run the complete local test gate, including both GIF converter
 preflights and all tests under tests/create-discord-emoji-gif/.
@@ -56,9 +57,9 @@ function command(label, executable, args, repoRoot) {
   return { label, command: executable, args, cwd: repoRoot };
 }
 
-function buildCommandPlan(repoRoot, skipGif) {
+function buildSetupPlan(repoRoot) {
   const python = path.join('.venv', 'bin', 'python');
-  const plan = [
+  return [
     command('install backup dependencies', 'npm', [
       'ci', '--omit=dev', '--prefix', 'plugins/harness/skills/back-up-directories',
     ], repoRoot),
@@ -69,6 +70,13 @@ function buildCommandPlan(repoRoot, skipGif) {
     command('initialize ASD-STE100 references', python, [
       path.join(STE_SCRIPTS, 'initialize_references.py'),
     ], repoRoot),
+  ];
+}
+
+function buildCommandPlan(repoRoot, skipGif) {
+  const python = path.join('.venv', 'bin', 'python');
+  const plan = [
+    command('validate test prerequisites', 'node', ['scripts/setup-tests.js', '--check'], repoRoot),
     command('validate ASD-STE100 references', python, [
       path.join(STE_SCRIPTS, 'validate_references.py'), '--json',
     ], repoRoot),
@@ -135,6 +143,7 @@ function main(argv) {
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
 module.exports = {
+  buildSetupPlan,
   buildCommandPlan,
   discoverNodeTestGroups,
   main,

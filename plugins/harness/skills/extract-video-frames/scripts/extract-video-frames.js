@@ -157,9 +157,14 @@ function parseListing(text) {
 }
 
 class ProcessManager {
-  constructor() { this.active = new Set(); this.signal = null; }
+  constructor({ killTimeout = 5000 } = {}) { this.active = new Set(); this.signal = null; this.killTimeout = killTimeout; this.stopped = null; }
+
+  assertRunning() {
+    if (this.signal) throw new DraftError('interrupted', `interrupted by ${this.signal}`, 'run the command again', SIGNAL_EXIT[this.signal]);
+  }
 
   async run(command, args, options = {}) {
+    this.assertRunning();
     return new Promise((resolve, reject) => {
       let child;
       try {
@@ -169,6 +174,7 @@ class ProcessManager {
         return;
       }
       this.active.add(child);
+      child.closed = new Promise(resolve => child.once('close', resolve));
       const stdout = [];
       let stderr = Buffer.alloc(0);
       let settled = false;
@@ -177,24 +183,31 @@ class ProcessManager {
         stderr = boundedTail(stderr, chunk, options.stderrTailBytes || STDERR_TAIL_BYTES);
         if (options.progress) options.progress(chunk.toString());
       });
-      child.once('error', error => {
+      let launchError;
+      child.once('error', error => { launchError = error; });
+      child.once('close', (code, signal) => {
         if (settled) return;
         settled = true;
         this.active.delete(child);
-        reject(error);
-      });
-      child.once('close', code => {
-        if (settled) return;
-        settled = true;
-        this.active.delete(child);
-        resolve({ code, stdout: Buffer.concat(stdout).toString(), stderr: stderr.toString() });
+        if (launchError) { reject(Object.assign(launchError, { task: command, childExitCode: code, childSignal: signal })); return; }
+        resolve({ code, signal, stdout: Buffer.concat(stdout).toString(), stderr: stderr.toString() });
       });
     });
   }
 
   interrupt(signal) {
+    if (this.stopped) return this.stopped;
     this.signal = signal;
-    for (const child of this.active) child.kill(signal);
+    const children = [...this.active];
+    for (const child of children) child.kill(signal);
+    this.stopped = (async () => {
+      const timer = setTimeout(() => {
+        for (const child of children) if (this.active.has(child)) child.kill('SIGKILL');
+      }, this.killTimeout);
+      try { await Promise.all(children.map(child => child.closed)); }
+      finally { clearTimeout(timer); }
+    })();
+    return this.stopped;
   }
 }
 
@@ -735,6 +748,7 @@ async function main(argv) {
     if (state.media.color.dynamicRange !== 'sdr') await convertHdrFrames(manager, state, temporary);
     if (manager.signal) return SIGNAL_EXIT[manager.signal];
     const checks = await structuralChecks(manager, state, temporary);
+    manager.assertRunning();
     assertSourceUnchanged(state.paths);
     await publishDirectoryNoReplace(manager, state, temporary);
     temporary = null;
@@ -745,6 +759,7 @@ async function main(argv) {
     emitError(error, options ? options.json : argv.includes('--json'));
     return error.exitCode || EXIT.FAILED;
   } finally {
+    if (manager.active.size || manager.signal) await manager.interrupt(manager.signal || 'SIGTERM');
     if (temporary) { try { fs.rmSync(temporary, { recursive: true, force: true }); } catch {} }
     if (encoderDirectory) { try { fs.rmSync(encoderDirectory, { recursive: true, force: true }); } catch {} }
     for (const signal of Object.keys(SIGNAL_EXIT)) process.removeListener(signal, signalHandler);
