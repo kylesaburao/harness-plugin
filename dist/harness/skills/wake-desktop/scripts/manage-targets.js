@@ -20,7 +20,7 @@ Commands:
   remove   --name NAME
   list
 
-Every command accepts --help, --json, and --preflight.
+Every command accepts --help (or -h), --json, and --preflight.
 Value options also accept --flag=value. Names are exact and case-sensitive.
 Registering identical addresses, unchanged updates, and same-name renames are no-ops.
 --replace permits registration to replace existing addresses, preserving other properties.
@@ -35,8 +35,8 @@ function parseArguments(argv) {
     let command;
     for (let i = 0; i < argv.length; i += 1) {
         const argument = argv[i];
-        if (argument === '--help' || argument === '--json' || argument === '--preflight') {
-            if (argument === '--help')
+        if (argument === '--help' || argument === '-h' || argument === '--json' || argument === '--preflight') {
+            if (argument === '--help' || argument === '-h')
                 options.help = true;
             else if (argument === '--json')
                 options.json = true;
@@ -139,8 +139,9 @@ function applyOperation(config, options) {
     return { status: 'removed', ...result, changed: true, name };
 }
 function report(json, result) {
+    // A passed preflight is flat {"status":"ready",...}; a completed command is {"result":{...}}.
     if (json) {
-        process.stdout.write(`${JSON.stringify(result)}\n`);
+        process.stdout.write(`${JSON.stringify(result.status === 'ready' ? result : { result })}\n`);
         return;
     }
     const facts = Object.entries(result).filter(([key]) => key !== 'status')

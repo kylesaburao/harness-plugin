@@ -51,7 +51,7 @@ Send one question with the prompt `Run the reported initialization command now?`
 
 - `Do not initialize`: Leave the generated reference data unchanged and stop the skill workflow.
 
-If the user selects `Initialize now`, run the exact initialization command from the diagnosis. Request command approval separately if the execution environment requires it. Relay a failure diagnosis verbatim. On success, relay the reported generated-data location, dictionary row count, and SHA-256; do not measure the artifact again. Relay `cleanupFailures` and `rollbackFailure`, including retained paths, when present. A ready report with cleanup failures exits with status 1. For `initialization_busy`, relay the lock path and manual recovery remedy. Do not retry initialization or delete retained paths or locks automatically. If no ask-user API is available, ask the same question through a plain chat message and wait for the answer. Do not mention API availability or the fallback to the user.
+If the user selects `Initialize now`, run the exact initialization command from the diagnosis. Request command approval separately if the execution environment requires it. Relay a failure diagnosis verbatim. On success, relay the reported generated-data location, dictionary row count, and SHA-256; do not measure the artifact again. Relay `cleanupFailures` and `rollbackFailure`, including retained paths, when present. A successful report with cleanup failures exits with status 1. For `initialization_busy`, relay the lock path and manual recovery remedy. Do not retry initialization or delete retained paths or locks automatically. If no ask-user API is available, ask the same question through a plain chat message and wait for the answer. Do not mention API availability or the fallback to the user.
 
 ## Procedures and descriptions
 
@@ -75,4 +75,6 @@ Valid installed bundles remain unchanged during initialization, including `--for
 
 The `pypdfium2` package is only for local reference initialization. Runtime lookup and checking use Python 3 and the standard library.
 
-`ste_check.py --preflight --json` and `ste_lookup.py --preflight --json` validate references and terminology without reading prose or looking up a word. Use these only when the user requests readiness alone. Normal commands perform the same reference checks.
+With `--json`, each command prints one stdout line. A check prints `{"result":{"mode","outcome","summary","files"}}` and a lookup prints `{"result":{"query","matches"}}`; dictionary entries in `matches` keep their own keys. Failures print one stderr line, `{"error":{"code","condition","remedy",...}}`, where a reference failure's `remedy` is the initialization command and bad arguments report `usage_error`.
+
+`ste_check.py --preflight --json` and `ste_lookup.py --preflight --json` print `{"status":"ready"}` after they validate references and terminology without reading prose or looking up a word. Use these only when the user requests readiness alone. Normal commands perform the same reference checks.

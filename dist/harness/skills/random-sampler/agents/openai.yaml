@@ -1,0 +1,6 @@
+interface:
+  display_name: "Random Sampler"
+  short_description: "Make random picks with cryptographic randomness"
+  default_prompt: "Use $harness:random-sampler to pick one of these at random."
+policy:
+  allow_implicit_invocation: true

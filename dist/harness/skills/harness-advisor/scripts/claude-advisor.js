@@ -26,11 +26,12 @@ function details(error) {
 }
 const quote = (value) => `'${value.replace(/'/g, "'\\''")}'`;
 const HELP = `node ${quote(__filename)} --help`;
-const USAGE = `Usage: claude-advisor.js --native-absent --model MODEL --reasoning-effort LEVEL --prompt FILE [--json] [--preflight]
+const USAGE = `Usage: claude-advisor.js --native-absent --model MODEL --reasoning-effort LEVEL --prompt FILE [--json] [--preflight] [--help | -h]
 One separate, tool-free Claude fallback consultation over executor-supplied evidence.
 --native-absent attests the PARENT session lacks native Advisor, not that native execution failed.
 MODEL is the host alias or exact callable ID resolved by the primary for this call.
---preflight checks prompt, contract, and CLI availability, not authentication, model access, or runtime enforcement. --help prints usage.
+--preflight checks prompt, contract, and CLI availability, not authentication, model access, or runtime enforcement. --help or -h prints usage.
+--json prints one line: {"status":"ready",...} for --preflight, {"result":{"status":"consulted",...}} for a consultation.
 Exit: 0 success, 2 cannot start, 1 consultation failed. No automatic retries.`;
 function fail(code, condition, remedy = HELP) {
     throw Object.assign(new Error(condition), { code, condition, remedy });
@@ -42,8 +43,8 @@ function parseArguments(argv) {
     const options = {};
     for (let i = 0; i < argv.length; i++) {
         const argument = argv[i];
-        const key = argument.slice(2);
-        if (!argument.startsWith('--') || !['native-absent', 'model', 'reasoning-effort', 'prompt', 'json', 'preflight', 'help'].includes(key) || Object.hasOwn(options, key)) {
+        const key = argument === '-h' ? 'help' : argument.slice(2);
+        if ((!argument.startsWith('--') && argument !== '-h') || !['native-absent', 'model', 'reasoning-effort', 'prompt', 'json', 'preflight', 'help'].includes(key) || Object.hasOwn(options, key)) {
             fail('usage_error', `Unknown or duplicate argument: ${argument}`);
         }
         if (['model', 'reasoning-effort', 'prompt'].includes(key)) {
@@ -94,11 +95,11 @@ function main(argv) {
     try {
         const options = parseArguments(argv);
         if (options.help) {
-            process.stdout.write(json ? `${JSON.stringify({ usage: USAGE })}\n` : `${USAGE}\n`);
+            process.stdout.write(json ? `${JSON.stringify({ result: { usage: USAGE } })}\n` : `${USAGE}\n`);
             return 0;
         }
-        if (Number(process.versions.node.split('.')[0]) < 22) {
-            fail('node_unsupported', 'Node.js 22.0.0 or newer is required', 'nvm install 22');
+        if (Number(process.versions.node.split('.')[0]) < 24) {
+            fail('node_version_unsupported', 'Node.js 24.0.0 or newer is required', 'nvm install 24');
         }
         let prompt;
         try {
@@ -127,12 +128,12 @@ function main(argv) {
             fail('claude_unavailable', `Claude CLI unavailable: ${probe.error?.message || probe.stderr}`, 'claude --version');
         }
         const common = {
-            model: options.model, reasoning_effort: options['reasoning-effort'], mechanism: 'claude-cli',
-            context_mode: 'fresh', tools: [], runtime_controls: 'unverified',
+            model: options.model, reasoningEffort: options['reasoning-effort'], mechanism: 'claude-cli',
+            contextMode: 'fresh', tools: [], runtimeControls: 'unverified',
         };
         let report;
         if (options.preflight) {
-            report = { ...common, status: 'preflight_passed', checks: ['prompt_readable_nonempty', 'advisor_contract_readable_nonempty', 'cli_version_command_succeeded'] };
+            report = { status: 'ready', ...common, checks: ['prompt_readable_nonempty', 'advisor_contract_readable_nonempty', 'cli_version_command_succeeded'] };
         }
         else {
             started = true;
@@ -155,7 +156,7 @@ function main(argv) {
             if (!record(response) || response.is_error || typeof response.result !== 'string' || !response.result.trim()) {
                 fail('advisor_execution_failed', `Claude Advisor ${options.model} returned no successful guidance: ${result.stdout}`);
             }
-            report = { ...common, status: 'consulted', advice: response.result, model_usage: response.modelUsage ?? null, usage: response.usage ?? null };
+            report = { result: { status: 'consulted', ...common, advice: response.result, modelUsage: response.modelUsage ?? null, usage: response.usage ?? null } };
         }
         if (workingDirectory) {
             fs.rmSync(workingDirectory, { recursive: true, force: true });
@@ -166,7 +167,7 @@ function main(argv) {
     }
     catch (error) {
         const errorDetails = details(error);
-        const diagnosis = { code: errorDetails.code || 'advisor_failed', condition: errorDetails.condition || errorDetails.message, remedy: errorDetails.remedy || HELP };
+        const diagnosis = { code: errorDetails.condition && errorDetails.code ? errorDetails.code : 'advisor_failed', condition: errorDetails.condition || errorDetails.message, remedy: errorDetails.remedy || HELP };
         if (workingDirectory) {
             try {
                 fs.rmSync(workingDirectory, { recursive: true, force: true });

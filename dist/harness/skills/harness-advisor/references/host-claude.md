@@ -15,7 +15,7 @@ adapter. Consultation does not authorize installation or authentication changes.
 
 The executor writes the prepared four task sections to existing task temporary
 storage. Include substantive evidence, not file paths or URLs the Advisor must
-retrieve. Run the bundled adapter directly, with Node.js 22 or newer and no npm
+retrieve. Run the bundled adapter directly, with Node.js 24 or newer and no npm
 packages:
 
 ```sh
@@ -57,9 +57,12 @@ new numeric Claude minimum: the installed CLI must support the complete retained
 invocation. Missing help entries alone are not incompatibility proof; actual
 rejection fails once without permissive retry.
 
-The report retains requested model/effort, mechanism, fresh context, `tools: []`,
-and `runtime_controls: "unverified"`. Consultation reports include advice and
-reachable model/usage data. There is no workspace or observed-read report.
+Under `--json`, a passed preflight prints one line, `{"status":"ready",...}`, and a
+consultation prints one line, `{"result":{"status":"consulted",...}}`. Both reports
+retain the requested `model` and `reasoningEffort`, `mechanism`, `contextMode:
+"fresh"`, `tools: []`, and `runtimeControls: "unverified"`; the preflight adds its
+`checks`. Consultation reports include `advice` and reachable `modelUsage` and
+`usage` data. There is no workspace or observed-read report.
 `consulted` describes successful result transport, not independent verification
 or demonstrated runtime enforcement. Compare observed model identity with the
 requested family where available; missing metadata is unverified and a known

@@ -13,6 +13,7 @@ exports.main = main;
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const config_store_js_1 = require("../../../shared/node/config-store.js");
 exports.FAMILIES = ['luna', 'terra', 'sol', 'astra', 'haiku', 'sonnet', 'opus', 'fable'];
 exports.BUILTIN = {
     codex: { luna: 'astra', terra: 'astra', sol: 'astra', astra: 'astra' },
@@ -40,7 +41,8 @@ set-default --host HOST --advisor FAMILY [--reasoning-effort LEVEL]
 clear-default --host HOST
 set-route --host HOST --primary FAMILY --advisor FAMILY [--reasoning-effort LEVEL]
 remove-route --host HOST --primary FAMILY
-Every command accepts --help, --json, --preflight. Missing config uses built-ins.
+Every command accepts --help (-h), --json, --preflight. Missing config uses built-ins.
+--json prints one line: {"status":"ready",...} for --preflight, {"result":{...}} otherwise.
 resolve concerns Harness routing only, never Claude native detection.
 Families: ${exports.FAMILIES.join(', ')}. Exact model IDs are invocation details.
 Exit: 0 success, 2 cannot start, 1 write failed.`;
@@ -115,14 +117,18 @@ function resolve(config, host, primary, advisor, effort) {
     }
     else
         fail('route_unresolved', `No Harness route for ${host}:${primary}`, `node ${quote(__filename)} set-default --host ${host} --advisor ${host === 'codex' ? 'astra' : 'opus'}`);
-    return { host, primary_family: primary, advisor_family: selected.advisor,
-        reasoning_effort: effort ?? selected.reasoning_effort ?? 'high', route_source: source,
-        consultation_mode: primary === selected.advisor ? 'fresh-review' : 'escalation' };
+    return { host, primaryFamily: primary, advisorFamily: selected.advisor,
+        reasoningEffort: effort ?? selected.reasoning_effort ?? 'high', routeSource: source,
+        consultationMode: primary === selected.advisor ? 'fresh-review' : 'escalation' };
 }
 function parseArguments(argv) {
     const options = {};
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
+        if (arg === '-h') {
+            options.help = true;
+            continue;
+        }
         if (['--help', '--json', '--preflight'].includes(arg)) {
             options[arg.slice(2)] = true;
             continue;
@@ -201,47 +207,13 @@ function serialize(config) {
 }
 function saveConfig(file, config) {
     validateConfig(config);
-    let stage;
-    try {
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        stage = fs.mkdtempSync(path.join(path.dirname(file), '.config-stage-'));
-        const temporary = path.join(stage, 'config.json');
-        fs.writeFileSync(temporary, serialize(config), { mode: 0o600 });
-        fs.renameSync(temporary, file);
-    }
-    finally {
-        if (stage)
-            fs.rmSync(stage, { recursive: true, force: true });
-    }
+    (0, config_store_js_1.writeJsonAtomic)(file, serialize(config), { mode: 0o600 });
 }
 function withMutationLock(file, mutate) {
     const lock = `${file}.lock`;
-    const recovery = `After confirming no advisor-config mutation is running, run: rmdir ${quote(lock)}`;
-    try {
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        fs.mkdirSync(lock);
-    }
-    catch (error) {
-        if (details(error).code === 'EEXIST')
-            fail('config_busy', `Advisor mutation lock exists at ${lock}. Retry after the writer finishes. Interrupted writers require manual recovery.`, recovery);
-        fail('config_lock_failed', `Cannot acquire ${lock}: ${details(error).message}`);
-    }
-    let result, failure;
-    try {
-        result = mutate();
-    }
-    catch (error) {
-        failure = error;
-    }
-    try {
-        fs.rmdirSync(lock);
-    }
-    catch (error) {
-        fail('config_lock_cleanup_failed', `Cannot remove ${lock}: ${details(error).message}. ${failure ? `Operation failed: ${details(failure).message}` : 'Operation completed and configuration may already be published.'}`, recovery);
-    }
-    if (failure)
-        throw failure;
-    return result;
+    return (0, config_store_js_1.withDirectoryLock)(lock, { busyCode: 'config_busy', failedCode: 'config_lock_failed', cleanupCode: 'config_lock_cleanup_failed',
+        recovery: `After confirming no advisor-config mutation is running, run: rmdir ${quote(lock)}`,
+        error: (code, condition, remedy) => Object.assign(new Error(condition), { code, condition, remedy }) }, mutate);
 }
 function main(argv) {
     const json = argv.includes('--json');
@@ -249,11 +221,11 @@ function main(argv) {
     try {
         const options = parseArguments(argv);
         if (options.help) {
-            process.stdout.write(json ? `${JSON.stringify({ usage: USAGE })}\n` : `${USAGE}\n`);
+            process.stdout.write(json ? `${JSON.stringify({ result: { usage: USAGE } })}\n` : `${USAGE}\n`);
             return 0;
         }
-        if (Number(process.versions.node.split('.')[0]) < 22)
-            fail('node_unsupported', 'Node.js 22.0.0 or newer is required', 'nvm install 22');
+        if (Number(process.versions.node.split('.')[0]) < 24)
+            fail('node_version_unsupported', 'Node.js 24.0.0 or newer is required', 'nvm install 24');
         const file = configPath();
         let report;
         if (options.command === 'show')
@@ -273,7 +245,8 @@ function main(argv) {
             };
             report = options.preflight ? mutate() : withMutationLock(file, mutate);
         }
-        const output = { status: options.preflight ? 'preflight_passed' : 'ok', config_path: file, ...report };
+        const details = { configPath: file, ...report };
+        const output = options.preflight ? { status: 'ready', ...details } : { result: details };
         process.stdout.write(json ? `${JSON.stringify(output)}\n` : `Report:\n${JSON.stringify(output, null, 2)}\n`);
         return 0;
     }

@@ -72,6 +72,6 @@ references checked for this plan on 2026-09-15:
 
 - [Codex subagents](https://developers.openai.com/codex/subagents/)
 
-Repository qualification lives in `tests/harness-advisor/QUALIFICATION.md` and
+Repository qualification lives in `docs/qualification/harness-advisor.md` and
 `tests/harness-advisor/EVALUATION.md`; neither ships with the plugin. These
 references are for executor-side maintenance, not child retrieval.

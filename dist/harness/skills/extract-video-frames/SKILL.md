@@ -1,7 +1,7 @@
 ---
 name: extract-video-frames
 description: "Extract all video frames, or every frame in an inclusive time range, at full resolution. Preserve PQ/HLG HDR as 10-bit HEIC and SDR as lossless PNG. Not for sampled frames, resizing, frame-rate conversion, deinterlacing, or tone mapping."
-compatibility: Requires Node.js 20.6.0 or newer, macOS 26.0 or newer, the macOS Command Line Tools, and ffmpeg-full with ffprobe, zscale, PNG, and TIFF support.
+compatibility: Requires Node.js 24.0.0 or newer, macOS 26.0 or newer, the macOS Command Line Tools, and ffmpeg-full with ffprobe, zscale, PNG, and TIFF support.
 ---
 
 # Extract full-quality video frames
@@ -65,7 +65,8 @@ containing no frame fails during preflight with `window_empty` and creates nothi
    matrix. For HDR it converts one representative frame through the same TIFF-to-HEIC
    path used by extraction, validates its 10-bit BT.2100 profile with `sips`, and removes
    both files. For SDR it decodes one representative frame to a null sink. It creates no
-   output artifact.
+   output artifact. It can populate the Swift helper cache described under
+   [Persistence](#persistence).
 
 2. If preflight succeeds, dispatch the same request without `--preflight`:
 
@@ -91,6 +92,25 @@ containing no frame fails during preflight with `window_empty` and creates nothi
 Use `--preflight --json` without an input to check the complete toolchain with a synthetic
 HLG TIFF-to-HEIC conversion. Window flags require an input.
 
+## Persistence
+
+HDR extraction and the synthetic preflight need the bundled Swift HEIC helper. The
+script compiles it once and caches the binary at
+`~/.harness-plugin/extract-video-frames/encoder/<sha256>/tiff-to-heic` with a
+`manifest.json` that records its byte count and SHA-256. The key is the SHA-256 of the
+helper source and the `swiftc --version` output, so a source or compiler change uses a
+new entry and a plugin upgrade with the same source reuses the existing one. A cached
+helper is reused only when its manifest matches and `tiff-to-heic --preflight` passes.
+A new entry is staged beside the cache and published with one directory rename, and an
+existing entry is never replaced.
+
+The cache is regenerable, not an initialization artifact. An unwritable home directory,
+an unusable compiler version report, or an invalid entry is not an error: the script
+compiles into its per-invocation temporary directory instead, as it does without a
+cache. Nothing prunes old entries. Deleting the `extract-video-frames` directory is
+always safe and forces one recompilation. SDR extraction never compiles or reads the
+cache.
+
 ## Result contract
 
 - Exit `0`: passed preflight or completed and published, with cleanup complete.
@@ -108,7 +128,13 @@ use `{"error":{"code","condition","remedy"}}`. A capability preflight can includ
 `cleanupFailures: [{path, code, condition}]`, preserving the primary error and exit
 status. Plain output includes the same paths and filesystem codes. A published artifact
 remains a successful `result` with `cleanupFailures` and exit `1`. A passed readiness
-check with cleanup failure remains `preflight` with `cleanupFailures` and exit `1`.
+check with cleanup failure remains a `"status":"ready"` report with `cleanupFailures`
+and exit `1`.
+
+A passed JSON preflight prints one flat line, `{"status":"ready",...}`, with the
+platform and resolved commands and, for an input-aware preflight, the input paths,
+output directory, dynamic range, output format and depth, dimensions, expected frame
+count, requested window, and first and last PTS beside `status`.
 
 A successful JSON run returns `{"result": ...}` with supplied and resolved input paths,
 selected stream, output directory, source and output color properties, PNG or HEIC
@@ -122,9 +148,9 @@ complete image decoding.
 - macOS 26.0 or newer: supported.
 - Older macOS, Linux, WSL2, and native Windows: rejected.
 
-Node.js 20.6.0 is the supported runtime floor. The script has no npm dependencies.
+Node.js 24.0.0 is the supported runtime floor. The script has no npm dependencies.
 
 Media processing fails on a child signal, a nonzero exit, or any FFmpeg/ffprobe error-level diagnostic, including exit zero.
 Capability listings are exempt. FFmpeg progress uses stdout internally and does not count as a media diagnostic.
-On failure, also relay `task`, `childExitCode`, `childSignal`, and captured `stderr` when present.
+On failure, also relay `task` (the name of the failed step, such as `decode-probe` or `extraction`), `childExitCode`, `childSignal`, and captured `stderr` when present.
 Preserve zero exit codes and null signal values in the diagnosis. Reported decode errors prevent publication.

@@ -7,7 +7,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const converter_runner_js_1 = require("./converter-runner.js");
 const shared = require("./shared.js");
-const DITHER_GRAPH = '[0:v]split=4[source2][source3][source4][source5];[1:v]split=4[palette2][palette3][palette4][palette5];[source2][palette2]paletteuse=dither=bayer:bayer_scale=2:diff_mode=rectangle[dither2];[source3][palette3]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle[dither3];[source4][palette4]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle[dither4];[source5][palette5]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle[dither5]';
+const DITHERS = [2, 3, 4, 5];
+// One graph per (fps, colors): the palette stays an in-memory frame, so no PNG round trip or second decode.
+function ditherGraph(colors) {
+    const sources = DITHERS.map(dither => `[source${dither}]`).join('');
+    const palettes = DITHERS.map(dither => `[palette${dither}]`).join('');
+    const uses = DITHERS.map(dither => `[source${dither}][palette${dither}]paletteuse=dither=bayer:bayer_scale=${dither}:diff_mode=rectangle[dither${dither}]`).join(';');
+    return `[0:v]split=${DITHERS.length + 1}[palettesource]${sources};[palettesource]palettegen=max_colors=${colors}:stats_mode=diff,split=${DITHERS.length}${palettes};${uses}`;
+}
 function candidateTasks(config) {
     const tasks = [];
     for (let fps = config.minFps; fps <= config.maxFps; fps += 1)
@@ -34,14 +41,11 @@ async function prepareScaledSources(state) {
     }
     await checked(state, 'source-caches', state.commands.ffmpeg, args, {}, 'source_prepare_failed', 'could not prepare the source caches', 'fix the reported ffmpeg decode or filter error, then run the same conversion again');
 }
-async function generatePalette(state, fps, colors, source, palette, task) {
-    await checked(state, `${task}-palette`, state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', source, '-vf', `palettegen=max_colors=${colors}:stats_mode=diff`, '-frames:v', '1', '-c:v', 'png', '-f', 'image2', '-update', '1', '-y', palette], {}, 'candidate_encode_failed', `palette generation failed for ${task}`, 'fix the reported ffmpeg error, then run the same conversion again');
-}
-async function generateFourRaw(state, fps, colors, source, palette, task) {
-    const outputs = [2, 3, 4, 5].map(dither => path.join(state.workDir, `raw-f${fps}-c${colors}-d${dither}.gif`));
-    const args = ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_complex_threads', '1', '-i', source, '-i', palette, '-filter_complex', DITHER_GRAPH];
+async function generateFourRaw(state, fps, colors, source, task) {
+    const outputs = DITHERS.map(dither => path.join(state.workDir, `raw-f${fps}-c${colors}-d${dither}.gif`));
+    const args = ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_complex_threads', '1', '-i', source, '-filter_complex', ditherGraph(colors)];
     for (let index = 0; index < outputs.length; index += 1)
-        args.push('-map', `[dither${index + 2}]`, '-an', '-loop', '0', '-c:v', 'gif', '-f', 'gif', '-y', outputs[index]);
+        args.push('-map', `[dither${DITHERS[index]}]`, '-an', '-loop', '0', '-c:v', 'gif', '-f', 'gif', '-y', outputs[index]);
     await checked(state, `${task}-four-dithers`, state.commands.ffmpeg, args, {}, 'candidate_encode_failed', `candidate encode failed for ${task}`, 'fix the reported ffmpeg error, then run the same conversion again');
     return outputs;
 }
@@ -52,10 +56,8 @@ async function evaluateColorTask(state, item) {
     const { fps, colors } = item;
     const task = `candidate-f${fps}-c${colors}`;
     const source = path.join(state.workDir, `source-f${fps}.nut`);
-    const palette = path.join(state.workDir, `palette-f${fps}-c${colors}.png`);
     try {
-        await generatePalette(state, fps, colors, source, palette, task);
-        const raws = await generateFourRaw(state, fps, colors, source, palette, task);
+        const raws = await generateFourRaw(state, fps, colors, source, task);
         for (let dither = 2; dither <= 5; dither += 1) {
             const raw = raws[dither - 2];
             const target = path.join(state.workDir, `f${fps}-c${colors}-d${dither}.gif`);
@@ -74,8 +76,6 @@ async function evaluateColorTask(state, item) {
             if (!state.config.keepWork && target !== state.bestCandidate?.path)
                 fs.rmSync(target, { force: true });
         }
-        if (!state.config.keepWork)
-            fs.rmSync(palette, { force: true });
     }
     catch (error) {
         throw new shared.RunError('worker_failed', `worker failed: ${task}: ${shared.fieldsOf(error).condition || shared.fieldsOf(error).message}`, typeof shared.fieldsOf(error).remedy === 'string' ? String(shared.fieldsOf(error).remedy) : 'run the conversion again and inspect the reported worker failure', { cause: error });

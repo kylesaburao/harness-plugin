@@ -1,0 +1,6 @@
+interface:
+  display_name: "Implementation Plan"
+  short_description: "Write a scoped, executable implementation plan"
+  default_prompt: "Use $harness:write-implementation-plan to write an implementation plan for this change."
+policy:
+  allow_implicit_invocation: true

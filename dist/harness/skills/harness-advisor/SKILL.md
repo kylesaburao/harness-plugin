@@ -80,7 +80,7 @@ silently broaden this Advisor's role to provide one.
 
 ## Resolve routing and dispatch
 
-Requires Node.js **22.0.0 or newer**, standard library only. The executor runs:
+Requires Node.js **24.0.0 or newer**, standard library only. The executor runs:
 
 ```sh
 node "<SKILL_DIR>/scripts/advisor-config.js" resolve --host codex --primary sol --json
@@ -89,8 +89,10 @@ node "<SKILL_DIR>/scripts/advisor-config.js" resolve --host codex --primary sol 
 Use the current host and semantic primary family. Add `--advisor <family>` for a
 family explicitly requested for this call, and `--reasoning-effort <level>` for an
 explicit effort. Missing config uses built-ins without creating a file. Resolution
-returns family selectors, effort, `route_source`, and `consultation_mode`, not an
-exact callable model or native status.
+prints one line, `{"result":{...}}`, whose `result` holds `configPath`, `host`,
+`primaryFamily`, `advisorFamily`, `reasoningEffort`, `routeSource`, and
+`consultationMode`: family selectors and effort, not an exact callable model or
+native status.
 
 Precedence is explicit call family, exact user host/primary route, user host
 default, built-in route, otherwise unresolved. Built-ins use `high` reasoning:
@@ -128,23 +130,39 @@ routes override defaults. Automatic consultation never changes this file.
 
 Mutations hold the existing exclusive `config.json.lock` directory from fresh
 read through atomic publication. Contention returns `config_busy` without saving.
+Acquisition failures return `config_lock_failed`. The lock is released only if it is
+still the one this run created; a release or ownership failure returns
+`config_lock_cleanup_failed` with the absolute lock path and a quoted recovery
+command, and the diagnostic says whether the configuration was saved.
 Retry explicitly after the writer finishes. Never steal an interrupted writer's
 lock; confirm no mutation is running before using the reported recovery command.
 `show` and `resolve` are read-only. Explicit preflight neither locks nor publishes
 and previews only the state it read.
 
-All bundled commands accept `--help`, `--json`, and `--preflight`. Dispatch the real
-command by default, without a preliminary preflight. Use preflight for an explicit
-readiness or preview request. Exit 2 means startup/usage failure; exit 1 means a
-write or consultation attempt failed. Relay the failing script's code, condition,
-and remedy verbatim. Relay success fields without rereading configuration or
+All bundled commands accept `--help` (or `-h`), `--json`, and `--preflight`. Dispatch
+the real command by default, without a preliminary preflight. Use preflight for an
+explicit readiness or preview request. Under `--json`, each command prints one stdout
+line: `{"status":"ready",...}` for a passed preflight, with the same fields flat
+beside `status`, or `{"result":{...}}` for a completed command. Configuration
+commands report `configPath` and `config`, and mutations also report `changed`;
+`config` echoes the saved file, so it keeps the file's own `schema_version` and
+`reasoning_effort` keys. Exit 2 means startup/usage failure; exit 1 means a write or
+consultation attempt failed. Failures print one stderr line,
+`{"error":{"code":"...","condition":"...","remedy":"..."}}`, with lowercase codes:
+`usage_error`, `node_version_unsupported`, `route_unresolved`, `config_invalid`,
+`config_version_unsupported`, `config_read_failed`, `config_busy`,
+`config_lock_failed`, `config_lock_cleanup_failed`, and `config_write_failed` for
+configuration, and `input_read_failed`, `input_invalid`,
+`advisor_contract_unavailable`, `claude_unavailable`, `advisor_execution_failed`,
+`advisor_response_invalid`, and `advisor_failed` for the Claude adapter. Relay the
+failing script's code, condition, and remedy verbatim. Relay success fields without rereading configuration or
 remeasuring artifacts. Invalid config is not permission to ignore saved routing.
 
 Resolve a callable model only at invocation: prefer a stable host alias, then
 current host metadata, then reliable current runtime knowledge. Never guess an
-exact ID or maintain a provider-ID registry. Record `host`, `primary_family`,
-`advisor_family`, `exact_advisor_model`, `reasoning_effort`, `route_source`, and
-`consultation_mode` in the task-local profile. Native/fallback selection is not
+exact ID or maintain a provider-ID registry. Record `host`, `primaryFamily`,
+`advisorFamily`, `exactAdvisorModel`, `reasoningEffort`, `routeSource`, and
+`consultationMode` in the task-local profile. Native/fallback selection is not
 part of that routing profile.
 
 The executor reads [host-codex.md](references/host-codex.md) or
@@ -200,31 +218,8 @@ authenticate user approval, or treat executor-reported tests as reproduced tests
 
 ## Carryover and compaction
 
-Keep one task-local epoch with a stable baseline and ordered durable records.
-The baseline contains the objective, requirements, and relevant invariants.
-Records use monotonically increasing IDs and `CONSTRAINT`, `EVIDENCE`, `DECISION`,
-`FAILURE`, or `SUPERSEDES`. Each is a concise sourced task record, not authentication.
-A supersession names the old record, which stays unchanged; later supersessions
-take precedence. The executor owns reconciliation of contradictions.
-
-Promote explicit requirements, observed source/test/runtime facts, authoritative
-documentation, accepted decisions, useful failures, and corrections. Advisor
-speculation is not evidence. Label supplied-only facts, assumptions, and unresolved
-questions. Recheck material premises when their applicable state changes; retain
-unaffected facts and history. Do not carry forward full logs, abandoned reasoning,
-or earlier Advisor prose just because it exists.
-
-Preserve useful baseline and serialized ledger text verbatim while relevant and
-accurate. Start a compact epoch when obsolete material, confusing supersessions,
-changed scope, or actual capacity makes the existing carryover less useful.
-Preserve requirements, invariants, useful evidence, decisions, failures, and
-unresolved conflicts, including exact details necessary to expose a defect.
-Do not remove necessary evidence merely to shorten the prompt. There is no fixed
-Harness input token, byte, or file-count limit. Respect actual host/model request
-capacity, room for output and host instructions, and explicit user cost or latency
-budgets. Use reliable counts when available; do not invent a universal ceiling or
-add a measurement subsystem. Report unavoidable omissions. Missing telemetry alone
-does not block a supported consultation.
+The executor reads [carryover.md](references/carryover.md) for the baseline,
+durable record, and compaction rules before preparing a consultation.
 
 Compaction preserves useful task facts and all task accounting. Epoch changes do
 **not** reset task call counts or authorize another consultation. Retain task-local
@@ -266,15 +261,8 @@ executor validation, and remaining uncertainty. Ask about concrete defects,
 regressions, missed requirements, unnecessary complexity, and validation gaps.
 Do not ask the Advisor to run the tests or certify completion.
 
-Caching is opportunistic, not memory. Preserve stable, relevant instructions,
-baseline, and serialization where practical. The cache profile is host, exact
-model, reasoning configuration, tool-free policy, policy version (4), and epoch.
-A model or effort change changes the cache profile, not the semantic epoch.
-Retain valid task facts and all budgets. Use cache controls only when the actual
-host exposes them; do not import native Advisor controls into fallback execution.
-Report reachable input/cached/write token metrics or their unavailability. Never
-warm a cache, preserve misleading context for a hit, or request Advisor tools to
-measure usage.
+The executor reads [caching.md](references/caching.md) for the cache profile and
+token-metric reporting before dispatch.
 
 ## Reconcile and continue
 

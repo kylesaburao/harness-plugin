@@ -22,12 +22,12 @@ exports.saveConfig = saveConfig;
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const crypto = require("node:crypto");
-const { randomUUID } = crypto;
+const config_store_js_1 = require("../../../shared/node/config-store.js");
 function errorDetails(error) {
     const value = isObject(error) ? error : {};
     return { code: typeof value.code === 'string' ? value.code : undefined, condition: typeof value.condition === 'string' ? value.condition : undefined, message: typeof value.message === 'string' ? value.message : undefined, remedy: typeof value.remedy === 'string' ? value.remedy : undefined };
 }
+const MINIMUM_NODE = Object.freeze([24, 0, 0]);
 const MAC_PATTERN = /^([0-9A-Fa-f]{2})([:-])(?:[0-9A-Fa-f]{2}\2){4}[0-9A-Fa-f]{2}$/;
 const IPV4_PATTERN = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const HOSTNAME_PATTERN = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
@@ -77,8 +77,8 @@ function isValidHost(value) {
     return typeof value === 'string' && (/^[0-9.]+$/.test(value) ? isValidIpv4(value) : HOSTNAME_PATTERN.test(value));
 }
 function checkNodeVersion() {
-    if (!nodeVersionAtLeast(process.version, [26, 0, 0])) {
-        throw new StartupError('node_version_unsupported', `Node.js 26.0.0 or newer is required, running ${process.version}`, 'install Node.js 26.0.0 or newer');
+    if (!nodeVersionAtLeast(process.version, MINIMUM_NODE)) {
+        throw new StartupError('node_version_unsupported', `Node.js ${MINIMUM_NODE.join('.')} or newer is required, running ${process.version}`, `install Node.js ${MINIMUM_NODE.join('.')} or newer`);
     }
 }
 function configPath() { return path.join(os.homedir(), '.harness-plugin', 'wake-desktop', 'config.json'); }
@@ -160,70 +160,18 @@ function loadTarget(name) {
 // The management CLI owns the transaction, including the read before mutation.
 function acquireConfigLock() {
     const lock = `${configPath()}.lock`;
-    const recovery = `confirm no target configuration mutation is running, then run rmdir -- '${lock.replaceAll("'", "'\\''")}'`;
-    let identity;
-    try {
-        fs.mkdirSync(path.dirname(lock), { recursive: true });
-    }
-    catch (error) {
-        throw new StartupError('target_config_lock_failed', `${lock}: cannot prepare configuration directory: ${errorDetails(error).message}`, recovery);
-    }
-    try {
-        fs.mkdirSync(lock);
-    }
-    catch (error) {
-        const busy = errorDetails(error).code === 'EEXIST';
-        throw new StartupError(busy ? 'target_config_busy' : 'target_config_lock_failed', `${lock}: ${busy ? 'another mutation holds the configuration lock' : `cannot acquire configuration lock: ${errorDetails(error).message}`}`, recovery);
-    }
-    try {
-        identity = fs.lstatSync(lock);
-    }
-    catch (error) {
-        // Without an identity it is unsafe to remove this directory.
-        throw new StartupError('target_config_lock_cleanup_failed', `${lock}: cannot establish acquired lock ownership: ${errorDetails(error).message}`, recovery);
-    }
-    return (saved, operationFailure) => {
-        try {
-            const current = fs.lstatSync(lock);
-            if (!current.isDirectory() || current.dev !== identity.dev || current.ino !== identity.ino) {
-                throw new Error('configuration lock ownership changed');
-            }
-            fs.rmdirSync(lock);
-        }
-        catch (error) {
-            const previous = operationFailure === undefined ? ''
-                : `; operation also failed: ${errorDetails(operationFailure).code || 'internal_error'}: ${errorDetails(operationFailure).condition || errorDetails(operationFailure).message || String(operationFailure)}`;
-            throw new StartupError('target_config_lock_cleanup_failed', `${lock}: ${saved ? 'configuration was saved; ' : ''}cannot release configuration lock: ${errorDetails(error).message}${previous}`, recovery);
-        }
-    };
+    return (0, config_store_js_1.acquireDirectoryLock)(lock, { busyCode: 'target_config_busy', failedCode: 'target_config_lock_failed',
+        cleanupCode: 'target_config_lock_cleanup_failed',
+        recovery: `confirm no target configuration mutation is running, then run rmdir -- '${lock.replaceAll("'", "'\\''")}'`,
+        error: (code, condition, remedy) => new StartupError(code, condition, remedy) });
 }
 function saveConfig(config) {
     validateRegistry(config);
     const destination = configPath();
-    const temporary = `${destination}.${randomUUID()}.tmp`;
-    let staged = false;
     try {
-        fs.mkdirSync(path.dirname(destination), { recursive: true });
-        const fd = fs.openSync(temporary, 'wx');
-        staged = true;
-        try {
-            fs.writeFileSync(fd, `${JSON.stringify(config, null, 2)}\n`);
-        }
-        finally {
-            fs.closeSync(fd);
-        }
-        fs.renameSync(temporary, destination);
+        (0, config_store_js_1.writeJsonAtomic)(destination, `${JSON.stringify(config, null, 2)}\n`);
     }
     catch (error) {
-        let cleanup = '';
-        if (staged) {
-            try {
-                fs.unlinkSync(temporary);
-            }
-            catch (failure) {
-                cleanup = `; temporary cleanup failed at ${temporary}: ${errorDetails(failure).message}`;
-            }
-        }
-        throw configError('target_config_write_failed', `cannot publish configuration: ${errorDetails(error).message}${cleanup}`, `restore write access to ${path.dirname(destination)} and retry the command`);
+        throw configError('target_config_write_failed', `cannot publish configuration: ${errorDetails(error).message}`, `restore write access to ${path.dirname(destination)} and retry the command`);
     }
 }

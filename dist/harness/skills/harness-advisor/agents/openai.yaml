@@ -1,0 +1,6 @@
+interface:
+  display_name: "Harness Advisor"
+  short_description: "Get a tool-free second opinion on hard reasoning"
+  default_prompt: "Use $harness:harness-advisor to get an independent review of this plan and its evidence."
+policy:
+  allow_implicit_invocation: true

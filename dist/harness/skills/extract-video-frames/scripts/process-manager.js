@@ -5,9 +5,10 @@ exports.boundedTail = boundedTail;
 const fs = require("node:fs");
 const path = require("node:path");
 const childProcess = require("node:child_process");
-const media_result_js_1 = require("../../../shared/node/media-result.js");
 const errors_js_1 = require("./errors.js");
+const mediaResult = require("../../../shared/node/media-result.js");
 const { spawn } = childProcess;
+const { childDetails } = mediaResult;
 const STDERR_TAIL_BYTES = 64 * 1024;
 class ProcessManager {
     constructor({ killTimeout = 5000 } = {}) { this.active = new Set(); this.signal = null; this.killTimeout = killTimeout; this.stopped = null; }
@@ -15,6 +16,7 @@ class ProcessManager {
         if (this.signal)
             throw new errors_js_1.DraftError('interrupted', `interrupted by ${this.signal}`, 'run the command again', errors_js_1.SIGNAL_EXIT[this.signal]);
     }
+    // Typed callers always name the task; the default only serves untyped test callers.
     async run(command, args, options = {}) {
         this.assertRunning();
         return new Promise((resolve, reject) => {
@@ -66,12 +68,13 @@ class ProcessManager {
                     return;
                 settled = true;
                 this.active.delete(child);
+                const evidence = childDetails(options.task, { code, signal, stderr: stderr.toString() });
                 if (closeError) {
-                    reject((0, errors_js_1.spoolStorageError)(options.stdoutFile, closeError, (0, media_result_js_1.childDetails)(command, { code, signal, stderr: stderr.toString() })));
+                    reject((0, errors_js_1.spoolStorageError)(options.stdoutFile, closeError, evidence));
                     return;
                 }
                 if (launchError) {
-                    reject(Object.assign(launchError, { task: command, childExitCode: code, childSignal: signal, stderr: stderr.toString() }));
+                    reject(Object.assign(launchError, evidence));
                     return;
                 }
                 resolve({ code, signal, ...(stdout ? { stdout: Buffer.concat(stdout).toString() } : {}), stderr: stderr.toString() });

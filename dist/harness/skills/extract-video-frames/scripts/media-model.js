@@ -182,16 +182,28 @@ function pixelProperties(stream, descriptors) {
     }
     return { alpha: alpha === 1, bitDepth: Math.max(...components.map(component => component.bit_depth)) };
 }
-const DISPLAY_TRANSFORMS = new Map([
+// Keys are the normalized a,b,c,d entries of an FFmpeg display matrix. rotationDegrees is the
+// counter-clockwise rotation applied after any listed flip, matching the sign of ffprobe's
+// side-data rotation, so 90 is transpose=cclock and 270 is transpose=clock.
+const PURE_ROTATIONS = [
     ['1,0,0,1', { rotationDegrees: 0, flips: [], filters: [] }],
-    ['-1,0,0,1', { rotationDegrees: 0, flips: ['horizontal'], filters: ['hflip'] }],
-    ['1,0,0,-1', { rotationDegrees: 0, flips: ['vertical'], filters: ['vflip'] }],
+    ['0,-1,1,0', { rotationDegrees: 90, flips: [], filters: ['transpose=cclock'] }],
     ['-1,0,0,-1', { rotationDegrees: 180, flips: [], filters: ['hflip', 'vflip'] }],
-    ['0,-1,1,0', { rotationDegrees: 270, flips: [], filters: ['transpose=clock'] }],
-    ['0,1,-1,0', { rotationDegrees: 90, flips: [], filters: ['transpose=cclock'] }],
-    ['0,-1,-1,0', { rotationDegrees: 270, flips: ['horizontal'], filters: ['hflip', 'transpose=clock'] }],
-    ['0,1,1,0', { rotationDegrees: 270, flips: ['vertical'], filters: ['vflip', 'transpose=clock'] }],
-]);
+    ['0,1,-1,0', { rotationDegrees: 270, flips: [], filters: ['transpose=clock'] }],
+];
+// A flip applied before a rotation negates one row of the rotation matrix: hflip negates (a,b)
+// and vflip negates (c,d). Deriving from the identity and 270 rows covers the remaining four
+// orthogonal matrices.
+function flippedRows() {
+    const rows = [];
+    for (const [key, axes] of PURE_ROTATIONS.filter(([, axes]) => axes.rotationDegrees === 0 || axes.rotationDegrees === 270)) {
+        const [a, b, c, d] = key.split(',').map(Number);
+        rows.push([[-a, -b, c, d].join(','), { rotationDegrees: axes.rotationDegrees, flips: ['horizontal'], filters: ['hflip', ...axes.filters] }]);
+        rows.push([[a, b, -c, -d].join(','), { rotationDegrees: axes.rotationDegrees, flips: ['vertical'], filters: ['vflip', ...axes.filters] }]);
+    }
+    return rows;
+}
+const DISPLAY_TRANSFORMS = new Map([...PURE_ROTATIONS, ...flippedRows()]);
 function displayMatrixValues(text) {
     const rows = String(text).split(/\r?\n/).map(line => {
         const match = /:\s*(-?\d+)\s+(-?\d+)\s+(-?\d+)\s*$/.exec(line.trim());
@@ -213,21 +225,27 @@ function transformFromMatrix(values) {
     const supported = DISPLAY_TRANSFORMS.get(normalized.join(','));
     return supported ? { ...supported, matrix: values, swapsDimensions: normalized[1] !== 0 } : null;
 }
-function transformFromRotation(raw) {
+// ffprobe side-data rotation is counter-clockwise; the legacy rotate tag is clockwise.
+function transformFromRotation(raw, convention) {
     const rotation = Number(raw || 0);
     if (!Number.isFinite(rotation))
         return null;
-    const normalized = ((rotation % 360) + 360) % 360;
+    const counterClockwise = convention === 'cw' ? -rotation : rotation;
+    const normalized = ((counterClockwise % 360) + 360) % 360;
     const nearest = Math.round(normalized / 90) * 90 % 360;
     if (Math.abs(normalized - nearest) > 0.001)
         return null;
-    const key = new Map([[0, '1,0,0,1'], [90, '0,1,-1,0'], [180, '-1,0,0,-1'], [270, '0,-1,1,0']]).get(nearest);
-    return { ...DISPLAY_TRANSFORMS.get(key), matrix: null, swapsDimensions: nearest === 90 || nearest === 270 };
+    const [, axes] = PURE_ROTATIONS.find(([, candidate]) => candidate.rotationDegrees === nearest);
+    return { ...axes, matrix: null, swapsDimensions: nearest === 90 || nearest === 270 };
 }
 function displayTransform(stream) {
     const side = metadataList(stream.side_data_list).find(entry => entry.rotation !== undefined || /display matrix/i.test(String(entry.side_data_type || '')));
     const matrixText = side && (side.displaymatrix || side.display_matrix);
-    const transform = matrixText ? transformFromMatrix(displayMatrixValues(matrixText)) : transformFromRotation(side && side.rotation !== undefined ? side.rotation : metadataRecord(stream.tags).rotate);
+    const transform = matrixText
+        ? transformFromMatrix(displayMatrixValues(matrixText))
+        : side && side.rotation !== undefined
+            ? transformFromRotation(side.rotation, 'ccw')
+            : transformFromRotation(metadataRecord(stream.tags).rotate, 'cw');
     if (!transform)
         throw new errors_js_1.DraftError('display_transform_unsupported', 'display matrix contains scale, shear, perspective, or a non-orthogonal rotation', 're-encode the video with only exact 90-degree rotations or axis flips');
     return transform;

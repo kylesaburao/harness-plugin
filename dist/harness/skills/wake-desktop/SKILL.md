@@ -7,7 +7,7 @@ description: Wake a desktop, server, or NAS on the same LAN using Wake-on-LAN, o
 
 ## Requirements and limits
 
-Both executables require Node.js 26.0.0 or newer, with no npm packages.
+Both executables require Node.js 24.0.0 or newer, with no npm packages.
 Configuration management uses only filesystem APIs on any platform. Waking requires macOS or Linux.
 Waiting requires system `ping` on PATH and permission to send ICMP. `--no-wait`
 requires neither ping nor ICMP. Both modes require the target MAC and IP or hostname.
@@ -98,8 +98,8 @@ Registration alone never wakes. “Register and wake” means successful registr
 followed by a separate named wake. A wake request never implicitly registers.
 Management commands ignore wake environment variables and use no networking.
 
-All commands accept `--help`, `--json`, and `--preflight`, with no short aliases or
-positional names. Help reads no configuration. Use preflight only for an explicit
+All commands accept `--help` (or `-h`), `--json`, and `--preflight`, with no other short
+aliases or positional names. Help reads no configuration. Use preflight only for an explicit
 readiness check. It validates arguments, runtime, the full existing registry, and
 operation semantics without creating directories or writing. It cannot promise a
 later write will succeed. Normal dispatch does those same checks directly.
@@ -112,9 +112,10 @@ trailing newline. Failed staging or publication preserves the original file and
 cleans up the temporary file. Mutations use the configuration lock described below.
 There are no backups or history.
 
-Relay reported management fields: `status` (`registered`, `updated`, `renamed`,
-`removed`, `listed`, or `ready`), absolute `configPath`, and `changed` for completed
-mutations. Register/update include `name` and `target: {ip, mac}`, rename includes
+With `--json`, a completed command prints one line, `{"result":{...}}`, and a passed
+preflight prints one flat line, `{"status":"ready",...}`. Relay reported management
+fields: `status` (`registered`, `updated`, `renamed`, `removed`, `listed`, or `ready`),
+absolute `configPath`, and `changed` for completed mutations. Register/update include `name` and `target: {ip, mac}`, rename includes
 `name` and `newName`, remove includes `name`, list includes `targets: [{name, ip, mac}]`
 sorted by direct name comparison, and preflight includes `operation`.
 Exit 0 is success, 2 is argument/runtime/configuration/read failure, and 1 is attempted
@@ -124,7 +125,9 @@ independent diagnosis or automatically deleting malformed configuration.
 ## Results and stopping
 
 Relay the script's result fields without re-probing or independently diagnosing
-its output. JSON success is on stdout. Named results also include `target`, the saved name:
+its output. JSON success is one stdout line: a passed preflight is flat
+`{"status":"ready",...}`, and a sent packet is `{"result":{...}}` with `status` inside
+`result`. Named results also include `target`, the saved name:
 
 | Status | Fields and meaning |
 | --- | --- |

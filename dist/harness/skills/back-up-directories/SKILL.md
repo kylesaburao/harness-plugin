@@ -43,9 +43,11 @@ at every target.
    ```
 
    `sourceDirectory` and a non-empty `targetDirectories` are required. `outputDirectory` is
-   optional and defaults to the system temporary directory. Relative paths resolve from the
-   configuration file's own directory. Name the local copy something matching
-   `*.local.json`, which the repository ignores, because these paths are machine-specific.
+   optional. Without it, the archive is staged in the first `targetDirectories` entry and
+   published there by renaming it, and the preflight `output` field names that target.
+   Relative paths resolve from the configuration file's own directory. Name the local copy
+   something matching `*.local.json`, which the repository ignores, because these paths are
+   machine-specific.
 
 2. Validate the configuration without backing anything up. This is a separate dispatch
    because the real run is interactive and the agent must never invoke or answer its
@@ -60,9 +62,10 @@ at every target.
    This runs exactly the validation a real run does, including the environment check, so it
    reports the resolved source, output, targets, and the archive filename before any data
    moves. It has one side effect: a missing output directory is created, as it would be on a
-   real run. Exit status 2 with `dependency_missing` or `node_version_unsupported` means the
+   real run. The ready report's `outputDirectoryCreated` is that directory's path when this
+   preflight created it, or `null` when it already existed. Exit status 2 with `dependency_missing` or `node_version_unsupported` means the
    environment is not ready; on `dependency_missing`, relay the `remedy` command and ask
-   before running it, since it writes to the skill directory. Exit status 3 with
+   before running it, since it writes to `~/.harness-plugin/back-up-directories/`. Exit status 3 with
    `config_invalid` means the configuration needs a fix, not the environment.
 
 3. Hand the run to the user:
@@ -77,15 +80,17 @@ at every target.
 | --- | --- |
 | `0` | The archive was created and every copy was installed, or the user answered no at the prompt |
 | `2` | Did not start: `usage_error`, `dependency_missing`, or `node_version_unsupported` |
-| `3` | Did not start: `config_invalid`. Nothing was archived or copied |
+| `3` | Did not start: `config_invalid`, or `lock_directory_failed` when the run lock cannot be created. Nothing was archived or copied |
 | `4` | Archive creation failed |
 | `5` | A copy failed. Copies installed before it remain in place |
-| `130` / `143` | Interrupted. Temporary artifacts were cleaned up |
+| `129` / `130` / `143` | Interrupted by `SIGHUP`, `SIGINT`, or `SIGTERM`. Temporary artifacts were cleaned up |
 
 Exit `0` covers a cancelled run as well as a completed one, so read stdout to tell them
-apart: a cancellation prints `CANCELLED`. Copies are serial and stop at the first failure,
-so on exit `5` say which targets did get a copy rather than describing the backup as
-failed outright.
+apart: a cancellation prints `CANCELLED`. Without `outputDirectory`, copies run in parallel
+and a failed target does not stop the others; the exit `5` message names each failed
+destination and lists the installed copies. With a configured output directory that is also
+a target, copies are serial and stop at the first failure. Either way, on exit `5` say which
+targets did get a copy rather than describing the backup as failed outright.
 
 ## Before claiming a backup is safe
 
@@ -95,10 +100,10 @@ about guarantees. Points that change what you should tell the user:
 - The source is archived live. There is no snapshot and no detection of a file changing
   mid-archive, so a valid ZIP can still hold a mixed point-in-time view. When consistency
   matters, the source has to be quiesced first.
-- One run lock lives at `.backup-tool.lock` in the invoking user's home directory. A
+- One run lock lives at `~/.harness-plugin/back-up-directories/run.lock` for the invoking user. A
   `SIGKILL` or power loss leaves it behind, and the next run reports the path. Removing it
   is the operator's call after confirming no backup is running. Do not delete it for them.
 - The tool is a same-user interactive utility. Its configuration and directory paths are
   trusted input, so it is not suitable for privileged services or cross-user operation.
 
-With `--json`, completion reports the source, retained archive (or `null`), staging removal, copy paths, and archive bytes. Relay these fields. The preview, confirmation prompt, and progress use stderr. The confirmation requirement still applies.
+With `--json`, completion reports the source, retained archive (or `null`), staging removal, copy paths, and archive bytes. `stagingRemoved` is also `true` when the staging archive was renamed into the first target. Relay these fields. A cancellation reports `{"result":{"cancelled":true,"outputDirectoryCreated":<path or null>}}`, where the path names an output directory that preflight created and the cancelled run left behind. The preview, confirmation prompt, and progress use stderr. The confirmation requirement still applies.

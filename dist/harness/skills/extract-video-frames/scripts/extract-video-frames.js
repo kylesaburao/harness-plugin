@@ -3,6 +3,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.transformFromMatrix = exports.selectVideoStream = exports.parseTime = exports.identity = exports.formatTime = exports.displayRotation = exports.classifyStream = exports.boundedTail = exports.analyzeFrameSpool = exports.ProcessManager = exports.pixelProperties = exports.descriptorMap = void 0;
 exports.cleanupPaths = cleanupPaths;
+exports.compileEncoder = compileEncoder;
 exports.emitError = emitError;
 exports.assertSourceUnchanged = assertSourceUnchanged;
 exports.codecArguments = codecArguments;
@@ -18,6 +19,7 @@ exports.publishDirectoryNoReplace = publishDirectoryNoReplace;
 exports.representativeDecodePreflight = representativeDecodePreflight;
 exports.resultPayload = resultPayload;
 exports.structuralChecks = structuralChecks;
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -43,7 +45,10 @@ exports.classifyStream = classifyStream;
 exports.displayRotation = displayRotation;
 exports.selectVideoStream = selectVideoStream;
 exports.transformFromMatrix = transformFromMatrix;
-const MINIMUM_NODE = Object.freeze([20, 6, 0]);
+const MINIMUM_NODE = Object.freeze([24, 0, 0]);
+const ENCODER_NAME = 'tiff-to-heic';
+const ENCODER_MANIFEST = 'manifest.json';
+const ENCODER_MANIFEST_SCHEMA = 1;
 const MINIMUM_MACOS = Object.freeze([26, 0, 0]);
 const MACOS_PUBLISH_SCRIPT = 'ObjC.import("Foundation"); function run(argv) { const manager = $.NSFileManager.defaultManager; const ok = manager.moveItemAtPathToPathError(argv[0], argv[1], null); if (ok) return "published"; return manager.fileExistsAtPath(argv[1]) ? "collision" : "failed"; }';
 function versionAtLeast(actual, minimum) {
@@ -168,13 +173,13 @@ function parseListing(text) {
 }
 async function platformPreflight(manager) {
     if (!versionAtLeast(process.version, MINIMUM_NODE))
-        throw new DraftError('node_version_unsupported', `Node.js 20.6.0 or newer is required, running ${process.version}`, 'install Node.js 20.6.0 or newer');
+        throw new DraftError('node_version_unsupported', `Node.js ${MINIMUM_NODE.join('.')} or newer is required, running ${process.version}`, `install Node.js ${MINIMUM_NODE.join('.')} or newer`);
     if (process.platform !== 'darwin')
         throw new DraftError('platform_unsupported', `unsupported platform: ${process.platform}`, 'run this skill on macOS 26.0 or newer');
     const swVers = resolveCommand('sw_vers');
     if (!swVers)
         throw new DraftError('command_missing', 'macOS sw_vers was not found', 'restore /usr/bin/sw_vers, which ships with macOS');
-    const result = await manager.run(swVers, ['-productVersion']);
+    const result = await manager.run(swVers, ['-productVersion'], { task: 'platform-preflight' });
     const version = result.stdout.trim();
     if (result.code !== 0 || !versionAtLeast(version, MINIMUM_MACOS))
         throw new DraftError('platform_unsupported', `macOS 26.0 or newer is required, running ${version || 'an unknown version'}`, 'upgrade this Mac to macOS 26.0 or newer');
@@ -200,7 +205,7 @@ async function resolveFfmpegPair(manager) {
     }
     const brew = resolveCommand('brew');
     if (brew) {
-        const result = await manager.run(brew, ['--prefix', 'ffmpeg-full']);
+        const result = await manager.run(brew, ['--prefix', 'ffmpeg-full'], { task: 'toolchain-preflight' });
         if (result.code === 0) {
             const pair = executablePair(path.join(result.stdout.trim(), 'bin'));
             if (pair)
@@ -237,7 +242,7 @@ async function toolchainPreflight(manager, platform) {
             ['-muxers', ['image2']],
             ['-pix_fmts', ['rgb24', 'rgb48le', 'rgba', 'rgba64le']],
         ]) {
-            const result = await manager.run(commands.ffmpeg, ['-hide_banner', flag]);
+            const result = await manager.run(commands.ffmpeg, ['-hide_banner', flag], { task: 'toolchain-preflight' });
             if (result.code !== 0)
                 failures.push({ code: 'ffmpeg_probe_failed', condition: `ffmpeg could not report ${flag.slice(1)}`, remedy: commandRemedy() });
             else {
@@ -249,38 +254,39 @@ async function toolchainPreflight(manager, platform) {
         }
     }
     if (commands.ffprobe) {
-        const result = await manager.run(commands.ffprobe, ['-v', 'error', '-show_program_version', '-of', 'json']);
+        const result = await manager.run(commands.ffprobe, ['-v', 'error', '-show_program_version', '-of', 'json'], { task: 'toolchain-preflight' });
         if (result.code !== 0 || !result.stdout.trim())
             failures.push({ code: 'ffprobe_probe_failed', condition: 'ffprobe could not report its version', remedy: commandRemedy() });
     }
     if (failures.length || !commands.ffmpeg || !commands.ffprobe || !commands.publisher || !commands.swiftc || !commands.sips)
         throw new DraftError('preflight_failed', `${failures.length} toolchain preflight check(s) failed`, commandRemedy(), EXIT.CANNOT_START, { failures });
-    const pixelDescriptors = descriptorMap(await readJson(manager, commands.ffprobe, ['-v', 'error', '-show_pixel_formats', '-of', 'json'], 'ffprobe_probe_failed', 'ffprobe could not report pixel format descriptors', commandRemedy()));
+    const pixelDescriptors = descriptorMap(await readJson(manager, 'toolchain-preflight', commands.ffprobe, ['-v', 'error', '-show_pixel_formats', '-of', 'json'], 'ffprobe_probe_failed', 'ffprobe could not report pixel format descriptors', commandRemedy()));
     return { platform, commands: { ...commands, ffmpeg: commands.ffmpeg, ffprobe: commands.ffprobe, publisher: commands.publisher, swiftc: commands.swiftc, sips: commands.sips }, pixelDescriptors };
 }
-async function readJson(manager, command, args, code, condition, remedy, exitCode = EXIT.CANNOT_START) {
-    const result = await manager.run(command, args);
+async function readJson(manager, task, command, args, code, condition, remedy, exitCode = EXIT.CANNOT_START) {
+    const result = await manager.run(command, args, { task });
     if (mediaFailed(result))
-        throw new DraftError(code, `${condition}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, remedy, exitCode, childDetails(code, result));
+        throw new DraftError(code, `${condition}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, remedy, exitCode, childDetails(task, result));
     try {
         return JSON.parse(result.stdout);
     }
     catch {
-        throw new DraftError(code, `${condition}: output was not valid JSON`, remedy, exitCode, childDetails(code, result));
+        throw new DraftError(code, `${condition}: output was not valid JSON`, remedy, exitCode, childDetails(task, result));
     }
 }
 async function inspectInput(manager, state, options) {
-    const metadata = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', state.paths.supplied], 'input_unusable', `ffprobe could not inspect input video: ${state.paths.supplied}`, 'confirm the file is a complete video ffmpeg can decode');
+    const task = 'inspect-input';
+    const metadata = await readJson(manager, task, state.commands.ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', state.paths.supplied], 'input_unusable', `ffprobe could not inspect input video: ${state.paths.supplied}`, 'confirm the file is a complete video ffmpeg can decode');
     const stream = selectVideoStream(metadataRecord(metadata).streams);
     if (typeof stream.width !== 'number' || typeof stream.height !== 'number' || !stream.width || !stream.height)
         throw new DraftError('stream_unsupported', 'selected video stream has no valid dimensions', 're-export the source with a decodable video stream');
     const color = classifyStream(stream, pixelProperties(stream, state.pixelDescriptors));
     const transform = displayTransform(stream);
     const spool = path.join(state.encoderDirectory, 'frame-metadata.json');
-    const result = await manager.run(state.commands.ffprobe, ['-v', 'error', '-threads', '0', '-select_streams', String(stream.index), '-show_frames', '-show_entries', 'frame=best_effort_timestamp,duration,pkt_duration,color_range,color_space,color_primaries,color_transfer,pix_fmt', '-of', 'json', state.paths.supplied], { stdoutFile: spool });
+    const result = await manager.run(state.commands.ffprobe, ['-v', 'error', '-threads', '0', '-select_streams', String(stream.index), '-show_frames', '-show_entries', 'frame=best_effort_timestamp,duration,pkt_duration,color_range,color_space,color_primaries,color_transfer,pix_fmt', '-of', 'json', state.paths.supplied], { task, stdoutFile: spool });
     manager.assertRunning();
     if (mediaFailed(result)) {
-        const details = childDetails('input_unusable', result);
+        const details = childDetails(task, result);
         if (/no space left on device|ENOSPC|disk quota exceeded/i.test(result.stderr))
             throw spoolStorageError(spool, new Error(result.stderr.trim()), details);
         throw new DraftError('input_unusable', `ffprobe could not enumerate frame timestamps${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair or re-export the video with valid presentation timestamps', EXIT.CANNOT_START, details);
@@ -291,7 +297,7 @@ async function inspectInput(manager, state, options) {
     }
     catch (error) {
         if (error instanceof DraftError && error.code === 'input_unusable' && error.condition.endsWith('output was not valid JSON'))
-            Object.assign(error, childDetails('input_unusable', result));
+            Object.assign(error, childDetails(task, result));
         throw error;
     }
     const orientedWidth = transform.swapsDimensions ? stream.height : stream.width;
@@ -313,7 +319,9 @@ function ffmpegArguments(state, temporary) {
     const color = media.color;
     const filters = filterGraph(media);
     const conversion = colorConversionFilter(color);
-    const output = path.join(temporary, `frame-%06d.${color.intermediateExtension || color.extension}`);
+    // image2 expands every `%` in its output path, so a literal `%` in the
+    // directory must be doubled while the frame-number pattern stays live.
+    const output = path.join(temporary.replace(/%/g, '%%'), `frame-%06d.${color.intermediateExtension || color.extension}`);
     const codec = codecArguments(color);
     return ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-noautorotate', '-progress', 'pipe:1', '-nostats', '-i', state.paths.supplied, '-map', `0:${media.stream.index}`, '-an', '-sn', '-dn', '-vf', `${filters},${conversion}`, '-fps_mode', 'passthrough', '-start_number', '1', ...codec, '-f', 'image2', '-n', output];
 }
@@ -340,19 +348,22 @@ function decodeProbeArguments(state) {
     const media = state.media;
     const conversion = colorConversionFilter(media.color);
     const output = media.color.dynamicRange === 'sdr' ? '-' : path.join(state.encoderDirectory, 'preflight-frame.tiff');
-    const format = media.color.dynamicRange === 'sdr' ? 'null' : 'image2';
-    return ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-noautorotate', '-progress', 'pipe:1', '-nostats', '-i', state.paths.supplied, '-map', `0:${media.stream.index}`, '-an', '-sn', '-dn', '-vf', `${filterGraph(media, media.firstTick, media.firstTick)},${conversion}`, '-frames:v', '1', ...codecArguments(media.color), '-f', format, '-n', output];
+    // -update 1 makes image2 write the literal filename, so a % in TMPDIR is not
+    // expanded as a sequence pattern.
+    const format = media.color.dynamicRange === 'sdr' ? ['-f', 'null'] : ['-f', 'image2', '-update', '1'];
+    return ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-noautorotate', '-progress', 'pipe:1', '-nostats', '-i', state.paths.supplied, '-map', `0:${media.stream.index}`, '-an', '-sn', '-dn', '-vf', `${filterGraph(media, media.firstTick, media.firstTick)},${conversion}`, '-frames:v', '1', ...codecArguments(media.color), ...format, '-n', output];
 }
 async function representativeDecodePreflight(manager, state) {
     const hdr = state.media.color.dynamicRange !== 'sdr';
     const tiff = hdr ? path.join(state.encoderDirectory, 'preflight-frame.tiff') : null;
     const heic = hdr ? path.join(state.encoderDirectory, 'preflight-frame.heic') : null;
     // The invocation-owned encoder directory is cleaned after children terminate.
-    const result = await manager.run(state.commands.ffmpeg, decodeProbeArguments(state));
+    const task = 'decode-probe';
+    const result = await manager.run(state.commands.ffmpeg, decodeProbeArguments(state), { task });
     if (mediaFailed(result))
-        throw new DraftError('input_decode_failed', `ffmpeg could not decode and convert a representative selected frame${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair or re-export the input with a supported video codec and color description', EXIT.CANNOT_START, childDetails('input_decode_failed', result));
+        throw new DraftError('input_decode_failed', `ffmpeg could not decode and convert a representative selected frame${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair or re-export the input with a supported video codec and color description', EXIT.CANNOT_START, childDetails(task, result));
     if (!/(?:^|\n)frame=1(?:\r?\n|$)/.test(result.stdout))
-        throw new DraftError('input_decode_failed', 'ffmpeg completed the representative decode probe without producing the selected frame', 'repair or re-export the input with valid presentation timestamps', EXIT.CANNOT_START, childDetails('input_decode_failed', result));
+        throw new DraftError('input_decode_failed', 'ffmpeg completed the representative decode probe without producing the selected frame', 'repair or re-export the input with valid presentation timestamps', EXIT.CANNOT_START, childDetails(task, result));
     if (hdr) {
         await encodeHeic(manager, state, tiff, heic, EXIT.CANNOT_START);
         await inspectHeic(manager, state, heic, path.basename(heic), EXIT.CANNOT_START);
@@ -365,9 +376,10 @@ async function syntheticEncoderPreflight(manager, state) {
     const color = classifyStream(stream, pixelProperties(stream, state.pixelDescriptors));
     const syntheticState = { ...state, media: { color, width: 64, height: 64 } };
     const filters = `format=yuv420p10le,setparams=range=limited:color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc,${colorConversionFilter(color)}`;
-    const result = await manager.run(state.commands.ffmpeg, ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-f', 'lavfi', '-i', 'color=c=white:s=64x64:d=0.04', '-vf', filters, '-frames:v', '1', '-c:v', 'tiff', '-f', 'image2', '-n', tiff]);
+    const task = 'heic-preflight';
+    const result = await manager.run(state.commands.ffmpeg, ['-hide_banner', '-v', 'error', '-xerror', '-nostdin', '-f', 'lavfi', '-i', 'color=c=white:s=64x64:d=0.04', '-vf', filters, '-frames:v', '1', '-c:v', 'tiff', '-f', 'image2', '-update', '1', '-n', tiff], { task });
     if (mediaFailed(result))
-        throw new DraftError('heic_encoder_unavailable', `ffmpeg could not create the synthetic HLG preflight frame${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair ffmpeg-full and run the same command again', EXIT.CANNOT_START, childDetails('heic_encoder_unavailable', result));
+        throw new DraftError('heic_encoder_unavailable', `ffmpeg could not create the synthetic HLG preflight frame${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair ffmpeg-full and run the same command again', EXIT.CANNOT_START, childDetails(task, result));
     await encodeHeic(manager, syntheticState, tiff, heic, EXIT.CANNOT_START);
     await inspectHeic(manager, syntheticState, heic, path.basename(heic), EXIT.CANNOT_START);
 }
@@ -378,14 +390,16 @@ async function encodeHeic(manager, state, input, output, exitCode = EXIT.FAILED)
     const encoder = state.commands.encoder;
     if (!encoder)
         throw new DraftError('heic_encoder_unavailable', 'Swift HEIC helper has not been compiled', 'run preflight before encoding HDR frames', exitCode);
-    const result = await manager.run(encoder, [input, output, hdrTransfer(state.media.color)]);
+    const task = 'heic-encode';
+    const result = await manager.run(encoder, [input, output, hdrTransfer(state.media.color)], { task });
     if (result.code !== 0)
-        throw new DraftError('heic_encode_failed', `HDR TIFF-to-HEIC encoding failed${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair the reported Core Image encoder failure and run again', exitCode, childDetails('heic_encode_failed', result));
+        throw new DraftError('heic_encode_failed', `HDR TIFF-to-HEIC encoding failed${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair the reported Core Image encoder failure and run again', exitCode, childDetails(task, result));
 }
 async function inspectHeic(manager, state, filename, displayName, exitCode = EXIT.FAILED) {
-    const result = await manager.run(state.commands.sips, ['-g', 'pixelWidth', '-g', 'pixelHeight', '-g', 'bitsPerSample', '-g', 'profile', filename]);
+    const task = 'structural-check';
+    const result = await manager.run(state.commands.sips, ['-g', 'pixelWidth', '-g', 'pixelHeight', '-g', 'bitsPerSample', '-g', 'profile', filename], { task });
     if (result.code !== 0)
-        throw new DraftError('structural_check_failed', `sips could not inspect extracted frame: ${displayName}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair the Core Image HEIC encoder and run again', exitCode, childDetails('structural_check_failed', result));
+        throw new DraftError('structural_check_failed', `sips could not inspect extracted frame: ${displayName}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair the Core Image HEIC encoder and run again', exitCode, childDetails(task, result));
     const value = (key) => new RegExp(`^\\s*${key}:\\s*(.+)$`, 'm').exec(result.stdout)?.[1]?.trim();
     const width = Number(value('pixelWidth'));
     const height = Number(value('pixelHeight'));
@@ -453,7 +467,7 @@ async function structuralChecks(manager, state, temporary) {
             probes.push(await inspectHeic(manager, state, path.join(temporary, file), file));
             continue;
         }
-        const data = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-show_streams', '-of', 'json', path.join(temporary, file)], 'structural_check_failed', `ffprobe could not inspect extracted frame: ${file}`, 'repair the FFmpeg image encoder and run again', EXIT.FAILED);
+        const data = await readJson(manager, 'structural-check', state.commands.ffprobe, ['-v', 'error', '-show_streams', '-of', 'json', path.join(temporary, file)], 'structural_check_failed', `ffprobe could not inspect extracted frame: ${file}`, 'repair the FFmpeg image encoder and run again', EXIT.FAILED);
         const streams = metadataRecord(data).streams;
         const stream = Array.isArray(streams) ? metadataRecord(streams[0]) : undefined;
         if (!stream || stream.codec_name !== state.media.color.codec || stream.width !== state.media.width || stream.height !== state.media.height)
@@ -504,9 +518,10 @@ function resultPayload(state, checks) {
         ],
     };
 }
-function emit(payload, json, kind = 'result') {
+function emit(payload, json) {
+    // A passed preflight is flat {"status":"ready",...}; a completed run is {"result":{...}}.
     if (json) {
-        process.stdout.write(`${JSON.stringify({ [kind]: payload })}\n`);
+        process.stdout.write(`${JSON.stringify(payload.status === 'ready' ? payload : { result: payload })}\n`);
         return;
     }
     if (payload.status === 'ready') {
@@ -570,16 +585,87 @@ function emitError(error, json) {
 function usage(basename = 'extract-video-frames.js') {
     return `Usage: ${basename} [OPTIONS] INPUT_VIDEO\n\nOptions:\n  --start TIME       Inclusive start, decimal seconds or HH:MM:SS[.fraction]\n  --end TIME         Inclusive end, decimal seconds or HH:MM:SS[.fraction]\n  --preflight        Check readiness and input without creating frames\n  --json             Emit machine-readable readiness, result, or error data\n  -h, --help         Print this message\n  --                 Stop option parsing\n\nOutput:\n  <input-stem>-frames/frame-000001.png   for SDR\n  <input-stem>-frames/frame-000001.heic  for PQ or HLG HDR\n\nExit status:\n  0 success or passed preflight; 2 work did not start; 1 work or cleanup failed\n  129 SIGHUP; 130 SIGINT; 143 SIGTERM\n`;
 }
-async function compileEncoder(manager, state, encoderDirectory) {
-    const source = path.join(__dirname, 'tiff-to-heic.swift');
-    const encoder = path.join(encoderDirectory, 'tiff-to-heic');
-    const result = await manager.run(state.commands.swiftc, [source, '-o', encoder]);
-    if (result.code !== 0)
-        throw new DraftError('heic_encoder_unavailable', `Swift HEIC helper could not compile${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'install or repair the macOS Command Line Tools with xcode-select --install', EXIT.CANNOT_START, childDetails('heic_encoder_unavailable', result));
-    state.commands.encoder = encoder;
-    state.encoderDirectory = encoderDirectory;
+const ENCODER_COMPILE_TASK = 'heic-helper-compile';
+function encoderCacheRoot() {
+    return path.join(os.homedir(), '.harness-plugin', 'extract-video-frames', 'encoder');
 }
-async function prepare(manager, options, encoderDirectory) {
+function sha256(bytes) {
+    return crypto.createHash('sha256').update(bytes).digest('hex');
+}
+// The helper binary is a deterministic function of its source and the compiler, so the key
+// hashes both. A failed or empty version report disables caching rather than guessing a key.
+async function encoderCacheKey(manager, swiftc, sourceBytes) {
+    const result = await manager.run(swiftc, ['--version'], { task: ENCODER_COMPILE_TASK });
+    if (result.code !== 0 || !`${result.stdout}${result.stderr}`.trim())
+        return null;
+    return sha256(Buffer.concat([Buffer.from(`${ENCODER_MANIFEST_SCHEMA}\0`), sourceBytes, Buffer.from(`\0${result.stdout}\0${result.stderr}`)]));
+}
+function validCachedEncoder(directory, key) {
+    try {
+        const encoder = path.join(directory, ENCODER_NAME);
+        const manifest = JSON.parse(fs.readFileSync(path.join(directory, ENCODER_MANIFEST), 'utf8'));
+        if (!fs.statSync(encoder).isFile())
+            return null;
+        fs.accessSync(encoder, fs.constants.X_OK);
+        const bytes = fs.readFileSync(encoder);
+        const valid = manifest?.schema_version === ENCODER_MANIFEST_SCHEMA && manifest.key === key && manifest.encoder?.bytes === bytes.length && manifest.encoder?.sha256 === sha256(bytes);
+        return valid ? encoder : null;
+    }
+    catch {
+        return null;
+    }
+}
+async function encoderSelfCheck(manager, encoder) {
+    const result = await manager.run(encoder, ['--preflight'], { task: ENCODER_COMPILE_TASK });
+    return result.code === 0 && result.stdout.trim() === 'READY';
+}
+// Best effort: any filesystem failure leaves the cache unchanged and this run keeps its
+// per-run helper. A directory rename never replaces an existing non-empty destination.
+function publishCachedEncoder(root, key, encoder) {
+    let stage = null;
+    try {
+        fs.mkdirSync(root, { recursive: true });
+        stage = fs.mkdtempSync(path.join(root, `.${key}.stage-`));
+        const staged = path.join(stage, ENCODER_NAME);
+        fs.copyFileSync(encoder, staged);
+        fs.chmodSync(staged, 0o755);
+        const bytes = fs.readFileSync(staged);
+        fs.writeFileSync(path.join(stage, ENCODER_MANIFEST), `${JSON.stringify({ schema_version: ENCODER_MANIFEST_SCHEMA, key, encoder: { name: ENCODER_NAME, bytes: bytes.length, sha256: sha256(bytes) } }, null, 2)}\n`);
+        fs.renameSync(stage, path.join(root, key));
+        stage = null;
+    }
+    catch {
+        // An unwritable home or a concurrent publisher is not an extraction failure.
+    }
+    finally {
+        if (stage)
+            try {
+                fs.rmSync(stage, { recursive: true, force: true });
+            }
+            catch { }
+    }
+}
+async function compileEncoder(manager, state, encoderDirectory, cache = {}) {
+    const source = cache.source || path.join(__dirname, 'tiff-to-heic.swift');
+    const root = cache.root || encoderCacheRoot();
+    state.encoderDirectory = encoderDirectory;
+    const key = await encoderCacheKey(manager, state.commands.swiftc, fs.readFileSync(source));
+    if (key) {
+        const cached = validCachedEncoder(path.join(root, key), key);
+        if (cached && await encoderSelfCheck(manager, cached)) {
+            state.commands.encoder = cached;
+            return;
+        }
+    }
+    const encoder = path.join(encoderDirectory, ENCODER_NAME);
+    const result = await manager.run(state.commands.swiftc, [source, '-o', encoder], { task: ENCODER_COMPILE_TASK });
+    if (result.code !== 0)
+        throw new DraftError('heic_encoder_unavailable', `Swift HEIC helper could not compile${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'install or repair the macOS Command Line Tools with xcode-select --install', EXIT.CANNOT_START, childDetails(ENCODER_COMPILE_TASK, result));
+    state.commands.encoder = encoder;
+    if (key && await encoderSelfCheck(manager, encoder))
+        publishCachedEncoder(root, key, encoder);
+}
+async function prepare(manager, options, encoderDirectory, encoderCache = {}) {
     try {
         const paths = options.input ? validateInputAndOutput(options.input) : null;
         const platform = await platformPreflight(manager);
@@ -589,12 +675,12 @@ async function prepare(manager, options, encoderDirectory) {
             const inputState = { ...state, paths };
             const prepared = { ...inputState, media: await inspectInput(manager, inputState, options) };
             if (prepared.media.color.dynamicRange !== 'sdr')
-                await compileEncoder(manager, prepared, encoderDirectory);
+                await compileEncoder(manager, prepared, encoderDirectory, encoderCache);
             await representativeDecodePreflight(manager, prepared);
             return prepared;
         }
         else {
-            await compileEncoder(manager, state, encoderDirectory);
+            await compileEncoder(manager, state, encoderDirectory, encoderCache);
             await syntheticEncoderPreflight(manager, state);
         }
         // Synthetic preparation historically leaves this own property present.
@@ -611,7 +697,7 @@ async function publishDirectoryNoReplace(manager, state, temporary) {
     const args = ['-l', 'JavaScript', '-e', MACOS_PUBLISH_SCRIPT, '--', temporary, output];
     let result;
     try {
-        result = await manager.run(state.commands.publisher, args);
+        result = await manager.run(state.commands.publisher, args, { task: 'publish' });
     }
     catch (error) {
         throw new DraftError('publication_failed', `atomic publication command could not start: ${errorText(error)}`, 'restore the required system publication command, then run again', EXIT.FAILED);
@@ -628,7 +714,6 @@ async function main(argv) {
     let encoderDirectory = null;
     let payload;
     let primaryError;
-    let kind = 'result';
     let cleanupFailures;
     const signalHandler = (signal) => manager.interrupt(signal);
     for (const signal of Object.keys(SIGNAL_EXIT))
@@ -644,7 +729,6 @@ async function main(argv) {
         manager.assertRunning();
         if (options.preflight) {
             payload = preflightPayload(state);
-            kind = 'preflight';
         }
         else {
             if (!state.paths || !state.media)
@@ -652,7 +736,7 @@ async function main(argv) {
             if (pathExists(state.paths.output))
                 throw new DraftError('output_collision', `output appeared during preflight: ${state.paths.output}`, 'move or remove the existing path, then run again');
             temporary = fs.mkdtempSync(path.join(path.dirname(state.paths.output), `.${path.basename(state.paths.output)}.partial-`));
-            const extraction = await manager.run(state.commands.ffmpeg, ffmpegArguments(state, temporary), { progress: progressReporter(options.json) });
+            const extraction = await manager.run(state.commands.ffmpeg, ffmpegArguments(state, temporary), { task: 'extraction', progress: progressReporter(options.json) });
             manager.assertRunning();
             if (mediaFailed(extraction))
                 throw new DraftError('extraction_failed', `ffmpeg extraction failed${extraction.stderr.trim() ? `: ${extraction.stderr.trim()}` : ''}`, 'fix the reported decode, color-conversion, or image-encoder error and run again', EXIT.FAILED, childDetails('extraction', extraction));
@@ -694,7 +778,7 @@ async function main(argv) {
         throw new Error('extraction completed without a report');
     if (cleanupFailures.length)
         payload.cleanupFailures = cleanupFailures;
-    emit(payload, json, kind);
+    emit(payload, json);
     return cleanupFailures.length ? EXIT.FAILED : EXIT.OK;
 }
 if (require.main === module)

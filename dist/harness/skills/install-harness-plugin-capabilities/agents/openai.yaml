@@ -1,0 +1,6 @@
+interface:
+  display_name: "Install Harness Capabilities"
+  short_description: "Install or repair Harness host integration"
+  default_prompt: "Use $harness:install-harness-plugin-capabilities to install or repair the Harness capabilities for Codex."
+policy:
+  allow_implicit_invocation: true

@@ -185,7 +185,7 @@ function runPing(host, timeoutMs = PROBE_INTERVAL_MS) {
                 if (expired)
                     finish({ ok: false });
                 else if (signal || (code !== 0 && code !== 1 && !(os.platform() === 'darwin' && code === 2))) {
-                    finish({ error: new Error(`ping exited with ${signal || code}`), ok: false });
+                    finish({ exitError: new Error(`ping exited with ${signal || code}`), ok: false });
                 }
                 else
                     finish({ ok: code === 0 });
@@ -206,7 +206,8 @@ function runPing(host, timeoutMs = PROBE_INTERVAL_MS) {
     });
 }
 function probeError(result) {
-    return new target_config_js_1.StartupError((0, target_config_js_1.errorDetails)(result.error).code === 'ENOENT' ? 'command_missing' : 'probe_unusable', result.error ? `ping could not run: ${(0, target_config_js_1.errorDetails)(result.error).message}` : 'ping could not reach 127.0.0.1', 'make ping available on PATH with ICMP permission (macOS: /sbin/ping, Linux: install iputils-ping), or use --no-wait');
+    const failure = result.error ?? result.exitError;
+    return new target_config_js_1.StartupError((0, target_config_js_1.errorDetails)(result.error).code === 'ENOENT' ? 'command_missing' : 'probe_unusable', failure ? `ping could not run: ${(0, target_config_js_1.errorDetails)(failure).message}` : 'ping could not reach 127.0.0.1', 'make ping available on PATH with ICMP permission (macOS: /sbin/ping, Linux: install iputils-ping), or use --no-wait');
 }
 async function checkEnvironment(options) {
     (0, target_config_js_1.checkNodeVersion)();
@@ -287,26 +288,29 @@ function broadcast(packet, onSent = () => { }) {
         }
     });
 }
-function sleep(milliseconds) {
+function defaultSleep(milliseconds) {
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
-async function waitForHost(config) {
-    const start = performance.now();
+// checkEnvironment has already proven ping usable against loopback, so an
+// abnormal exit here (such as a name that does not resolve until the target
+// wakes) means "not reachable yet". Only a failure to run ping is fatal.
+async function waitForHost(config, { now = () => performance.now(), ping = runPing, sleep = defaultSleep, } = {}) {
+    const start = now();
     const deadline = start + config.timeoutSeconds * 1000;
-    while (performance.now() < deadline) {
-        const probeStart = performance.now();
+    while (now() < deadline) {
+        const probeStart = now();
         const remaining = deadline - probeStart;
         if (remaining <= 0)
             break;
-        const result = await runPing(config.ip, Math.min(PROBE_INTERVAL_MS, remaining));
-        const now = performance.now();
-        if (now >= deadline)
+        const result = await ping(config.ip, Math.min(PROBE_INTERVAL_MS, remaining));
+        const probeEnd = now();
+        if (probeEnd >= deadline)
             break;
         if (result.error)
             throw probeError(result);
         if (result.ok)
-            return Math.round((now - start) / 100) / 10;
-        const delay = Math.min(probeStart + PROBE_INTERVAL_MS, deadline) - now;
+            return Math.round((probeEnd - start) / 100) / 10;
+        const delay = Math.min(probeStart + PROBE_INTERVAL_MS, deadline) - probeEnd;
         if (delay > 0)
             await sleep(delay);
     }
@@ -318,7 +322,9 @@ function report(json, payload) {
         'packet-sent': `Magic packet sent to ${payload.mac}`,
         online: `${payload.ip} is now online (took ${payload.waitedSeconds} seconds)`,
     };
-    process.stdout.write(`${json ? JSON.stringify(payload) : lines[payload.status]}\n`);
+    // A passed preflight is flat {"status":"ready",...}; a completed wake is {"result":{...}}.
+    const envelope = payload.status === 'ready' ? payload : { result: payload };
+    process.stdout.write(`${json ? JSON.stringify(envelope) : lines[payload.status]}\n`);
 }
 async function main(argv, env) {
     let sent = false;

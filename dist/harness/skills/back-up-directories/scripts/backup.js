@@ -4,6 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.readAndValidate = exports.backupFilename = exports.assertDirectoryUnchanged = exports.OperationContext = exports.InterruptedError = exports.EXIT = void 0;
 exports.copyAtomically = copyAtomically;
 exports.cleanupStartupArtifacts = cleanupStartupArtifacts;
+exports.cleanupLegacyStaging = cleanupLegacyStaging;
 exports.acquireRunLock = acquireRunLock;
 exports.createArchive = createArchive;
 exports.execute = execute;
@@ -15,9 +16,11 @@ const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const nodeModule = require("node:module");
+const { createRequire } = nodeModule;
 const readline = require("node:readline/promises");
 const streamPromises = require("node:stream/promises");
-const { pipeline } = streamPromises;
+const { finished, pipeline } = streamPromises;
 const backup_plan_js_1 = require("./backup-plan.js");
 Object.defineProperty(exports, "assertDirectoryUnchanged", { enumerable: true, get: function () { return backup_plan_js_1.assertDirectoryUnchanged; } });
 Object.defineProperty(exports, "backupFilename", { enumerable: true, get: function () { return backup_plan_js_1.backupFilename; } });
@@ -55,10 +58,39 @@ const EXIT = Object.freeze({
     INTERRUPTED: 130,
 });
 exports.EXIT = EXIT;
-const MINIMUM_NODE = [22, 12, 0];
+// Interruption exit status per signal, 128 plus the signal number, matching the
+// other scripts in this plugin. SIGINT keeps EXIT.INTERRUPTED.
+const SIGNAL_EXIT = Object.freeze({ SIGHUP: 129, SIGINT: EXIT.INTERRUPTED, SIGTERM: 143 });
+const MINIMUM_NODE = [24, 0, 0];
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
-const RUN_LOCK_FILENAME = '.backup-tool.lock';
+// Earlier releases staged archives (never copies) in the system
+// temporary directory. Such a file is removed only once it is old enough that
+// no run of an older installed release, which takes a different lock, can
+// still be writing it.
+const LEGACY_STAGING_PATTERN = new RegExp(`^\\.backup-archive-${UUID_V4_PATTERN}\\.tmp$`, 'i');
+const LEGACY_STAGING_MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
+// Per-user Harness state lives under ~/.harness-plugin/<skill>/: the run lock
+// and the installed npm dependencies. Neither lives in the installed skill
+// directory, which a plugin upgrade replaces.
+const USER_STATE_RELATIVE_PATH = path.join('.harness-plugin', 'back-up-directories');
+const RUN_LOCK_RELATIVE_PATH = path.join(USER_STATE_RELATIVE_PATH, 'run.lock');
+// Entries with these extensions are already compressed, so DEFLATE spends CPU
+// for little or no saving. They are written with the STORE method instead.
+// Matching is by the final extension, case-insensitively. Fixed policy, not a
+// configuration option; references/backup-usage.md lists the same set.
+const STORED_EXTENSIONS = new Set([
+    // Archives and compressed streams.
+    '7z', 'br', 'bz2', 'gz', 'lz4', 'rar', 'tgz', 'xz', 'zip', 'zst',
+    // Images.
+    'avif', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp',
+    // Audio and video.
+    'aac', 'flac', 'm4a', 'm4v', 'mkv', 'mov', 'mp3', 'mp4', 'ogg', 'opus', 'webm',
+]);
+function storeEntry(name) {
+    const extension = path.extname(name).slice(1).toLowerCase();
+    return extension !== '' && STORED_EXTENSIONS.has(extension);
+}
 const INDENT_PREFIX = '  ';
 const LIST_DETAIL_PREFIX = '   ';
 class InterruptedError extends Error {
@@ -66,7 +98,7 @@ class InterruptedError extends Error {
         super(`Interrupted by ${signal}; temporary-file cleanup was requested.`);
         this.name = 'InterruptedError';
         this.signal = signal;
-        this.exitCode = signal === 'SIGTERM' ? 143 : EXIT.INTERRUPTED;
+        this.exitCode = SIGNAL_EXIT[signal] ?? EXIT.INTERRUPTED;
     }
 }
 exports.InterruptedError = InterruptedError;
@@ -80,6 +112,47 @@ class StartupError extends Error {
         this.exitCode = exitCode;
     }
 }
+function shellQuote(value) {
+    return `'${value.replaceAll("'", "'\\''")}'`;
+}
+// The dependency is installed from this skill's own manifest and lockfile into
+// the user-level state directory, so it survives plugin upgrades and is shared
+// by every harness. This is the single install command: the preflight remedy
+// prints it with the paths filled in.
+function dependencyInstallCommand(dependencyRoot) {
+    const skillDirectory = path.resolve(__dirname, '..');
+    return `mkdir -p ${shellQuote(dependencyRoot)}`
+        + ` && cp ${shellQuote(path.join(skillDirectory, 'package.json'))} ${shellQuote(path.join(skillDirectory, 'package-lock.json'))} ${shellQuote(dependencyRoot)}`
+        + ` && npm ci --omit=dev --prefix ${shellQuote(dependencyRoot)}`;
+}
+// Resolves archiver only from <dependencyRoot>/node_modules. Node's ordinary
+// lookup would continue into parent node_modules directories, NODE_PATH, and
+// the global folders, so a package found anywhere else counts as missing.
+// The request stays the bare 'archiver' so the loader sees the same request
+// a plain require would issue.
+function requireFromDependencyRoot(dependencyRoot) {
+    let modules;
+    try {
+        modules = fs.realpathSync(path.join(dependencyRoot, 'node_modules'));
+    }
+    catch (error) {
+        const code = failureDetails(error).code;
+        if (code === 'ENOENT' || code === 'ENOTDIR')
+            return null;
+        throw error;
+    }
+    const requireFromRoot = createRequire(path.join(dependencyRoot, 'package.json'));
+    let resolved;
+    try {
+        resolved = requireFromRoot.resolve('archiver');
+    }
+    catch (error) {
+        if (failureDetails(error).code === 'MODULE_NOT_FOUND')
+            return null;
+        throw error;
+    }
+    return resolved.startsWith(modules + path.sep) ? requireFromRoot : null;
+}
 // archiver is the only dependency that needs installing, so it is resolved on
 // demand. A top-level require turned a missing install into a MODULE_NOT_FOUND
 // stack trace instead of an answerable diagnostic. Repeat calls are free:
@@ -90,20 +163,27 @@ class StartupError extends Error {
 // wrapper: a resolvable archiver that no longer carries ZipArchive would
 // otherwise pass this preflight and fail much later, mid-run, as a bare
 // "ZipArchive is not a constructor".
-function loadArchiver() {
-    const remedy = `npm install --omit=dev --prefix '${path.resolve(__dirname, '..').replaceAll("'", "'\\''")}'`;
+function loadArchiver(homeDirectory = os.homedir()) {
+    const dependencyRoot = path.join(homeDirectory, USER_STATE_RELATIVE_PATH);
+    const remedy = dependencyInstallCommand(dependencyRoot);
+    const missing = (condition = `the archiver package is not installed in ${path.join(dependencyRoot, 'node_modules')}, so no ZIP can be written`) => new StartupError('dependency_missing', condition, remedy);
+    const loadFailed = (error) => new StartupError('dependency_load_failed', `the installed archiver package could not load: ${failureDetails(error).message || String(error)}`, remedy);
     let archiver;
     try {
-        archiver = require('archiver');
+        const requireFromRoot = requireFromDependencyRoot(dependencyRoot);
+        if (requireFromRoot === null)
+            throw missing();
+        archiver = requireFromRoot('archiver');
     }
     catch (error) {
-        if (failureDetails(error).code !== 'MODULE_NOT_FOUND') {
-            throw new StartupError('dependency_load_failed', `the installed archiver package could not load: ${failureDetails(error).message || String(error)}`, remedy);
-        }
-        throw new StartupError('dependency_missing', 'the archiver package is not installed, so no ZIP can be written', remedy);
+        if (error instanceof StartupError)
+            throw error;
+        if (failureDetails(error).code !== 'MODULE_NOT_FOUND')
+            throw loadFailed(error);
+        throw missing();
     }
     if (!hasZipArchive(archiver)) {
-        throw new StartupError('dependency_missing', 'the installed archiver package does not export ZipArchive, so no ZIP can be written', remedy);
+        throw missing('the installed archiver package does not export ZipArchive, so no ZIP can be written');
     }
     return (options) => new archiver.ZipArchive(options);
 }
@@ -149,17 +229,29 @@ function failStartup(caught) {
     fail(condition, exitCode, code, remedy);
 }
 function usage() {
-    console.error(`Usage: node scripts/backup.js [OPTIONS] <backup-config.local.json>
+    return `Usage: node scripts/backup.js [OPTIONS] <backup-config.local.json>
 
 Options:
   --preflight   Check the environment and configuration, back nothing up, exit
   --json        Report readiness, completion, and errors as JSON (preview and prompt use stderr)
   -h, --help    Print this message
 
-Exit status: 0 success, 2 or 3 nothing started, 4 or 5 the run failed, 130 interrupted.
+Exit status:
+  0         Success, a passed preflight, or a cancelled run
+  2 or 3    Nothing started
+  4 or 5    The run failed
+  129       Interrupted by SIGHUP
+  130       Interrupted by SIGINT
+  143       Interrupted by SIGTERM
 
 --preflight with a configuration file runs the same validation as a real run,
-which creates the output directory if it is missing.`);
+which creates the output directory if it is missing.
+`;
+}
+// The output directory preflight created for this run, or null when it
+// already existed. Both the readiness report and the cancellation report use it.
+function createdOutputDirectory(plan) {
+    return plan.output.createdDuringPreflight ? plan.output.canonicalPath : null;
 }
 // checkEnvironment has already passed by the time this runs, so the environment
 // half of the report is the same every time and only the plan varies.
@@ -246,6 +338,10 @@ function printPreview(plan) {
     if (plan.retainArchive) {
         humanLog(`${INDENT_PREFIX}Destination ${plan.archivePath}`);
         humanLog(`${INDENT_PREFIX}Action      ${plan.archiveExists ? 'Overwrite existing file' : 'Create new file'}`);
+    }
+    else if (plan.stagingTarget) {
+        humanLog(`${INDENT_PREFIX}Staging     ${plan.output.canonicalPath}`);
+        humanLog(`${INDENT_PREFIX}After run   Rename staging archive into target 1 after replication`);
     }
     else {
         humanLog(`${INDENT_PREFIX}Staging     ${plan.output.canonicalPath}`);
@@ -362,47 +458,131 @@ class RunLock {
 function resolveRunLockPath(environment = process.env, homeDirectory = os.homedir()) {
     if (environment.BACKUP_LOCK_PATH !== undefined) {
         if (!path.isAbsolute(environment.BACKUP_LOCK_PATH)) {
-            throw new Error('BACKUP_LOCK_PATH must be an absolute path.');
+            throw new StartupError('usage_error', 'BACKUP_LOCK_PATH must be an absolute path.', 'set BACKUP_LOCK_PATH to an absolute path or unset it to use the default lock location');
         }
         return path.normalize(environment.BACKUP_LOCK_PATH);
     }
-    return path.join(homeDirectory, RUN_LOCK_FILENAME);
+    return path.join(homeDirectory, RUN_LOCK_RELATIVE_PATH);
 }
 async function acquireRunLock(lockPath = resolveRunLockPath()) {
     const token = crypto.randomUUID();
     const owner = { pid: process.pid, hostname: os.hostname(), token };
+    const directory = path.dirname(lockPath);
+    const unavailable = (error) => new StartupError('lock_directory_failed', `Cannot create the run lock in ${directory}: ${failureDetails(error).code || failureDetails(error).message}.`, `make ${directory} a writable directory (or set BACKUP_LOCK_PATH to an absolute path in a writable directory) and run the same command again`, EXIT.VALIDATION);
+    try {
+        await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+    }
+    catch (error) {
+        throw unavailable(error);
+    }
     try {
         await fsp.writeFile(lockPath, JSON.stringify(owner), { flag: 'wx' });
         return new RunLock(lockPath, token);
     }
     catch (error) {
         if (failureDetails(error).code !== 'EEXIST')
-            throw error;
+            throw unavailable(error);
         throw new Error(`Another backup run may already be active (lock: ${lockPath}). ` +
             'If no backup is running, inspect and remove this stale lock manually.');
     }
 }
-async function cleanupStartupArtifacts(plan) {
+const RETAINABLE_CLEANUP_CODES = new Set(['EPERM', 'EACCES']);
+// Removes this user's stale temporary artifacts. On POSIX, files owned by
+// another user (for example in a shared sticky temporary directory) are
+// skipped. A permission failure leaves the file in place and is returned as a
+// retained path instead of failing startup; any other failure is raised.
+async function cleanupStartupArtifacts(plan, dependencies = {}) {
+    const removeFile = dependencies.removeFile || fsp.rm;
+    const lstat = dependencies.lstat || ((file) => fsp.lstat(file));
+    const uid = dependencies.uid !== undefined ? dependencies.uid
+        : (typeof process.getuid === 'function' ? process.getuid() : null);
     const directories = new Map();
     for (const directory of [plan.output, ...plan.targets])
         directories.set(directory.identity, directory);
+    const retained = [];
     for (const directory of directories.values()) {
         await (0, backup_plan_js_1.assertDirectoryUnchanged)(directory);
         const entries = await fsp.readdir(directory.canonicalPath, { withFileTypes: true });
-        const removals = [];
+        const candidates = [];
         for (const entry of entries) {
             if (!TEMPORARY_FILE_PATTERN.test(entry.name))
                 continue;
-            const entryPath = path.join(directory.canonicalPath, entry.name);
-            let isFile = entry.isFile();
-            if (!isFile && direntTypeIsUnknown(entry)) {
-                const details = await fsp.lstat(entryPath);
-                isFile = details.isFile();
-            }
-            if (isFile)
-                removals.push(fsp.rm(entryPath, { force: true }));
+            if (!entry.isFile() && !direntTypeIsUnknown(entry))
+                continue;
+            candidates.push(path.join(directory.canonicalPath, entry.name));
         }
-        await Promise.all(removals);
+        const outcomes = await Promise.allSettled(candidates.map(async (entryPath) => {
+            const details = await lstat(entryPath);
+            if (!details.isFile())
+                return;
+            if (uid !== null && details.uid !== uid)
+                return;
+            await removeFile(entryPath, { force: true });
+        }));
+        const unexpected = [];
+        outcomes.forEach((outcome, index) => {
+            if (outcome.status === 'fulfilled')
+                return;
+            const code = failureDetails(outcome.reason).code;
+            if (code === 'ENOENT')
+                return;
+            if (typeof code === 'string' && RETAINABLE_CLEANUP_CODES.has(code)) {
+                retained.push({ path: candidates[index], error: outcome.reason });
+            }
+            else {
+                unexpected.push(outcome.reason);
+            }
+        });
+        if (unexpected.length)
+            throw unexpected[0];
+    }
+    return retained;
+}
+// Removes this user's staging archives that older releases left in the system
+// temporary directory. The directory is not part of the plan, so nothing here
+// fails the run: an unreadable directory is skipped, and a file that cannot be
+// inspected or removed is returned as a retained path.
+async function cleanupLegacyStaging(plan, dependencies = {}) {
+    const removeFile = dependencies.removeFile || fsp.rm;
+    const lstat = dependencies.lstat || ((file) => fsp.lstat(file));
+    const uid = dependencies.uid !== undefined ? dependencies.uid
+        : (typeof process.getuid === 'function' ? process.getuid() : null);
+    const now = dependencies.now ?? Date.now();
+    let directory;
+    let entries;
+    try {
+        directory = await fsp.realpath(dependencies.tmpdir ?? os.tmpdir());
+        if ([plan.output, ...plan.targets].some((scanned) => scanned.canonicalPath === directory))
+            return [];
+        entries = await fsp.readdir(directory, { withFileTypes: true });
+    }
+    catch {
+        return [];
+    }
+    const candidates = entries
+        .filter((entry) => LEGACY_STAGING_PATTERN.test(entry.name) && (entry.isFile() || direntTypeIsUnknown(entry)))
+        .map((entry) => path.join(directory, entry.name));
+    const outcomes = await Promise.allSettled(candidates.map(async (entryPath) => {
+        const details = await lstat(entryPath);
+        if (!details.isFile())
+            return;
+        if (uid !== null && details.uid !== uid)
+            return;
+        if (now - details.mtimeMs < LEGACY_STAGING_MINIMUM_AGE_MS)
+            return;
+        await removeFile(entryPath, { force: true });
+    }));
+    const retained = [];
+    outcomes.forEach((outcome, index) => {
+        if (outcome.status === 'fulfilled' || failureDetails(outcome.reason).code === 'ENOENT')
+            return;
+        retained.push({ path: candidates[index], error: outcome.reason });
+    });
+    return retained;
+}
+function reportRetainedStartupArtifacts(retained) {
+    for (const item of retained) {
+        console.error(`Warning: Retained stale temporary artifact ${item.path}: ${failureDetails(item.error).code || failureDetails(item.error).message}`);
     }
 }
 function archiveWarningMessage(error) {
@@ -511,7 +691,11 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
             return;
         try {
             archive.pipe(output);
-            archive.directory(sourceDirectory, false);
+            archive.directory(sourceDirectory, false, (entry) => {
+                if (storeEntry(entry.name))
+                    entry.store = true;
+                return entry;
+            });
             if (onProgress) {
                 reportProgress();
                 progressTimer = setInterval(reportProgress, progressIntervalMs);
@@ -552,6 +736,142 @@ async function copyAtomically(source, target, context, dependencies = {}) {
         unregister();
     }
 }
+// The checks copyAtomically makes before its rename, in the same order, for a
+// temporary file that is already complete.
+async function installCopy(temporary, target, context) {
+    context.throwIfInterrupted();
+    await (0, backup_plan_js_1.assertDirectoryUnchanged)(target.directory);
+    context.throwIfInterrupted();
+    await fsp.rename(temporary, target.destination);
+    context.untrack(temporary);
+}
+function closeOutput(output) {
+    if (!output || output.closed)
+        return Promise.resolve();
+    return new Promise((resolve) => {
+        output.once('close', () => resolve());
+        output.destroy();
+    });
+}
+// Copies one file to several targets from a single read stream, writing every
+// target in parallel. Each target still gets its own temporary file and
+// rename, so each install stays atomic. A failure in one target stops only
+// that target; its partial temporary file stays tracked for context cleanup.
+// Returns each target's failure, or null when it was installed, in target
+// order. Interruption is thrown, not returned.
+async function copyToTargets(source, targets, context, dependencies = {}, onSettled = () => { }) {
+    const copies = targets.map((target) => ({
+        target,
+        temporary: shortTempPath(target.directory.canonicalPath, 'copy'),
+        output: null,
+        failure: null,
+    }));
+    let input = null;
+    const closeAll = () => Promise.all(copies.map((copy) => closeOutput(copy.output))).then(() => { });
+    const unregister = context.onAbort(() => {
+        input?.destroy();
+        return closeAll();
+    });
+    const failCopy = (copy, error) => {
+        if (copy.failure === null)
+            copy.failure = error;
+        copy.output?.destroy();
+    };
+    const live = () => copies.filter((copy) => copy.failure === null);
+    const writeChunk = (copy, chunk) => new Promise((resolve) => {
+        copy.output.write(chunk, (error) => {
+            if (error)
+                failCopy(copy, error);
+            resolve();
+        });
+    });
+    try {
+        context.throwIfInterrupted();
+        for (const copy of copies)
+            context.track(copy.temporary);
+        await Promise.all(copies.map(async (copy) => {
+            try {
+                await (0, backup_plan_js_1.assertDirectoryUnchanged)(copy.target.directory);
+                if (context.interruption)
+                    return;
+                const output = (dependencies.createWriteStream || fs.createWriteStream)(copy.temporary, { flags: 'wx', mode: 0o600 });
+                copy.output = output;
+                output.on('error', (error) => failCopy(copy, error));
+            }
+            catch (error) {
+                failCopy(copy, error);
+            }
+        }));
+        context.throwIfInterrupted();
+        if (live().length) {
+            input = (dependencies.createReadStream || fs.createReadStream)(source);
+            try {
+                for await (const chunk of input) {
+                    const writers = live();
+                    if (!writers.length)
+                        break;
+                    await Promise.all(writers.map((copy) => writeChunk(copy, chunk)));
+                    context.throwIfInterrupted();
+                }
+            }
+            catch (error) {
+                context.throwIfInterrupted();
+                for (const copy of live())
+                    failCopy(copy, error);
+            }
+            context.throwIfInterrupted();
+            await Promise.all(live().map(async (copy) => {
+                try {
+                    copy.output.end();
+                    await finished(copy.output);
+                }
+                catch (error) {
+                    failCopy(copy, error);
+                }
+            }));
+        }
+        await closeAll();
+        context.throwIfInterrupted();
+        await Promise.all(copies.map(async (copy, index) => {
+            if (copy.failure === null) {
+                try {
+                    await installCopy(copy.temporary, copy.target, context);
+                }
+                catch (error) {
+                    failCopy(copy, error);
+                }
+            }
+            if (!context.interruption)
+                onSettled(index, copy.failure);
+        }));
+        context.throwIfInterrupted();
+        return copies.map((copy) => copy.failure);
+    }
+    catch (error) {
+        input?.destroy();
+        await closeAll();
+        throw error;
+    }
+    finally {
+        unregister();
+    }
+}
+// One copy-phase error for every failed target, in target order, naming the
+// copies that were installed. The first target's failure object carries it.
+function copyFailure(targets, failures, copied) {
+    const failed = targets.filter((target) => failures.has(target));
+    const reasons = failed.map((target) => {
+        const failure = failures.get(target);
+        const message = failureDetails(failure).message;
+        const reason = typeof message === 'string' ? message : String(failure);
+        return `Failed to copy archive to ${target.destination}: ${reason.replace(/\.$/, '')}.`;
+    });
+    const error = mutableFailure(failures.get(failed[0]));
+    const installed = copied.length ? `Installed copies: ${copied.join(', ')}.` : 'No copy was installed.';
+    error.message = `${reasons.join(' ')} ${installed}`;
+    error.exitCode = EXIT.COPY;
+    return error;
+}
 async function execute(plan, context, dependencies = {}) {
     const temporaryArchive = shortTempPath(plan.output.canonicalPath, 'archive');
     const removeFile = dependencies.removeFile || fsp.rm;
@@ -585,6 +905,47 @@ async function execute(plan, context, dependencies = {}) {
     const copied = [];
     let replicationFailure = null;
     try {
+        if (!plan.retainArchive) {
+            // Staging-only archive: copy every other target in parallel from one
+            // read of the staging file, then publish to the staging target, if any,
+            // by renaming the staging file into it.
+            const stagingTarget = plan.stagingTarget ?? null;
+            const fanOutTargets = plan.copyTargets.filter((target) => target !== stagingTarget);
+            context.throwIfInterrupted();
+            const total = plan.copyTargets.length;
+            const settled = (target, failure) => onStage({
+                phase: 'copy-complete', destination: target.destination, index: plan.copyTargets.indexOf(target), total, failed: failure !== null,
+            });
+            onStage({ phase: 'copy-parallel-start', total });
+            const failures = new Map();
+            if (fanOutTargets.length) {
+                const outcomes = await copyToTargets(temporaryArchive, fanOutTargets, context, dependencies.copy, (index, failure) => settled(fanOutTargets[index], failure));
+                fanOutTargets.forEach((target, index) => {
+                    if (outcomes[index] !== null)
+                        failures.set(target, outcomes[index]);
+                });
+            }
+            if (stagingTarget) {
+                try {
+                    await installCopy(temporaryArchive, stagingTarget, context);
+                    settled(stagingTarget, null);
+                }
+                catch (caught) {
+                    context.throwIfInterrupted();
+                    failures.set(stagingTarget, caught);
+                    settled(stagingTarget, caught);
+                }
+            }
+            for (const target of plan.copyTargets)
+                if (!failures.has(target))
+                    copied.push(target.destination);
+            if (failures.size) {
+                replicationFailure = copyFailure(plan.copyTargets, failures, copied);
+                throw replicationFailure;
+            }
+            return copied;
+        }
+        // A retained archive is copied to the other targets one at a time.
         for (const [index, target] of plan.copyTargets.entries()) {
             context.throwIfInterrupted();
             onStage({ phase: 'copy-start', destination: target.destination, index, total: plan.copyTargets.length });
@@ -648,12 +1009,12 @@ async function main() {
     }
     jsonOutput = options.json;
     if (options.help) {
-        usage();
+        process.stdout.write(usage());
         return;
     }
     if (!options.configPath && !options.preflightOnly) {
         if (!jsonOutput)
-            usage();
+            process.stderr.write(usage());
         fail('Provide exactly one configuration file path.', EXIT.USAGE, 'usage_error', 'run with --help to see the accepted arguments');
         return;
     }
@@ -668,10 +1029,16 @@ async function main() {
         reportReady();
         return;
     }
-    let plan;
     let lockPath;
     try {
         lockPath = resolveRunLockPath();
+    }
+    catch (error) {
+        failStartup(error);
+        return;
+    }
+    let plan;
+    try {
         plan = await (0, backup_plan_js_1.readAndValidate)(path.resolve(options.configPath));
         if (!options.preflightOnly || !jsonOutput)
             printPreview(plan);
@@ -687,7 +1054,7 @@ async function main() {
             targets: plan.targets.map((target) => target.canonicalPath),
             filename: plan.filename,
             runLock: lockPath,
-            outputDirectoryCreated: plan.output.createdDuringPreflight,
+            outputDirectoryCreated: createdOutputDirectory(plan),
         });
         return;
     }
@@ -695,17 +1062,19 @@ async function main() {
     let runLock;
     const onSigint = () => { void context.interrupt('SIGINT'); };
     const onSigterm = () => { void context.interrupt('SIGTERM'); };
+    const onSighup = () => { void context.interrupt('SIGHUP'); };
     const onExit = () => {
         context.cleanupSync();
         runLock?.releaseSync();
     };
     process.on('SIGINT', onSigint);
     process.on('SIGTERM', onSigterm);
+    process.on('SIGHUP', onSighup);
     process.once('exit', onExit);
     try {
         if (!await confirmExecution(context)) {
             if (jsonOutput)
-                console.log(JSON.stringify({ result: { cancelled: true, outputDirectoryCreated: plan.output.createdDuringPreflight ? plan.output.canonicalPath : null } }));
+                console.log(JSON.stringify({ result: { cancelled: true, outputDirectoryCreated: createdOutputDirectory(plan) } }));
             humanLog('\nCANCELLED — No archive or replicated copy was created.');
             if (plan.output.createdDuringPreflight) {
                 humanLog(`Preflight created the output directory: ${plan.output.canonicalPath}`);
@@ -717,7 +1086,8 @@ async function main() {
             context.throwIfInterrupted();
             runLock = await acquireRunLock(lockPath);
             context.throwIfInterrupted();
-            await cleanupStartupArtifacts(plan);
+            reportRetainedStartupArtifacts(await cleanupStartupArtifacts(plan));
+            reportRetainedStartupArtifacts(await cleanupLegacyStaging(plan));
             context.throwIfInterrupted();
         }
         catch (caught) {
@@ -734,6 +1104,11 @@ async function main() {
                     humanLog('Archive created.');
                 if (status.phase === 'copy-start') {
                     humanLog(`Replicating copy ${status.index + 1} of ${status.total}: ${status.destination}`);
+                }
+                if (status.phase === 'copy-parallel-start')
+                    humanLog(`Replicating ${status.total} copies in parallel...`);
+                if (status.phase === 'copy-complete') {
+                    humanLog(`Copy ${status.index + 1} of ${status.total} ${status.failed ? 'failed' : 'finished'}: ${status.destination}`);
                 }
             },
             archive: {
@@ -764,6 +1139,11 @@ async function main() {
                 humanLog('Archive');
                 humanLog(`${INDENT_PREFIX}${plan.archivePath}`);
             }
+            else if (plan.stagingTarget) {
+                humanLog('');
+                humanLog('Staging');
+                humanLog(`${INDENT_PREFIX}Renamed into ${plan.stagingTarget.destination}`);
+            }
             else {
                 humanLog('');
                 humanLog('Staging');
@@ -775,11 +1155,15 @@ async function main() {
         }
     }
     catch (error) {
-        fail(failureDetails(error).message, failureDetails(error).exitCode || EXIT.ARCHIVE);
+        if (error instanceof StartupError)
+            failStartup(error);
+        else
+            fail(failureDetails(error).message, failureDetails(error).exitCode || EXIT.ARCHIVE);
     }
     finally {
         process.removeListener('SIGINT', onSigint);
         process.removeListener('SIGTERM', onSigterm);
+        process.removeListener('SIGHUP', onSighup);
         reportCleanupFailures(context.cleanupSync());
         if (runLock)
             reportCleanupFailures(runLock.releaseSync());

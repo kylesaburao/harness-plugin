@@ -141,6 +141,23 @@ def line_text(glyphs: list[tuple[str, float, float, float]], space_threshold: fl
     return re.sub(r"\s+", " ", line).strip()
 
 
+def page_char_source(textpage, full_text: str, char_count: int):
+    """Return index -> the text pypdfium2 reports for that one char slot.
+
+    Fetching the page text once and indexing into it replaces one
+    get_text_range call per character. That is only equivalent when the page
+    text has exactly one Python character per char slot. get_text_range is
+    UCS-2 and decodes with errors="ignore", and pdfium can exclude chars from
+    or insert chars into its text view: a non-BMP glyph (two slots, one code
+    point), a lone surrogate, or an excluded char each change the length and
+    shift every later index. When the lengths differ, keep the per-character
+    call for this page so its output never changes.
+    """
+    if len(full_text) == char_count:
+        return full_text.__getitem__
+    return lambda index: textpage.get_text_range(index, 1)
+
+
 def page_glyph_lines(page, config: dict, physical_page: int) -> list[dict]:
     """One GeometryLine dict per (column, visual-line) group on this physical page."""
     textpage = page.get_textpage()
@@ -155,9 +172,10 @@ def page_glyph_lines(page, config: dict, physical_page: int) -> list[dict]:
     y_max = config["content_y_max"]
     space_threshold = config["glyph_space_threshold"]
 
+    page_characters = page_char_source(textpage, full_text, char_count)
     by_column: dict[int, list[tuple[str, float, float, float]]] = {0: [], 1: [], 2: [], 3: []}
     for index in range(char_count):
-        character = normalize_char(textpage.get_text_range(index, 1), physical_page)
+        character = normalize_char(page_characters(index), physical_page)
         if character is None:
             continue
         box = textpage.get_charbox(index, loose=True)

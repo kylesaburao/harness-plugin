@@ -5,7 +5,6 @@ exports.backupFilename = backupFilename;
 exports.readAndValidate = readAndValidate;
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
-const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const MAX_FILENAME_BYTES = 255;
@@ -195,21 +194,24 @@ async function readAndValidate(configPath, now = new Date()) {
     const sourceConfigured = resolveConfigPath(config.sourceDirectory, configDirectory);
     const outputConfigured = config.outputDirectory
         ? resolveConfigPath(config.outputDirectory, configDirectory)
-        : os.tmpdir();
+        : null;
     const targetConfigured = config.targetDirectories.map((directory) => resolveConfigPath(directory, configDirectory));
     const source = await validateDirectory(sourceConfigured, 'sourceDirectory', fs.constants.R_OK | fs.constants.X_OK);
-    const output = await validateOutputDirectory(outputConfigured, source);
+    const configuredOutput = outputConfigured === null ? null : await validateOutputDirectory(outputConfigured, source);
     const targets = await Promise.all(targetConfigured.map((directory, index) => validateDirectory(directory, `targetDirectories[${index}]`, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK)));
     for (const target of targets) {
         if (isWithin(source.canonicalPath, target.canonicalPath)) {
             throw new Error(`${target.label} must not resolve to sourceDirectory or one of its subdirectories: ${target.configuredPath} -> ${target.canonicalPath}`);
         }
     }
+    // Without a configured outputDirectory, stage in the first target so that
+    // publishing to it is a rename rather than another full copy.
+    const output = configuredOutput ?? { ...targets[0], createdDuringPreflight: false };
     const filename = backupFilename(source.canonicalPath, now);
     const archivePath = path.join(output.canonicalPath, filename);
-    const retainArchive = targets.some((target) => target.identity === output.identity);
+    const retainArchive = configuredOutput !== null && targets.some((target) => target.identity === output.identity);
     const archiveExists = retainArchive ? await pathKind(archivePath, 'Archive output path') : false;
-    const seen = new Map([[output.identity, 'outputDirectory']]);
+    const seen = new Map(configuredOutput === null ? [] : [[output.identity, 'outputDirectory']]);
     const previewTargets = [];
     const copyTargets = [];
     for (const target of targets) {
@@ -225,7 +227,8 @@ async function readAndValidate(configPath, now = new Date()) {
         previewTargets.push(item);
         copyTargets.push(item);
     }
-    return { source, output, targets, filename, archivePath, archiveExists, retainArchive, previewTargets, copyTargets };
+    const stagingTarget = configuredOutput === null ? copyTargets[0] : null;
+    return { source, output, targets, filename, archivePath, archiveExists, retainArchive, stagingTarget, previewTargets, copyTargets };
 }
 function isObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);

@@ -18,7 +18,7 @@ class InvocationError(Exception):
 
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
-        raise InvocationError("invalid_arguments", message, remedy=f"run python3 {self.prog} --help and correct the arguments")
+        raise InvocationError("usage_error", message, remedy=f"run python3 {self.prog} --help and correct the arguments")
 
 
 def report_invocation_error(error: InvocationError, json_output: bool) -> None:
@@ -26,7 +26,7 @@ def report_invocation_error(error: InvocationError, json_output: bool) -> None:
     if error.inputs is not None:
         details["inputs"] = error.inputs
     if json_output:
-        print(json.dumps({"error": details}, ensure_ascii=False, indent=2), file=sys.stderr)
+        print(json.dumps({"error": details}, ensure_ascii=False), file=sys.stderr)
         return
     if error.inputs is not None:
         for item in error.inputs:
