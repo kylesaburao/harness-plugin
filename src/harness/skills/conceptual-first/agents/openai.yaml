@@ -1,0 +1,6 @@
+interface:
+  display_name: "Conceptual First"
+  short_description: "Establish code ownership before expanding a change"
+  default_prompt: "Use $harness:conceptual-first to find the existing owner before changing this shared behavior."
+policy:
+  allow_implicit_invocation: true

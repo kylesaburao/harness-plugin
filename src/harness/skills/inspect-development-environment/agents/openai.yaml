@@ -1,0 +1,6 @@
+interface:
+  display_name: "Development Environment Inventory"
+  short_description: "Inventory local tools, versions, and providers"
+  default_prompt: "Use $harness:inspect-development-environment to inventory the development tools on this machine."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Wake Desktop"
+  short_description: "Wake a sleeping LAN host with Wake-on-LAN"
+  default_prompt: "Use $harness:wake-desktop to wake my desktop and wait until it responds to ping."
+policy:
+  allow_implicit_invocation: true
