@@ -14,7 +14,7 @@ const { DEFAULT_TARGET, artifactRoot, parseCommandLine, validateTarget } = requi
 const EXIT = Object.freeze({ OK: 0, FAILED: 1, CANNOT_START: 2 });
 const GIF_GROUP = 'create-discord-emoji-gif';
 
-const USAGE = `Usage: npm test [-- [--target development|distribution] [--skip-gif | --help]]
+const USAGE = `Usage: npm test [-- [--target development|distribution] [--skip-gif] [--keep-venv] | --help]
 
 Run the repository test gate using existing dependencies.
 Prepare an already-built checkout first with: npm run test:setup
@@ -27,12 +27,15 @@ Options:
   --target development|distribution  Select the artifact (default: development)
   --skip-gif  Omit both GIF converter preflights and all tests under
               tests/create-discord-emoji-gif/
+  --keep-venv Keep the repository .venv after the gate for focused follow-up
+              runs; run npm run test:setup before the next full gate
   --help      Print this message
 
 Examples:
   npm test
   npm test -- --skip-gif
   npm test -- --target development --skip-gif
+  npm test -- --keep-venv
   npm test -- --target distribution
   npm test -- --help
   npm test -- --target distribution --help
@@ -44,6 +47,7 @@ function parseArguments(argv)
   const values = parseCommandLine(argv, {
     target: { type: 'string' },
     'skip-gif': { type: 'boolean' },
+    'keep-venv': { type: 'boolean' },
     help: { type: 'boolean' },
   }, (code, condition) => Object.assign(new Error(condition), { code }));
   const target = validateTarget(values.target ?? DEFAULT_TARGET);
@@ -51,7 +55,11 @@ function parseArguments(argv)
   {
     throw Object.assign(new Error('use at most one of --skip-gif or --help'), { code: 'INVALID_ARGUMENTS' });
   }
-  return { target, help: values.help, skipGif: values['skip-gif'] };
+  if (values['keep-venv'] && values.help)
+  {
+    throw Object.assign(new Error('use at most one of --keep-venv or --help'), { code: 'INVALID_ARGUMENTS' });
+  }
+  return { target, help: values.help, skipGif: values['skip-gif'], keepVenv: values['keep-venv'] === true };
 }
 
 function nodeTestFiles(repoRoot, group) {
@@ -185,9 +193,11 @@ function runCommandPlan(plan, execute = spawnCommand, {
 // that setup has just built from requirements-dev.txt, not one left over from
 // an earlier pin or hand-installed packages. In the container this empties the
 // .venv volume, which only carries the environment from one setup to one gate.
+// --keep-venv is an opt-in for focused runs after a gate; the default stays removal.
 async function runWithVenvCleanup(repoRoot, runGate, {
   remove = fs.promises.rm,
   stderr = process.stderr,
+  keep = false,
 } = {}) {
   let status;
   let gateError;
@@ -198,6 +208,11 @@ async function runWithVenvCleanup(repoRoot, runGate, {
   }
 
   const venv = path.join(path.resolve(repoRoot), '.venv');
+  if (keep) {
+    stderr.write('Retaining .venv (--keep-venv); run npm run test:setup before the next full gate\n');
+    if (gateError) throw gateError;
+    return status;
+  }
   try {
     try {
       await remove(venv, { recursive: true, force: true });
@@ -242,7 +257,7 @@ async function main(argv, {
     fullSearch: options.skipGif ? undefined : 'tests/create-discord-emoji-gif/full-search.test.js',
     python: command('ASD-STE100 Python tests', path.join('.venv', 'bin', 'python'), ['scripts/python-test-reporter.py'], repoRoot),
     excluded: options.skipGif ? [GIF_GROUP] : [],
-  }), { stderr });
+  }), { stderr, keep: options.keepVenv });
 }
 
 if (require.main === module) Promise.resolve(main(process.argv.slice(2))).then(status => { process.exitCode = status; }).catch(error => { console.error(error); process.exitCode = 1; });

@@ -81,10 +81,10 @@ test('target selection reaches every setup and prerequisite command without ambi
   }
 });
 
-test('CLI accepts only the complete gate, --skip-gif, and --help', () => {
+test('CLI accepts only the complete gate, --skip-gif, --keep-venv, and --help', () => {
   let result = spawnSync(process.execPath, [scriptPath, '--help'], { encoding: 'utf8' });
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /Usage: npm test .*\[--skip-gif \| --help\]/);
+  assert.match(result.stdout, /Usage: npm test .*\[--skip-gif\] \[--keep-venv\] \| --help\]/);
   assert.match(result.stdout, /complete local test gate/i);
   assert.match(result.stdout, /omit[\s\S]*create-discord-emoji-gif/i);
 
@@ -92,9 +92,11 @@ test('CLI accepts only the complete gate, --skip-gif, and --help', () => {
   assert.equal(result.status, 2);
   assert.match(result.stderr, /ERROR \[UNKNOWN_ARGUMENT\]: unrecognized argument: --unknown/);
 
-  result = spawnSync(process.execPath, [scriptPath, '--skip-gif', '--help'], { encoding: 'utf8' });
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /ERROR \[INVALID_ARGUMENTS\]/);
+  for (const flag of ['--skip-gif', '--keep-venv']) {
+    result = spawnSync(process.execPath, [scriptPath, flag, '--help'], { encoding: 'utf8' });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /ERROR \[INVALID_ARGUMENTS\]/);
+  }
 });
 
 test('npm forwards help, target selection, and invalid usage to the real runner', () => {
@@ -134,6 +136,23 @@ test('an unexpected gate error still removes the test virtual environment', asyn
     throw new Error('unexpected gate error');
   }), /unexpected gate error/);
   assert.equal(fs.existsSync(path.join(root, '.venv')), false);
+});
+
+test('--keep-venv retains the test virtual environment and says so', async t => {
+  const { parseArguments, runWithVenvCleanup } = loadRunner();
+  assert.equal(parseArguments([]).keepVenv, false);
+  assert.equal(parseArguments(['--keep-venv', '--skip-gif']).keepVenv, true);
+  assert.throws(() => parseArguments(['--keep-venv', '--help']), { code: 'INVALID_ARGUMENTS' });
+  for (const status of [0, 1]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'run-tests-keep.'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(root, '.venv'));
+    const capture = captureOutput();
+
+    assert.equal(await runWithVenvCleanup(root, async () => status, { stderr: capture.stderr, keep: true }), status);
+    assert.equal(fs.existsSync(path.join(root, '.venv')), true);
+    assert.match(capture.output.stderr, /Retaining \.venv \(--keep-venv\)/);
+  }
 });
 
 test('help and invalid arguments do not remove the test virtual environment', async t => {
