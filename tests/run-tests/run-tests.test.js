@@ -271,7 +271,7 @@ test('a complete child invocation includes waiting time', () => {
   assert.equal((capture.output.stdout.match(/Test gate: Passed/g) || []).length, 1);
 });
 
-test('workflow limits credentials and tests each exact revision before bumping it', () => {
+test('workflow limits credentials and validates each versioned distribution before committing it', () => {
   const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/bump-version.yml'), 'utf8');
   assert.match(workflow, /test:\n\s+permissions:\n\s+contents: read\n\s+runs-on: ubuntu-24\.04/);
   assert.match(workflow, /ref: \$\{\{ github\.event_name == 'workflow_dispatch' && 'main' \|\| github\.sha \}\}/);

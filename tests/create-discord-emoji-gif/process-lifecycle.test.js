@@ -245,10 +245,27 @@ for (const [entry, preflight, signal, phase] of [
   const pidFile = path.join(root, 'pid');
   const input = path.join(root, 'input.mkv');
   fs.writeFileSync(input, 'fixture');
+  // A visible readiness file must contain the complete PID before the test
+  // sends a signal. Otherwise an interrupted empty write becomes PID 0 below.
+  const grandchildCode = `
+    const fs = require('node:fs');
+    const ready = ${JSON.stringify(ready)};
+    fs.writeFileSync(ready + '.tmp', String(process.pid));
+    fs.renameSync(ready + '.tmp', ready);
+    setInterval(() => {}, 1000);
+  `;
+  const probeCode = `
+    const fs = require('node:fs');
+    const { spawn } = require('node:child_process');
+    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+    process.on('${signal}', () => setTimeout(() => process.exit(0), 50));
+    spawn(process.execPath, ['-e', ${JSON.stringify(grandchildCode)}], {stdio:'ignore'});
+    setInterval(() => {}, 1000);
+  `;
   fs.writeFileSync(preload, `
     const shared = require(${JSON.stringify(base + '/shared')});
     const slow = async manager => {
-      await manager.runOwned('slow-probe', process.execPath, ['-e', ${JSON.stringify(`const fs=require('node:fs'); const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid)); setInterval(()=>{},1000)`)}],{stdio:'ignore'}); fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid)); process.on('${signal}',()=>setTimeout(()=>process.exit(0),50)); setInterval(()=>{},1000);`)}]);
+      await manager.runOwned('slow-probe', process.execPath, ['-e', ${JSON.stringify(probeCode)}]);
       return { commands: { ffmpeg: 'unused', ffprobe: 'unused', gifski: 'unused', gifsicle: 'unused' } };
     };
     shared.checkGifskiPreflight = shared.checkGifsiclePreflight = ${phase === 'capability' ? 'slow' : 'async () => ({ commands: { ffmpeg: "unused", ffprobe: "unused", gifski: "unused", gifsicle: "unused" } })'};

@@ -90,4 +90,68 @@ If paused, stop starting new work and settle task-owned processes to a safe boun
 
 ## Execution record
 
-Implementation and measurements pending.
+### Reconciliation and implementation, 2026-09-20
+
+- Worktree: `/home/kyle/harness-plugin`, Linux development container, branch `main`, HEAD `c50866c4e2571c4792062edea8633c5baca71ecc`. Initially clean. The only drift from the planning baseline was the two planning documents (`5293743`, `c50866c`); no implementation was present.
+- GitHub read-only checks: `gh api repos/kylesaburao/harness-plugin/branches/main/protection` returned `Branch not protected` (404); `gh api repos/kylesaburao/harness-plugin/rules/branches/main` returned `[]`. No required checks need migration. The sandbox initially could not reach Docker/GitHub; authorized access succeeded, without configuration changes.
+- Read the required build, testing, dependency, versioning, and container guides, plus the current GitHub concurrency and Node test-runner documentation. Harness Advisor supplied the final source review recorded below.
+- Installed the locked root toolchain and built `.build/harness/` using `./scripts/dev exec`. Container versions: Node 26.8.2, npm 11.19.1. The existing runner selected four Node workers.
+- Prepared changes outside the checkout while measuring the unmodified baseline, then applied conditional main-job routing, candidate/publication summaries, PR cancellation, the four-file publication split with a process-local fixture helper, routing coverage, and development-guide updates. Production policy and runner code are unchanged. Setup and gate probes in publication fixtures remain controlled; compilation and Git operations remain real.
+
+### Baseline measurements
+
+Each trial ran `node scripts/setup-tests.js`, then `node scripts/run-tests.js --skip-gif`, sequentially in the same development container. Gate timing includes prerequisites and scheduling, excludes setup and container startup, and does not sum overlapping group spans.
+
+| Trial | Full hosted-style gate | Distribution group | Outcome |
+| --- | ---: | ---: | --- |
+| Baseline 1 | 140.434 s | 138.429 s | 590 passed, 60 platform skips, 0 failures |
+| Baseline 2 | 147.574 s | 145.293 s | 590 passed, 60 platform skips, 0 failures |
+| Baseline 3 | 149.404 s | 147.047 s | 590 passed, 60 platform skips, 0 failures |
+
+Median baseline gate: **147.574 s**. All trials excluded GIF tests/preflights and do not establish native macOS coverage. Local raw logs are retained under `.build/ci-cd-evidence/baseline-{1,2,3}.log`, with separate setup logs. These ignored logs require this worktree or explicit transfer; the measurements above are durable.
+
+### Changed measurements and fixture decision
+
+The same container/toolchain and four-worker pool ran three changed hosted-style gates, each after setup:
+
+| Trial | Full hosted-style gate | Distribution group | Outcome |
+| --- | ---: | ---: | --- |
+| Split candidate 1 | 164.924 s | 162.782 s | 599 passed, 60 platform skips, 0 failures |
+| Split candidate 2 | 169.794 s | 167.419 s | 599 passed, 60 platform skips, 0 failures |
+| Split candidate 3 | 170.794 s | 168.279 s | 599 passed, 60 platform skips, 0 failures |
+
+Median changed gate: **169.794 s**, 22.220 s above the baseline median. Nine new tests account for the increase from 590 to 599 passes; no original scenario was removed. This whole-change comparison includes the additional routing coverage and is not an isolated estimate of the split's cost. It does not demonstrate the required improved median, so the specified fallback was applied: all fifteen original publication scenarios are again together in `publication.test.js`. The common helper remains extracted for reuse by routing tests. No runner changes, nested concurrency, or matrix were introduced. The three split-only scenario files were removed.
+
+All fifteen original scenario bodies were compared against HEAD and retained verbatim, including all five build/setup/test/check/commit failure branches. The shared helper still gives every process its own seed, every scenario its own clones/remote/control/log/cleanup, and only read-only access to the shared compiler installation.
+
+Raw changed/setup logs are in `.build/ci-cd-evidence/changed-{1,2,3}.log` and `changed-setup-{1,2,3}.log`. All six timing trials excluded GIF tests/preflights and report Linux platform skips. The planning estimate of eliminating a preliminary hosted release gate remains an estimate; no new hosted release duration was measured.
+
+### Verification and next action
+
+- Focused verification after setup: `./scripts/dev exec sh -c 'node --test tests/bump-version/*.test.js tests/distribution/*.test.js tests/run-tests/*.test.js'` passed **109 tests**, with no failures/skips (`focused.log`).
+- Complete local gate after setup, before reverting the scenario split: `./scripts/dev exec node scripts/run-tests.js` passed **730 tests**, with **60 platform skips**, no failures, and no excluded groups (`full.log`). Both GIF backends/preflights ran; native macOS execution remains unavailable on Linux.
+- The first full gate after restoring the grouping finished with **728 passed, 2 failed, 60 skipped** (`final-full.log`). All CI/publication checks passed. Unchanged GIF tests failed while reading a work directory concurrently removed by cleanup and while asserting that a signaled process PID was gone. An unchanged focused retry of the three relevant cache/preflight cases passed (`gif-recheck.log`); this retry alone did not resolve the timing weaknesses.
+- Fixed the two existing GIF test fixtures without changing runtime code or their behavioral assertions: tolerate only `ENOENT` between the parent and work-directory listings while still requiring all five caches, successful conversion, and cleanup; write the probe parent's PID before spawning its child and atomically publish the child's readiness/PID file before signaling. The latter prevents an interrupted empty PID write from being interpreted as PID 0. The original process failure did not retain the PID contents, so that cause is a supported race diagnosis, not an independently captured failing PID value. These small post-review test repairs are outside the Advisor's inspected snapshot.
+- Final verification: both repaired GIF test files passed **33 tests**, with no failures/skips (`gif-fixed-focused.log`). After fresh setup, the complete gate on the final restored arrangement passed **730 tests**, with **60 platform skips**, **0 failures**, and **no excluded groups**, in **200.439 s** (`final-fixed-full.log`). All 131 GIF tests and both converter preflights ran. This full-gate duration includes GIF coverage and is not comparable to the hosted-style timing table.
+- All task-owned test commands and the Advisor consultation have exited. Implementation is complete locally, with changes intentionally left unstaged and uncommitted. No pushes, release dispatches, or protected-file edits were performed. Hosted inspection remains conditional on a later otherwise-authorized push/merge; none was triggered solely for this benchmark.
+
+### Advisor review and invariants
+
+One fresh Harness Advisor consultation requested `gpt-6-astra` at `high` effort, using the resolved Codex/Astra built-in `fresh-review` route. The host has no Node executable, so the exact loaded helper's bytes were evaluated with container Node; both host configuration absence and the helper's built-in result were checked. No routing preference was changed. Task-local accounting: epoch 1, `automatic_calls=1`, `user_requested_calls=0`, `same_family_automatic_calls=1`, reason `FINAL_REVIEW` after implementation and primary testing.
+
+The Advisor reported inspection of the workflows, policy imports/functions, changed tests/helpers, handoff/plan, and guides, with no concrete correctness defect established. Its recommendations were to test the restored arrangement and replace stale progress statements in this record. Inspection was instruction-bound through inherited tools, not an independently enforced read-only sandbox; execution results and required-check configuration remained primary-supplied. The primary verified unchanged HEAD and SHA-256 content hashes for all twelve changed/untracked files before and after review. This is content-stability evidence, not proof against all possible external writers.
+
+Primary comparisons independently verified that the publisher job is byte-identical to HEAD apart from the three completed-gate accounting lines, the PR workflow differs only by concurrency, and all fifteen original scenario bodies remain verbatim. Source-policy, release-policy, builder, runner, dependency manifests, runtime source, canonical version, and tracked distribution are unchanged.
+
+### Completion audit
+
+| Requirement | Current evidence |
+| --- | --- |
+| Conditional candidate selection, fail-closed errors/unknown results, permissions, ordering, and unchanged check identifiers | [Workflow contracts](../../tests/run-tests/workflow.test.js), [transaction ordering](../../tests/run-tests/run-tests.test.js), and inspected workflow diff; final gate passed. |
+| Eligible source, non-release docs/tests/tooling, unpublished-source catch-up, manual patch/minor/major, invalid history before installation, old-event reruns, queued published events, and advancement after both selection paths | Six [routing scenarios](../../tests/distribution/routing.test.js) execute workflow shell against real local Git histories; final gate passed. Gate probes establish routing counts, not runtime coverage. |
+| Publication transaction, races, uncertain pushes, staging/mutation protections, timestamps, and idempotency | Fifteen original [publication scenarios](../../tests/distribution/publication.test.js) remain verbatim, including every failure-matrix branch; all passed alongside release-policy/build tests. Publisher implementation is unchanged except reporting. |
+| Fixture ownership and performance fallback | [Shared fixture](../../tests/distribution/publication-fixture.js) owns process/scenario state as required. Three baseline and three split-candidate gates completed without failure; the non-improving median triggered restoration of the original scenario grouping. |
+| PR cancellation and pinned integration testing | PR workflow differs only by workflow/PR concurrency. Publication `version-bump`, `cancel-in-progress: false`, `queue: max`, read/write job boundaries, and unconditional fresh-main inspection remain intact. Required-check configuration was reconfirmed before edits. |
+| Documentation, implementation scope, and verification | Build/testing/versioning guides and this handoff describe final behavior and measurement limits. Locked toolchain installation, candidate build, focused checks, setup before each gate, full final gate, and `git diff --check` completed. Runtime source, dependencies, canonical package, and tracked distribution have no edits. |
+
+Local evidence logs remain under `.build/ci-cd-evidence/`; uncommitted implementation requires this worktree or explicit transfer of its changes. There are no live task-owned writers or pending local implementation steps. A later authorized push can supply hosted verification without a benchmark-only release.

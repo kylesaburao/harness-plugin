@@ -82,7 +82,17 @@ Inventory and documentation-link checks resolve public `dist/harness/...` links 
 
 The Git-hook suite uses real temporary repositories, active and temporary indexes, linked worktrees, and local bare remotes. It covers protected content/mode/type changes, partial commits, automatic and conflict-resolved merge inheritance, stale or mixed published pairs, and the tree-preserving timestamp amendment. These tests require Git and shell only and do not establish live Docker behavior.
 
-Release-policy and distribution tests use synthetic local histories and Git indexes. They cover source-only range enforcement, validated legacy/new release records, exact input eligibility, staged blob/mode disagreement, complete owned-path staging, races, uncertain pushes, and workflow-run idempotency. At least one publication fixture performs real assembly and a real ordinary push to a local bare remote; no fixture pushes to GitHub.
+Release-policy and distribution tests use synthetic local histories and Git indexes. They cover source-only range enforcement, validated legacy/new release records, exact input eligibility, staged blob/mode disagreement, complete owned-path staging, races, uncertain pushes, and workflow-run idempotency. Publication fixtures execute the actual workflow shell, real compilation, Git validation, commits, and ordinary pushes to scenario-local bare remotes. Setup and runtime gates inside these fixtures are controlled probes; the outer selected-artifact gate supplies runtime coverage. No fixture pushes to GitHub.
+
+The fifteen publication scenarios remain together in `tests/distribution/publication.test.js`. A four-file split was measured and reverted under the handoff's performance acceptance rule; see the [execution record](ci-cd-handoff.md#execution-record). The shared `publication-fixture.js` owns one seed per process; every scenario owns its clones, remote, controls, logs, and cleanup. Only the compiler installation is shared read-only. The failure matrix still covers build, setup, test, freshness check, and commit failures. `routing.test.js` exercises event classification and fresh-main publication together, while the workflow contracts under `tests/run-tests/` cover conditional steps and fail-closed selection. These files use the existing process-isolated worker pool, with no nested concurrency.
+
+For CI orchestration changes, after build and setup run:
+
+```sh
+node --test tests/bump-version/*.test.js tests/distribution/*.test.js tests/run-tests/*.test.js
+```
+
+Use `./scripts/dev exec sh -c 'node --test tests/bump-version/*.test.js tests/distribution/*.test.js tests/run-tests/*.test.js'` on Linux/WSL2. Repeat setup before the complete gate. PR verification always tests its pinned integration candidate and cancels older runs for the same PR. Main's read-only job runs a development gate only when publication selection reports no eligible work. The dependent publisher still inspects fresh main and tests every newly selected versioned distribution; reruns resolve a validated existing release without rebuilding. Ordinary releases and non-release pushes each run one gate, with additional exact-distribution gates when source advances or a push race occurs.
 
 The default build/setup/test sequence must leave all tracked files, including `dist/` and `src/harness/package.json`, unchanged. Candidate validation intentionally does not use `--tracked`, because new generated files in `.build/harness/` are ignored. Publication combines a fresh distribution comparison with indexed byte/mode validation; neither check substitutes for the other.
 

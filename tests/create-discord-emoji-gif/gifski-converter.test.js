@@ -393,7 +393,16 @@ test('all source caches coexist during candidate evaluation and disappear after 
         .find((name) => name.startsWith('mov-to-gif-gifski.'));
       if (workName) {
         const workDir = path.join(temporaryRoot, workName);
-        const caches = fs.readdirSync(workDir)
+        let entries;
+        try {
+          entries = fs.readdirSync(workDir);
+        } catch (error) {
+          // Conversion can remove the work directory after the parent listing.
+          // Retain the coexistence assertions below; only tolerate that cleanup.
+          if (error.code !== 'ENOENT') throw error;
+          entries = [];
+        }
+        const caches = entries
           .filter((name) => /^source-f\d+[.]y4m$/.test(name));
         maximumConcurrent = Math.max(maximumConcurrent, caches.length);
         for (const cache of caches) seen.add(cache);

@@ -41,7 +41,11 @@ Once a range is eligible, tags in any subject in that range count, including a d
 
 Use the `Bump version` workflow's `workflow_dispatch` input on `main` for a deliberate manual patch, minor, or major release. Manual dispatch bypasses automatic input eligibility and uses exactly the selected level, even when no source change is pending or commit tags suggest another level. Do not run `scripts/bump-version.js` as a local release recipe.
 
-The workflow validates its event, repository, ref, run ID, selected source history, and executed workflow definition before writing. Its `test` job builds the development candidate with read-only permissions. The publisher separately bumps, builds, sets up, and runs the hosted gate against the exact versioned distribution selected on each attempt.
+The workflow validates its event, repository, ref, run ID, selected source history, and executed workflow definition before writing. Its read-only `test` job validates the event range, then calls `inspectPublication` on the checked-out event snapshot (current main for manual dispatch). `no eligible changes` selects a development-candidate gate; `ready` and validated `already published` skip that gate and its Python/dependency setup. Errors and unknown dispositions fail before installation. Manual patch, minor, and major requests therefore defer testing to the publisher even without pending source changes.
+
+The write-enabled publisher depends on successful `test` and always inspects freshly fetched main. Preliminary selection does not authorize publication. An ordinary release gets one hosted gate against its exact versioned distribution; an ordinary non-release push gets one development gate. A documentation event can publish earlier unreleased source, and newer unpublished source arriving after a non-release gate intentionally requires an additional distribution gate. A previously published run is resolved against current main without rebuilding even when its original event still looks eligible. Queued events whose changes have already been published likewise avoid a second release.
+
+Step summaries distinguish source-policy success from a completed development gate and report the number of completed distribution gates. Hosted gates use `--skip-gif` and do not establish native macOS execution coverage. Pull requests continue to test their pinned integration candidate; newer runs for the same PR cancel obsolete verification without affecting the publication queue.
 
 ## Publication transaction
 

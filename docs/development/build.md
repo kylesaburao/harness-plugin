@@ -88,7 +88,9 @@ Reconciliation preserves their contents and mounted-directory ancestors. Publish
 
 ## CI publication boundary
 
-Pull requests and the release workflow's read-only test job validate submitted commit history before installing dependencies or building `.build/harness/`. They then run the hosted `--skip-gif` candidate gate and verify that no tracked checkout content changed.
+Pull requests validate submitted commit history, then build and test the pinned integration candidate in `.build/harness/` with `--skip-gif`. A newer run for the same PR cancels obsolete verification. The release workflow's read-only `test` job validates the event range and calls the existing publication policy before any Python setup or dependency installation. It runs the development candidate gate only for `no eligible changes`; eligible or already-published requests defer to the publisher. Both workflows verify that tracked checkout content remained unchanged.
+
+The write-enabled `bump` job always depends on successful `test`, including after a non-release development gate. Its fresh-main inspection remains publication authority. Ordinary releases therefore run only one exact-version distribution gate, and ordinary non-release main pushes run only one development gate. New unpublished source arriving after preliminary classification can intentionally require a distribution gate as well. Summaries distinguish policy success, candidate testing, and the number of completed distribution gates.
 
 The publisher starts from freshly fetched `main`, validates the unreleased source range and the existing published pair, selects the bump level, and changes only the canonical version. It builds `dist/harness/`, sets up and tests that exact versioned target, performs a final no-repair comparison, stages the entire owned pair, and validates indexed bytes and modes before creating one release commit. A raced source snapshot is discarded and rebuilt, set up, tested, and validated from the new tip. No failed local reconciliation becomes visible unless the final commit passes every check and an ordinary fast-forward push succeeds.
 

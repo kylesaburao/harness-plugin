@@ -30,9 +30,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
       - name: Validate source before generation
         env:
           SOURCE_BEFORE: ${{ github.event.before }}
@@ -49,14 +46,56 @@ jobs:
             anchor=$(node -e 'const p=require("./scripts/release-policy"); console.log(p.findReleaseAnchor(process.cwd(), "HEAD", {required:true}).commit)')
             node scripts/check-source-policy.js --base "$anchor" --head HEAD
           fi
+      - name: Select candidate gate
+        id: candidate
+        env:
+          DISPATCH_LEVEL: ${{ inputs.level }}
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const { inspectPublication } = require('./scripts/release-policy');
+          const selected = inspectPublication(process.cwd(), {
+            head: 'HEAD', runId: process.env.GITHUB_RUN_ID,
+            workflowSha: process.env.GITHUB_WORKFLOW_SHA,
+            manualLevel: process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? process.env.DISPATCH_LEVEL : null,
+          });
+          let testCandidate;
+          switch (selected.status)
+          {
+            case 'no eligible changes': testCandidate = true; break;
+            case 'ready':
+            case 'already published': testCandidate = false; break;
+            default: throw new Error('Unexpected publication disposition: ' + selected.status);
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `test_candidate=${testCandidate}\n`);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `Source policy: passed. Publication selection: ${selected.status}.\n`);
+          NODE
+      - uses: actions/setup-python@v6
+        if: steps.candidate.outputs.test_candidate == 'true'
+        with:
+          python-version: '3.12'
       - run: npm ci --include=dev
+        if: steps.candidate.outputs.test_candidate == 'true'
       - run: npm run build
+        if: steps.candidate.outputs.test_candidate == 'true'
       - run: node scripts/setup-tests.js
+        if: steps.candidate.outputs.test_candidate == 'true'
       - run: node scripts/run-tests.js --skip-gif
+        if: steps.candidate.outputs.test_candidate == 'true'
       - name: Verify tracked checkout remained unchanged
         run: |
           git diff --exit-code
           git diff --cached --exit-code
+      - name: Report candidate gate
+        env:
+          TEST_CANDIDATE: ${{ steps.candidate.outputs.test_candidate }}
+        run: |
+          if [ "$TEST_CANDIDATE" = true ]; then
+            echo 'Development gate: completed (--skip-gif; no GIF or native macOS execution coverage).' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Development gate: skipped; publication checks current main and tests any newly selected versioned distribution.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   bump:
     needs: test
@@ -103,6 +142,7 @@ jobs:
           anchor=unknown
           release_sha=none
           attempt=0
+          gates_completed=0
           outcome='failed before publication'
           report() {
             {
@@ -111,6 +151,7 @@ jobs:
               echo "Previous release: $anchor ($previous); next version: $next"
               echo "Level: $level ($GITHUB_EVENT_NAME)"
               echo 'Hosted gate: --skip-gif; no GIF or native macOS execution coverage.'
+              echo "Distribution gates completed: $gates_completed"
               echo "Release SHA: $release_sha; attempt count: $attempt; run ID: $GITHUB_RUN_ID"
             } >> "$GITHUB_STEP_SUMMARY"
           }
@@ -196,6 +237,7 @@ jobs:
             HARNESS_RELEASE_WRITE=1 npm run build:dist
             node scripts/setup-tests.js --target distribution
             node scripts/run-tests.js --target distribution --skip-gif
+            gates_completed=$((gates_completed + 1))
             npm run build:dist:check
             node scripts/validate-dist.js --target distribution
             node - "$source_sha" "$level" "$next" <<'NODE'
