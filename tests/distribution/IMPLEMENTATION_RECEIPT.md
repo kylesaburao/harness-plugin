@@ -66,3 +66,22 @@ The first full container gate exposed two existing portability assumptions. The 
 The baseline Python `ste_cli.py` ends with an extra blank line. Its copied source bytes are deliberately preserved. The staged whitespace check reports that inherited line, so the otherwise clean check uses `git -c core.whitespace=-blank-at-eof diff --cached --check`. No static resource was reformatted to satisfy whitespace tooling.
 
 Stage 1 is qualified as a boundary checkpoint. Stages 2 through 7 remain, including conversion of the 15 transitional Node modules and final runtime-floor/live-host qualification. Nothing was pushed or released.
+
+## Stage 2: sampler and Advisor
+
+Starting checkpoint: `5d025e4`. Converted `sample.mjs` to `sample.mts`, and both Advisor implementations to `.ts`. Their emitted filenames remain unchanged. The transitional allowlist now contains 12 modules.
+
+The sampler has operation-discriminated requests/results, preserved raw JSON numeric values, a narrow native JSON capability interface, and a cryptographic integer-source contract. Native dynamic crypto import and top-level await remain. Advisor configuration has typed host/family/effort values, validated configuration entries, command variants, route sources, and resolved reports. Claude invocation retains its narrower effort set and captured subprocess function, with distinct preflight/consultation reports and validated external response data. The existing null-response diagnostic remains intact. No new production module split was needed.
+
+Executed verification:
+
+- `npm run typecheck` and `npm run build:check`: passed.
+- Initial focused sampler/Advisor/distribution suite: 39 passed. After preserving the null-response contract explicitly, focused sampler/adapter coverage: 18 passed.
+- Downloaded the official Node `22.0.0` macOS ARM64 archive under ignored `tmp/node-runtimes/` and verified its version. `tmp/node-runtimes/node-v22.0.0-darwin-arm64/bin/node tests/distribution/runtime-floor.js`: passed, covering native ESM, lossless large numeric tokens, actual cryptographic sampling, routing mutation/selection, and bundled-contract preflight with a version-only Claude stub.
+- An initial attempt to run the entire modern sampler/Advisor test harness on Node 22.0.0 produced 25 passes and two harness failures. The sampler import-failure injector requires newer `registerHooks`. The Advisor lock-cleanup injector intercepted unrelated staging cleanup on this runtime. Narrowed that stub to the exact lock directory, preserving all original assertions. The sampler's modern preload tests remain intact and run in the Node 26 gate.
+- Node `22.0.0` Advisor config/adapter tests after the stub correction: 17 passed.
+- Native setup followed by `node scripts/run-tests.js` with host access: **657 passed, zero failed, zero skipped**, including real GIF and native HEIC tests.
+- Container setup followed by `./scripts/dev exec node scripts/run-tests.js`: **597 passed, zero failed, 60 platform skips**.
+- `git diff --check`: passed.
+
+Local raw evidence: `tmp/ts-stage2-host-gate.log`, `tmp/ts-stage2-container-gate.log`, `tmp/ts-stage2-node22.log`, `tmp/ts-stage2-node22-advisor.log`, and the focused logs. The runtime-floor script is development-only and is not distributed. Stages 3 through 7 remain.

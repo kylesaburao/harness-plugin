@@ -40,6 +40,7 @@ else {
  }
  if (process.env.ADVISOR_TEST_AUTH_FAILURE) { process.stderr.write('Not logged in. Please run /login'); process.exit(1); }
  if (process.env.ADVISOR_TEST_FAILURE) { process.stderr.write('fixture unavailable model'); process.exitCode = 1; }
+ else if (process.env.ADVISOR_TEST_NULL_RESPONSE) process.stdout.write('null');
  else process.stdout.write(JSON.stringify({ result: 'Use pendingFiles.', is_error: false, modelUsage: {'claude-opus-fixture': {inputTokens: 100,cacheReadInputTokens: 0}} }));
 }
 `, { mode: 0o755 });
@@ -158,4 +159,13 @@ test('absent CLI is unavailable without inference', t => {
   assert.equal(r.status, 2);
   assert.equal(JSON.parse(r.stderr).error.code, 'claude_unavailable');
   assert.equal(fs.existsSync(f.log), false);
+});
+
+test('null response keeps the existing failure diagnosis after dispatch', t => {
+  const f = fixture(t);
+  const result = f.invoke(['--native-absent'], { ADVISOR_TEST_NULL_RESPONSE: '1' });
+  assert.equal(result.status, 1);
+  const error = JSON.parse(result.stderr).error;
+  assert.equal(error.code, 'advisor_failed');
+  assert.equal(error.condition, "Cannot read properties of null (reading 'is_error')");
 });

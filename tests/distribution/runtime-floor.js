@@ -1,0 +1,52 @@
+'use strict';
+// Run directly with the qualified Node binary. This deliberately avoids modern
+// test-runner/preload helpers that are outside installed CLI runtime contracts.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const plugin = path.resolve(__dirname, '../../dist/harness');
+const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'harness-floor-')));
+const env = { ...process.env, HOME: home, NODE_OPTIONS: '', NODE_PATH: '' };
+function run(relative, args, input = '') {
+  const result = spawnSync(process.execPath, [path.join(plugin, relative), ...args], { cwd: home, env, input, encoding: 'utf8', timeout: 15000 });
+  assert.ifError(result.error);
+  return result;
+}
+function success(relative, args, input) {
+  const result = run(relative, args, input);
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+}
+try {
+  assert.ok(Number(process.versions.node.split('.')[0]) >= 22, 'This Stage 2 qualification requires Node >=22');
+  const sampler = 'skills/random-sampler/scripts/sample.mjs';
+  success(sampler, ['--help']);
+  assert.equal(JSON.parse(success(sampler, ['--preflight', '--json'])).preflight.status, 'passed');
+  for (const [input, expected] of [
+    ['{"op":"integer","min":-2,"maxExclusive":-1}', '{"op":"integer","value":-2}\n'],
+    ['{"op":"choice","values":[9007199254740993]}', '{"op":"choice","index":0,"value":9007199254740993}\n'],
+    ['{"op":"sample","values":[1e999],"count":0}', '{"op":"sample","indices":[],"values":[]}\n'],
+    ['{"op":"shuffle","values":[1e999]}', '{"op":"shuffle","indices":[0],"values":[1e999]}\n'],
+  ]) assert.equal(success(sampler, ['--json'], input), expected);
+  assert.equal(typeof JSON.parse(success(sampler, ['--json'], '{"op":"boolean"}')).value, 'boolean');
+  const invalid = run(sampler, ['--json'], '{"op":"integer","min":9007199254740993,"maxExclusive":9007199254740994}');
+  assert.equal(invalid.status, 2);
+  assert.equal(JSON.parse(invalid.stderr).error.code, 'INVALID_INTEGER_RANGE');
+  const config = 'skills/harness-advisor/scripts/advisor-config.js';
+  const initial = JSON.parse(success(config, ['resolve', '--host', 'codex', '--primary', 'sol', '--json']));
+  assert.equal(initial.route_source, 'built-in');
+  success(config, ['set-route', '--host', 'codex', '--primary', 'sol', '--advisor', 'terra', '--reasoning-effort', 'medium', '--json']);
+  const selected = JSON.parse(success(config, ['resolve', '--host', 'codex', '--primary', 'sol', '--json']));
+  assert.equal(selected.advisor_family, 'terra'); assert.equal(selected.reasoning_effort, 'medium'); assert.equal(selected.route_source, 'user-route');
+  const bin = path.join(home, 'bin'); fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\n[ "$1" = "--version" ] || exit 99\necho floor-fixture\n', { mode: 0o755 });
+  env.PATH = bin;
+  const prompt = path.join(home, 'prompt'); fs.writeFileSync(prompt, 'Preflight only');
+  const adapter = 'skills/harness-advisor/scripts/claude-advisor.js';
+  const preflight = JSON.parse(success(adapter, ['--native-absent', '--model', 'opus', '--reasoning-effort', 'high', '--prompt', prompt, '--preflight', '--json']));
+  assert.equal(preflight.status, 'preflight_passed'); assert.equal(preflight.runtime_controls, 'unverified');
+  assert.ok(preflight.checks.includes('advisor_contract_readable_nonempty'));
+  process.stdout.write(`Stage 2 runtime floor passed on Node ${process.versions.node}: native ESM, preserved numeric tokens, routing mutations, and bundled-contract preflight.\n`);
+} finally { fs.rmSync(home, { recursive: true, force: true }); }

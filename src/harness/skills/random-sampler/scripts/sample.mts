@@ -2,7 +2,28 @@
 // Minimum Node.js: 22.0.0. No packages or persistent state.
 import { fileURLToPath } from 'node:url';
 
-const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
+type PreservedJsonValue = null | boolean | string | number | RawJsonNumber | PreservedJsonValue[] | { [key: string]: PreservedJsonValue };
+interface RawJsonNumber { readonly rawJSON: string; readonly [key: string]: PreservedJsonValue }
+interface JsonCapabilities {
+  rawJSON?: (source: string) => RawJsonNumber;
+  isRawJSON?: (value: unknown) => value is RawJsonNumber;
+  parse(text: string, reviver?: (key: string, value: PreservedJsonValue, context?: { source: string }) => PreservedJsonValue): PreservedJsonValue;
+}
+// The native parser guarantees JSON values. Its reviver substitutes only native
+// raw-number wrappers, whose token is retained until native serialization.
+const json: JsonCapabilities = JSON;
+type IntegerRequest = { op: 'integer'; min: number; maxExclusive: number };
+type BooleanRequest = { op: 'boolean' };
+type ChoiceRequest<T> = { op: 'choice'; values: T[] };
+type SampleRequest<T> = { op: 'sample'; values: T[]; count: number };
+type ShuffleRequest<T> = { op: 'shuffle'; values: T[] };
+type SamplingRequest = IntegerRequest | BooleanRequest | ChoiceRequest<PreservedJsonValue> | SampleRequest<PreservedJsonValue> | ShuffleRequest<PreservedJsonValue>;
+type SamplingResult<T> = { op: 'integer'; value: number } | { op: 'boolean'; value: boolean } | { op: 'choice'; index: number; value: T } | { op: 'sample' | 'shuffle'; indices: number[]; values: T[] };
+interface RandomIntSource { randomInt(max: number): number; randomInt(min: number, max: number): number }
+const message = (error: unknown) => error instanceof Error ? error.message : undefined;
+const field = (error: unknown, key: string): unknown => error !== null && typeof error === 'object' ? Reflect.get(error, key) : undefined;
+
+const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const helpCommand = `node ${quote(fileURLToPath(import.meta.url))} --help`;
 const runtimeRemedy = 'Install supported Node.js with: brew install node@22 && export PATH="$(brew --prefix node@22)/bin:$PATH" (macOS), or nvm install 22 && nvm use 22 (Linux with nvm).';
 const usage = `Usage: sample.mjs [--help | --preflight] [--json]
@@ -26,13 +47,13 @@ System cryptographic randomness via node:crypto randomInt. Node.js >=22.0.0.
 Normal success is always JSON. No automatic retries.
 Exit: 0 success, 2 work not started (usage/input/runtime), 1 sampling failed.`;
 
-function reject(code, condition, correction, status = 2) {
+function reject(code: string, condition: string, correction: string, status = 2): never {
   throw Object.assign(new Error(condition), { code, remedy: correction, status });
 }
-function invalid(code, condition, correction) {
+function invalid(code: string, condition: string, correction: string): never {
   reject(code, condition, `${correction} See: ${helpCommand}`);
 }
-function argumentsFor(argv) {
+function argumentsFor(argv: string[]) {
   const unknown = argv.find(arg => !['--help', '--preflight', '--json'].includes(arg));
   if (unknown !== undefined) invalid('UNKNOWN_ARGUMENT', `Unknown argument: ${unknown}`, 'Remove the unknown argument.');
   if (new Set(argv).size !== argv.length || (argv.includes('--help') && argv.includes('--preflight'))) {
@@ -40,7 +61,7 @@ function argumentsFor(argv) {
   }
   return { help: argv.includes('--help'), preflight: argv.includes('--preflight') };
 }
-async function prerequisites() {
+async function prerequisites(): Promise<RandomIntSource> {
   if (Number(process.versions.node.split('.')[0]) < 22) {
     reject('UNSUPPORTED_NODE', `Node.js 22.0.0 or newer is required, found ${process.versions.node}.`, runtimeRemedy);
   }
@@ -49,19 +70,21 @@ async function prerequisites() {
     if (typeof crypto.randomInt !== 'function') throw new Error('randomInt is not callable');
     return crypto;
   } catch (error) {
-    reject('CRYPTO_UNAVAILABLE', `System cryptographic randomness is unavailable: ${error.message}`, runtimeRemedy);
+    reject('CRYPTO_UNAVAILABLE', `System cryptographic randomness is unavailable: ${message(error)}`, runtimeRemedy);
   }
 }
 // Preserve candidate numeric tokens, including values outside IEEE-754 precision/range.
 // Operation arguments must denote exact safe integers before conversion to Number.
-function exactInteger(value) {
+function exactInteger(value: unknown): number {
   // Older unsupported runtimes still validate input before the version diagnosis.
   if (typeof value === 'number') return value;
-  if (typeof JSON.isRawJSON !== 'function' || !JSON.isRawJSON(value)) return NaN;
+  if (typeof json.isRawJSON !== 'function' || !json.isRawJSON(value)) return NaN;
   const source = value.rawJSON;
   const number = Number(source);
   if (!Number.isSafeInteger(number)) return NaN;
-  const [, sign, whole, fraction = '', exponent = '0'] = source.match(/^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/);
+  const match = source.match(/^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/);
+  if (!match) return NaN;
+  const [, sign = '', whole = '', fraction = '', exponent = '0'] = match;
   const digits = (whole + fraction).replace(/^0+/, '');
   if (!digits) return number;
   const significant = digits.replace(/0+$/, '');
@@ -69,28 +92,29 @@ function exactInteger(value) {
   if (shift < 0n || shift > 16n || significant.length > 16) return NaN;
   return BigInt(sign + significant) * 10n ** shift === BigInt(number) ? number : NaN;
 }
-async function requestFromStdin() {
+async function requestFromStdin(): Promise<SamplingRequest> {
   let text = '';
   try {
     process.stdin.setEncoding('utf8');
     for await (const chunk of process.stdin) text += chunk;
   } catch (error) {
-    invalid('INPUT_READ_FAILED', `Could not read stdin: ${error.message}`, 'Provide the complete JSON request through readable stdin.');
+    invalid('INPUT_READ_FAILED', `Could not read stdin: ${message(error)}`, 'Provide the complete JSON request through readable stdin.');
   }
   if (!text.trim()) invalid('EMPTY_INPUT', 'stdin contains no JSON request.', 'Send one JSON object through stdin.');
-  let request;
+  let request: PreservedJsonValue;
   try {
-    request = JSON.parse(text, typeof JSON.rawJSON === 'function'
-      ? (key, value, context) => typeof value === 'number' ? JSON.rawJSON(context.source) : value
+    request = json.parse(text, typeof json.rawJSON === 'function'
+      ? (key, value, context) => typeof value === 'number' ? json.rawJSON!(context!.source) : value
       : undefined);
   }
   catch { invalid('INVALID_JSON', 'stdin is not one complete JSON value.', 'Correct the JSON syntax and send exactly one object.'); }
   if (request === null || typeof request !== 'object' || Array.isArray(request) || typeof request.op !== 'string') {
     invalid('INVALID_REQUEST', 'Expected an object with a string op.', 'Provide a JSON object with an op field.');
   }
-  const fields = { integer: ['min', 'maxExclusive'], boolean: [], choice: ['values'], sample: ['values', 'count'], shuffle: ['values'] };
+  const fields: Record<string, string[]> = { integer: ['min', 'maxExclusive'], boolean: [], choice: ['values'], sample: ['values', 'count'], shuffle: ['values'] };
   if (!Object.hasOwn(fields, request.op)) invalid('UNKNOWN_OPERATION', `Unknown operation: ${request.op}`, 'Use integer, boolean, choice, sample, or shuffle.');
-  const unknown = Object.keys(request).find(key => key !== 'op' && !fields[request.op].includes(key));
+  const operation = request.op;
+  const unknown = Object.keys(request).find(key => key !== 'op' && !fields[operation]?.includes(key));
   if (unknown !== undefined) invalid('INVALID_REQUEST', `Unknown field for ${request.op}: ${unknown}`, 'Remove or correct the unknown field.');
   if (request.op === 'integer') {
     const min = exactInteger(request.min);
@@ -99,42 +123,53 @@ async function requestFromStdin() {
       || !(maxExclusive - min > 0 && maxExclusive - min < 2 ** 48)) {
       invalid('INVALID_INTEGER_RANGE', 'Expected safe integer endpoints with 0 < maxExclusive - min < 2^48.', 'Correct min and maxExclusive to satisfy these bounds.');
     }
-    request.min = min;
-    request.maxExclusive = maxExclusive;
+    return { op: 'integer', min, maxExclusive };
   } else if (request.op !== 'boolean') {
     if (!Array.isArray(request.values) || (request.op === 'choice' && request.values.length === 0)) {
       invalid('INVALID_VALUES', 'Expected a values array, nonempty for choice.', 'Supply values as an array, with at least one entry for choice.');
     }
-    if (request.op === 'sample') request.count = exactInteger(request.count);
-    if (request.op === 'sample' && (!Number.isSafeInteger(request.count) || request.count < 0 || request.count > request.values.length)) {
-      invalid('INVALID_COUNT', 'Expected a safe integer count in 0..values.length.', 'Set count to an integer from zero through values.length.');
+    if (request.op === 'sample') {
+      const count = exactInteger(request.count);
+      if (!Number.isSafeInteger(count) || count < 0 || count > request.values.length) {
+        invalid('INVALID_COUNT', 'Expected a safe integer count in 0..values.length.', 'Set count to an integer from zero through values.length.');
+      }
+      return { op: 'sample', values: request.values, count };
     }
+    if (request.op === 'choice' || request.op === 'shuffle') return { op: request.op, values: request.values };
+    throw new Error('Validated sampling operation is missing');
   }
-  return request;
+  return { op: 'boolean' };
 }
-function sample(request, crypto) {
-  const { op, min, maxExclusive, values, count } = request;
-  if (op === 'integer') return { op, value: maxExclusive - min === 1 ? min : crypto.randomInt(min, maxExclusive) };
+function sample(request: SamplingRequest, crypto: RandomIntSource): SamplingResult<PreservedJsonValue> {
+  const { op } = request;
+  if (op === 'integer') {
+    const { min, maxExclusive } = request;
+    return { op, value: maxExclusive - min === 1 ? min : crypto.randomInt(min, maxExclusive) };
+  }
   if (op === 'boolean') return { op, value: crypto.randomInt(2) === 1 };
+  const { values } = request;
   if (op === 'choice') {
     const index = values.length === 1 ? 0 : crypto.randomInt(values.length);
-    return { op, index, value: values[index] };
+    return { op, index, value: values[index]! };
   }
   const indices = Array.from({ length: values.length }, (_, i) => i);
   if (op === 'sample') {
+    const { count } = request;
     // Partial Fisher-Yates retains draw order and treats duplicate positions separately.
     for (let i = 0; i < count && i < indices.length - 1; i++) {
       const j = crypto.randomInt(i, indices.length);
-      [indices[i], indices[j]] = [indices[j], indices[i]];
+      // Both indices are within the array bounds established above.
+      [indices[i], indices[j]] = [indices[j]!, indices[i]!];
     }
     indices.length = count;
   } else {
     for (let i = indices.length - 1; i > 0; i--) {
       const j = crypto.randomInt(i + 1);
-      [indices[i], indices[j]] = [indices[j], indices[i]];
+      // Both indices are within the array bounds established above.
+      [indices[i], indices[j]] = [indices[j]!, indices[i]!];
     }
   }
-  return { op, indices, values: indices.map(i => values[i]) };
+  return { op, indices, values: indices.map(i => values[i]!) };
 }
 async function main() {
   const argv = process.argv.slice(2);
@@ -149,15 +184,17 @@ async function main() {
         : `Preflight passed: Node.js ${process.versions.node}, crypto available.\n`);
       return;
     }
+    // A request was read and validated before prerequisites on the normal path.
     let result;
-    try { result = sample(request, crypto); }
-    catch (error) { reject('SAMPLING_FAILED', `Sampling failed: ${error.message}`, 'Stop and report this failure. Restore working system cryptographic randomness before a user-requested new draw.', 1); }
+    try { result = sample(request!, crypto); }
+    catch (error) { reject('SAMPLING_FAILED', `Sampling failed: ${message(error)}`, 'Stop and report this failure. Restore working system cryptographic randomness before a user-requested new draw.', 1); }
     process.stdout.write(JSON.stringify(result) + '\n');
   } catch (error) {
-    const diagnostic = { code: error.code, condition: error.message, remedy: error.remedy };
+    const diagnostic = { code: field(error, 'code'), condition: message(error), remedy: field(error, 'remedy') };
     process.stderr.write(argv.includes('--json') ? JSON.stringify({ error: diagnostic }) + '\n'
       : `ERROR [${diagnostic.code}]: ${diagnostic.condition}\nRemedy: ${diagnostic.remedy}\n`);
-    process.exitCode = error.status ?? 1;
+    const status = field(error, 'status');
+    process.exitCode = typeof status === 'number' ? status : 1;
   }
 }
 await main();

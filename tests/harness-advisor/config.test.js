@@ -187,7 +187,12 @@ test('lock cleanup failure reports possible publication and manual recovery', t 
   const f = fixture(t);
   const result = spawnSync(process.execPath, ['-e', `
     require('node:os').homedir = () => process.argv[1];
-    require('node:fs').rmdirSync = () => { throw new Error('injected cleanup failure'); };
+    const fs = require('node:fs');
+    const remove = fs.rmdirSync;
+    fs.rmdirSync = (target, ...args) => {
+      if (String(target).endsWith('config.json.lock')) throw new Error('injected cleanup failure');
+      return remove(target, ...args);
+    };
     process.exitCode = require(process.argv[2]).main(['set-default', '--host', 'codex', '--advisor', 'sol', '--json']);
   `, f.home, script], { encoding: 'utf8' });
   assert.equal(result.status, 1);
