@@ -28,7 +28,23 @@ python3 <skill-directory>/scripts/initialize_references.py \
 ```
 
 The initializer validates the old bundle against the current source configuration before copying
-it. Add `--force` only to replace a bundle that is already valid.
+it. `--force` still builds or imports and validates a fresh stage, but keeps an already valid
+installed directory unchanged and discards the stage. Readers keep using the same valid bundle.
+
+Publication uses a mode-0600 sibling lock named `.<source-config-sha256>.publish.lock`. Building
+runs outside the lock. The initializer revalidates the destination while holding it and publishes
+only if the destination is missing or invalid. An absent destination needs one rename. Invalid
+data is moved aside and restored if publication fails, when restoration is possible.
+
+`initialization_busy` exits with status 1 after staging. There are no retries or automatic stale-lock
+removals. Follow the reported absolute lock path and remedy: confirm no initializer is active before
+manually removing a stale lock. A killed publisher can also leave an invalid backup and a stage
+beside the destination. This does not interrupt an already valid bundle.
+
+Publication failures preserve the primary diagnosis and add `rollbackFailure` when restoration
+fails. Cleanup failures report absolute retained paths in `cleanupFailures`. A ready report with
+`cleanupFailures` means the bundle is available but cleanup is incomplete, and exits with status 1.
+Relay these details without deleting retained paths or retrying initialization automatically.
 
 ## Verify
 

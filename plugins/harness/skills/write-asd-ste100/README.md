@@ -30,11 +30,11 @@ Runtime lookup and checking (`ste_lookup.py`, `ste_check.py`, `validate_referenc
 the Python 3 standard library and never touch the network.
 
 The initializer downloads the pinned Issue 9 PDF, verifies its SHA-256, extracts and validates the
-dictionary, then installs the bundle atomically. Options:
+dictionary, then publishes it while keeping any valid installed bundle continuously available. Options:
 
 - `--pdf PATH` uses a local copy of the pinned PDF instead of downloading.
 - `--import-from DIR` copies a valid bundle from an older install, no download or `pypdfium2`.
-- `--force` rebuilds a bundle that is already valid.
+- `--force` builds and validates a fresh stage, then retains an already valid installed bundle unchanged.
 - `--preflight` checks the source, configuration, and dependency without building.
 - `--json` makes any run's error or success report machine-readable.
 

@@ -1084,7 +1084,7 @@ class InitializerRecoveryTests(unittest.TestCase):
                 initialize_references.initialize(None, True, self.config, self.generated)
         self.assert_existing_survives()
 
-    def test_success_replaces_existing_bundle_after_validation(self):
+    def test_success_replaces_invalid_existing_bundle_after_validation(self):
         with mock.patch.object(initialize_references, "download_pdf", self.fake_download), mock.patch.object(
             initialize_references, "verify_pdf_hash"
         ), mock.patch.object(initialize_references, "run_extractor", self.fake_extract), mock.patch.object(

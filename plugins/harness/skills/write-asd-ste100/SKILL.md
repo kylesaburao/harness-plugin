@@ -47,7 +47,7 @@ Send one question with the prompt `Run the reported initialization command now?`
 
 - `Do not initialize`: Leave the generated reference data unchanged and stop the skill workflow.
 
-If the user selects `Initialize now`, run the exact initialization command from the diagnosis. Request command approval separately if the execution environment requires it. Relay a failure diagnosis verbatim. On success, relay the reported generated-data location, dictionary row count, and SHA-256; do not measure the artifact again. If no ask-user API is available, ask the same question through a plain chat message and wait for the answer. Do not mention API availability or the fallback to the user.
+If the user selects `Initialize now`, run the exact initialization command from the diagnosis. Request command approval separately if the execution environment requires it. Relay a failure diagnosis verbatim. On success, relay the reported generated-data location, dictionary row count, and SHA-256; do not measure the artifact again. Relay `cleanupFailures` and `rollbackFailure`, including retained paths, when present. A ready report with cleanup failures exits with status 1. For `initialization_busy`, relay the lock path and manual recovery remedy. Do not retry initialization or delete retained paths or locks automatically. If no ask-user API is available, ask the same question through a plain chat message and wait for the answer. Do not mention API availability or the fallback to the user.
 
 ## Procedures and descriptions
 
@@ -66,6 +66,8 @@ The lookup and checker validate the local reference bundle before they read it. 
 The checker is an aid. It cannot verify meaning, part of speech, every passive construction, or every multi-word noun. A human or assistant semantic review remains necessary.
 
 Use `STE-compliant` only after lexical, mechanical, and semantic review confirms the text against Issue 9. Otherwise, use `STE-aligned` or `checked against the bundled Issue 9 data`.
+
+Valid installed bundles remain unchanged during initialization, including `--force`, which still builds and validates a fresh stage. Publication revalidates under a per-bundle lock and repairs only missing or invalid destinations.
 
 The `pypdfium2` package is only for local reference initialization. Runtime lookup and checking use Python 3 and the standard library.
 

@@ -7,6 +7,8 @@ import argparse
 import json
 import os
 import shutil
+import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -14,6 +16,7 @@ import urllib.error
 import urllib.request
 import uuid
 from collections import Counter
+from contextlib import contextmanager
 from pathlib import Path
 
 from ste_data import (
@@ -32,6 +35,12 @@ SCRIPT_ROOT = Path(__file__).resolve().parent
 
 class InitializationError(Exception):
     """An expected initialization failure without a traceback."""
+
+    def __init__(self, condition: str, code: str = "initialization_failed", remedy: str | None = None, **details):
+        super().__init__(condition)
+        self.code = code
+        self.remedy = remedy or initialization_command()
+        self.details = details
 
 
 class InitializationInputError(Exception):
@@ -209,20 +218,191 @@ def write_bundle_metadata(stage: Path, config: dict, config_path: Path) -> None:
     write_json(stage / "manifest.json", manifest)
 
 
-def replace_generated(stage: Path, generated: Path) -> None:
-    backup = generated.parent / f".generated-backup-{uuid.uuid4().hex}"
-    moved_existing = False
+def remove_owned(path: Path) -> list[dict]:
+    """Remove an invocation-owned path without following a final symlink."""
     try:
-        if generated.exists():
-            os.replace(generated, backup)
-            moved_existing = True
-        os.replace(stage, generated)
+        try:
+            kind = path.lstat().st_mode
+        except FileNotFoundError:
+            return []
+        if stat.S_ISDIR(kind):
+            shutil.rmtree(path)
+        else:
+            path.unlink()
     except OSError as error:
-        if moved_existing and backup.exists() and not generated.exists():
-            os.replace(backup, generated)
-        raise InitializationError(f"cannot install the validated generated bundle: {error}") from error
-    if backup.exists():
-        shutil.rmtree(backup, ignore_errors=True)
+        return [{"path": str(path), "code": "cleanup_failed", "condition": str(error)}]
+    return []
+
+
+def record_cleanup(failures: list[dict], result: dict, primary: BaseException | None) -> None:
+    if not failures:
+        return
+    if primary is None:
+        result.setdefault("cleanupFailures", []).extend(failures)
+    elif isinstance(primary, InitializationError):
+        primary.details.setdefault("cleanupFailures", []).extend(failures)
+    elif isinstance(primary, Exception):
+        raise InitializationError(str(primary), cleanupFailures=failures) from primary
+    else:
+        # Preserve KeyboardInterrupt/SystemExit, including their exit behavior.
+        print(json.dumps({"cleanupFailures": failures}), file=sys.stderr)
+
+
+@contextmanager
+def owned_stage(generated: Path, result: dict):
+    stage = Path(tempfile.mkdtemp(prefix=".generated-stage-", dir=generated.parent))
+    try:
+        yield stage
+    finally:
+        record_cleanup(remove_owned(stage), result, sys.exc_info()[1])
+
+
+def lock_path(generated: Path) -> Path:
+    return generated.parent / f".{generated.name}.publish.lock"
+
+
+def lock_remedy(path: Path) -> str:
+    return f"Confirm no initializer is active before removing a stale lock: rm -- {shlex.quote(str(path))}"
+
+
+@contextmanager
+def publication_lock(generated: Path, result: dict):
+    path = lock_path(generated)
+    token = uuid.uuid4().hex
+    try:
+        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError as error:
+        raise InitializationError(
+            f"publication lock already exists: {path}", "initialization_busy", lock_remedy(path),
+            lock_path=str(path),
+        ) from error
+    except OSError as error:
+        raise InitializationError(f"cannot create publication lock {path}: {error}") from error
+    identity = None
+    try:
+        try:
+            identity = os.fstat(descriptor)
+            payload = (json.dumps({"token": token, "pid": os.getpid()}) + "\n").encode("utf-8")
+            while payload:
+                written = os.write(descriptor, payload)
+                if written == 0:
+                    raise OSError("publication lock write made no progress")
+                payload = payload[written:]
+        finally:
+            os.close(descriptor)
+    except BaseException as error:
+        # A partial write has no usable token. The exclusive-created inode is
+        # still ours, unless someone replaced the path while it was being written.
+        failures = release_lock(path, identity, None) if identity is not None else [{
+            "path": str(path), "code": "lock_release_failed",
+            "condition": "could not establish exclusive-created lock identity", "remedy": lock_remedy(path),
+        }]
+        if isinstance(error, Exception):
+            failure = InitializationError(f"cannot write publication lock {path}: {error}")
+            record_cleanup(failures, result, failure)
+            raise failure from error
+        record_cleanup(failures, result, error)
+        raise
+    try:
+        yield
+    finally:
+        record_cleanup(release_lock(path, identity, token), result, sys.exc_info()[1])
+
+
+def release_lock(path: Path, identity, token: str | None) -> list[dict]:
+    try:
+        current = path.lstat()
+        if (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
+            raise OSError("lock ownership changed, retained the unowned lock")
+        if token is not None:
+            owner = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(owner, dict) or owner.get("token") != token:
+                raise ValueError("lock ownership token changed, retained the unowned lock")
+        path.unlink()
+    except FileNotFoundError:
+        return []
+    except (OSError, UnicodeError, ValueError) as error:
+        return [{"path": str(path), "code": "lock_release_failed", "condition": str(error),
+                 "remedy": lock_remedy(path)}]
+    return []
+
+
+def inspect_destination(generated: Path, config_path: Path) -> str:
+    """Classify only inspectable state as absent/invalid, never permission failures."""
+    try:
+        try:
+            kind = generated.lstat().st_mode
+        except FileNotFoundError:
+            return "absent"
+        if stat.S_ISREG(kind):
+            return "invalid"
+        if not stat.S_ISDIR(kind):
+            raise OSError(f"unsupported destination path kind: {generated}")
+        for name in REQUIRED_FILES:
+            try:
+                file_kind = (generated / name).lstat().st_mode
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(file_kind):
+                raise OSError(f"unsupported bundle file kind: {generated / name}")
+        try:
+            validate_bundle(generated, config_path)
+        except ReferencesError as error:
+            # Validation wraps some I/O errors as schema errors. Retain that
+            # public reader API, but do not use such failures to justify repair.
+            cause = error
+            while cause is not None:
+                if isinstance(cause, OSError) and not isinstance(cause, FileNotFoundError):
+                    raise cause
+                cause = cause.__cause__ or cause.__context__
+            return "invalid"
+        return "valid"
+    except (OSError, RuntimeError) as error:
+        raise InitializationError(
+            f"cannot inspect destination {generated}: {error}", "destination_uninspectable",
+            f"Correct the path or access permissions for {shlex.quote(str(generated))}, then run {initialization_command()}",
+        ) from error
+
+
+def publish_validated(stage: Path, generated: Path, config_path: Path, result: dict) -> None:
+    # This probe precedes lock acquisition, even for a forced rebuild.
+    try:
+        result.update(validate_bundle(stage, config_path))
+    except ReferencesError as error:
+        raise InitializationError(f"staged bundle validation failed: {error.condition}") from error
+    with publication_lock(generated, result):
+        state = inspect_destination(generated, config_path)
+        if state != "valid":
+            backup = generated.parent / f".generated-backup-{uuid.uuid4().hex}"
+            moved_existing = False
+            try:
+                if state == "invalid":
+                    os.replace(generated, backup)
+                    moved_existing = True
+                os.replace(stage, generated)
+            except OSError as error:
+                failure = InitializationError(f"cannot install the validated generated bundle: {error}")
+                if moved_existing:
+                    try:
+                        # lstat distinguishes absence from an unexpected symlink.
+                        try:
+                            generated.lstat()
+                        except FileNotFoundError:
+                            os.replace(backup, generated)
+                        else:
+                            raise OSError(f"destination appeared, refusing to overwrite it: {generated}")
+                    except OSError as rollback:
+                        failure.details["rollbackFailure"] = {
+                            "path": str(backup), "code": "rollback_failed", "condition": str(rollback),
+                        }
+                raise failure from error
+            except BaseException:
+                if moved_existing:
+                    print(json.dumps({"retainedInvalidBackup": str(backup)}), file=sys.stderr)
+                raise
+            if moved_existing:
+                record_cleanup(remove_owned(backup), result, None)
+        result["generated_data_location"] = str(generated)
 
 
 def validate_import_source(source: Path, config_path: Path) -> Path:
@@ -240,21 +420,15 @@ def validate_import_source(source: Path, config_path: Path) -> Path:
 
 
 def import_bundle(source: Path, generated: Path, config_path: Path) -> dict:
-    stage = Path(tempfile.mkdtemp(prefix=".generated-stage-", dir=generated.parent))
-    try:
-        for name in REQUIRED_FILES:
-            shutil.copy2(source / name, stage / name)
+    result = {}
+    with owned_stage(generated, result) as stage:
         try:
-            result = validate_bundle(stage, config_path)
-        except ReferencesError as error:
-            raise InitializationError(f"staged import validation failed: {error.condition}") from error
-        replace_generated(stage, generated)
-        return {**result, "generated_data_location": str(generated)}
-    except OSError as error:
-        raise InitializationError(f"cannot import the validated generated bundle: {error}") from error
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
+            for name in REQUIRED_FILES:
+                shutil.copy2(source / name, stage / name)
+            publish_validated(stage, generated, config_path, result)
+        except OSError as error:
+            raise InitializationError(f"cannot import the validated generated bundle: {error}") from error
+    return result
 
 
 def initialize(
@@ -265,7 +439,8 @@ def initialize(
     import_from: Path | None = None,
 ) -> dict:
     config_path = config_path.resolve()
-    generated = generated.resolve()
+    generated = generated.expanduser()
+    generated = generated.parent.resolve() / generated.name
     config = load_initialization_config(config_path)
     if not force:
         try:
@@ -285,21 +460,14 @@ def initialize(
         else:
             source_pdf = prepared_source
         verify_pdf_hash(source_pdf, config["source"]["pdf_sha256"])
-        stage = Path(tempfile.mkdtemp(prefix=".generated-stage-", dir=generated.parent))
-        try:
+        result = {}
+        with owned_stage(generated, result) as stage:
             geometry = temporary_path / "dictionary-geometry.jsonl"
             run_extractor(source_pdf, geometry, config_path)
             run_builder(geometry, stage / "dictionary.jsonl")
             write_bundle_metadata(stage, config, config_path)
-            try:
-                result = validate_bundle(stage, config_path)
-            except ReferencesError as error:
-                raise InitializationError(f"staged bundle validation failed: {error.condition}") from error
-            replace_generated(stage, generated)
-            return {**result, "generated_data_location": str(generated)}
-        finally:
-            if stage.exists():
-                shutil.rmtree(stage)
+            publish_validated(stage, generated, config_path, result)
+        return result
 
 
 def preflight(
@@ -310,7 +478,8 @@ def preflight(
     force: bool = False,
 ) -> dict:
     config_path = config_path.resolve()
-    generated = generated.resolve()
+    generated = generated.expanduser()
+    generated = generated.parent.resolve() / generated.name
     config = load_initialization_config(config_path)
     if not force:
         try:
@@ -330,16 +499,19 @@ def preflight(
     }
 
 
-def report_error(code: str, condition: str, remedy: str, json_output: bool) -> None:
+def report_error(code: str, condition: str, remedy: str, json_output: bool, **details) -> None:
     if json_output:
         print(json.dumps({"error": {
             "code": code,
             "condition": condition,
             "remedy": remedy,
+            **details,
         }}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
         return
     print(f"ERROR [{code}]: {condition}", file=sys.stderr)
     print(f"Remedy: {remedy}", file=sys.stderr)
+    if details:
+        print(json.dumps(details, ensure_ascii=False, sort_keys=True), file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -364,10 +536,11 @@ def main(argv: list[str] | None = None) -> int:
     except (InitializationError, KeyError, OSError, ReferencesError, TypeError, UnicodeError, ValueError) as error:
         condition = str(error) if isinstance(error, InitializationError) else f"initialization could not complete: {error}"
         report_error(
-            "preflight_failed" if args.preflight else "initialization_failed",
+            error.code if isinstance(error, InitializationError) else ("preflight_failed" if args.preflight else "initialization_failed"),
             condition,
-            initialization_command(),
+            error.remedy if isinstance(error, InitializationError) else initialization_command(),
             json_output,
+            **(error.details if isinstance(error, InitializationError) else {}),
         )
         return 2 if args.preflight else 1
     if args.preflight:
@@ -379,9 +552,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.json:
         print(json.dumps({"status": "ready", **result}, ensure_ascii=False, indent=2, sort_keys=True))
-        return 0
+        return 1 if result.get("cleanupFailures") else 0
     print(f"READY: {result['generated_data_location']}")
     print(f"Dictionary: {result['dictionary_rows']} rows, SHA-256 {result['dictionary_sha256']}")
+    if result.get("cleanupFailures"):
+        print(json.dumps({"cleanupFailures": result["cleanupFailures"]}, ensure_ascii=False), file=sys.stderr)
+        return 1
     return 0
 
 
