@@ -36,6 +36,8 @@ This is `--plugin-dir` discovery of the development candidate, not a marketplace
 
 `src/harness/skills/write-asd-ste100/SKILL.md` declares `disable-model-invocation: true` (introduced in `efac900`). `AGENTS.md` limits that shared-frontmatter extension to `demonstrate-workflow`, and no test enforces that limit. On Claude, both skills appear in the initialize command list but were absent from the model-visible skill list of the Claude Code session that ran this qualification. The contradiction between the repository instruction and the tree is unresolved and needs a maintainer decision.
 
+Resolution: the maintainer kept the field and widened the `AGENTS.md` exception to name both skills; `tests/inventory/skill-frontmatter.test.js` now enforces the allowlist.
+
 ## Output styles (2026-09-25)
 
 Selection used `--settings '{"outputStyle":"harness:<Name>"}'`. `--settings` applies even with `--setting-sources ''`. The Claude documentation names the `outputStyle` key but does not spell out the id format for plugin styles; the `harness:<Name>` ids come from the initialize report. Each stream's `system/init.output_style` confirmed the selection: `harness:Casual`, `harness:Encoded`, `harness:Natural`, and `default` for the control.

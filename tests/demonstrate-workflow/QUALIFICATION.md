@@ -54,3 +54,5 @@ The initialize report and init event list `harness:demonstrate-workflow` and `ha
 | c: write-asd-ste100, model-initiated | STE rewrite request without naming the skill | One turn, no tool calls. | **Passed**, as a weak negative: an answer without tools is also possible when a skill is visible. |
 
 This qualifies Claude's documented invocation control for these samples: one per case, on this host version. It does not qualify every phrasing. The repository-instruction statements that Claude behavior is unqualified (`AGENTS.md`, `docs/development/dependencies.md`) are left for a maintainer decision. That decision should also resolve the unapproved `disable-model-invocation: true` in `write-asd-ste100` (see `tests/claude-host/QUALIFICATION.md`). Cost: about $0.37. Raw evidence (`evidence/g8-*`) remains under the disposable root and was not archived.
+
+Resolution: the maintainer kept `disable-model-invocation: true` in `write-asd-ste100`, widened the `AGENTS.md` exception to name both skills, and replaced the "unqualified" statements in `AGENTS.md` and `docs/development/dependencies.md` with these samples.
