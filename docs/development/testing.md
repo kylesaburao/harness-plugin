@@ -86,8 +86,16 @@ node --test tests/inventory/*.test.js
 node --test tests/back-up-directories/*.test.js
 node --test tests/create-discord-emoji-gif/*.test.js
 node --test tests/extract-video-frames/*.test.js
+node --test tests/harness-advisor/*.test.js
+node --test tests/wake-desktop/*.test.js
+node --test tests/random-sampler/*.test.js
+node --test tests/shared-node/*.test.js
+node --test tests/demonstrate-workflow/*.test.js
 node --test tests/bump-version/*.test.js
+node --test tests/distribution/*.test.js
+node --test tests/run-tests/*.test.js
 node --test tests/git-hooks/*.test.js
+node --test tests/dev/*.test.js
 .venv/bin/python -m unittest discover -s tests/write-asd-ste100 -v
 ```
 
