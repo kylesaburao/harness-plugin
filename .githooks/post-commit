@@ -1,0 +1,28 @@
+#!/bin/sh
+# Every commit in this repo carries a fixed author/committer date (see AGENTS.md).
+# A pre-commit hook can't set this: git reads GIT_AUTHOR_DATE from its own
+# environment before any hook runs, and a hook subprocess can't export back into
+# its parent. So this amends after the fact instead.
+#
+# `git commit --amend` preserves the ORIGINAL author date unless --date is passed
+# explicitly -- GIT_AUTHOR_DATE alone is silently ignored on amend (it only works
+# on a fresh commit). The committer date has no such quirk: GIT_COMMITTER_DATE is
+# honored normally, since amend always recomputes committer info unless told a date.
+#
+# Idempotent, not sentinel-guarded: it reads HEAD's current dates and exits 0 if
+# they already match, amending only otherwise. The amend re-fires post-commit,
+# the second invocation sees correct dates and no-ops, so recursion terminates
+# on its own. --no-verify skips pre-commit/commit-msg (avoids re-running other
+# verification on the amend) but not post-commit -- the idempotence check above
+# is what actually stops the recursion.
+set -eu
+
+TARGET=946713540
+DATE='1999-12-31T23:59:00-08:00'
+
+current="$(git log -1 --format='%at %ct')"
+if [ "$current" = "$TARGET $TARGET" ]; then
+  exit 0
+fi
+
+GIT_COMMITTER_DATE="$DATE" git commit -q --amend --no-edit --no-verify --date="$DATE"

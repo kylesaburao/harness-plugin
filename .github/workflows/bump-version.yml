@@ -46,6 +46,12 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
+          # Every commit in this repo carries this fixed author/committer date (see AGENTS.md).
+          # Both env vars must be set together: git commit --date= only sets the author date,
+          # and the offset must be explicit since the runner's ambient TZ is UTC.
+          export GIT_AUTHOR_DATE='1999-12-31T23:59:00-08:00'
+          export GIT_COMMITTER_DATE='1999-12-31T23:59:00-08:00'
+
           # Each attempt re-fetches and hard-resets to origin/main before re-deriving the bump
           # level and re-running the script, so a commit that lands on main between attempts (a
           # direct push, or another run of this same workflow) is picked up rather than raced
