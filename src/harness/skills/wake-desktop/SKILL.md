@@ -7,7 +7,7 @@ description: Wake a desktop, server, or NAS on the same LAN using Wake-on-LAN, o
 
 ## Requirements and limits
 
-Both executables require Node.js 26.0.0 or newer, with no npm packages.
+Both executables require Node.js 24.0.0 or newer, with no npm packages.
 Configuration management uses only filesystem APIs on any platform. Waking requires macOS or Linux.
 Waiting requires system `ping` on PATH and permission to send ICMP. `--no-wait`
 requires neither ping nor ICMP. Both modes require the target MAC and IP or hostname.

@@ -13,6 +13,7 @@ export function errorDetails(error: unknown) {
   return { code: typeof value.code === 'string' ? value.code : undefined, condition: typeof value.condition === 'string' ? value.condition : undefined, message: typeof value.message === 'string' ? value.message : undefined, remedy: typeof value.remedy === 'string' ? value.remedy : undefined };
 }
 
+const MINIMUM_NODE = Object.freeze([24, 0, 0]);
 const MAC_PATTERN = /^([0-9A-Fa-f]{2})([:-])(?:[0-9A-Fa-f]{2}\2){4}[0-9A-Fa-f]{2}$/;
 const IPV4_PATTERN = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const HOSTNAME_PATTERN = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
@@ -66,10 +67,10 @@ export function isValidHost(value: unknown): value is string {
   return typeof value === 'string' && (/^[0-9.]+$/.test(value) ? isValidIpv4(value) : HOSTNAME_PATTERN.test(value));
 }
 export function checkNodeVersion() {
-  if (!nodeVersionAtLeast(process.version, [26, 0, 0])) {
+  if (!nodeVersionAtLeast(process.version, MINIMUM_NODE)) {
     throw new StartupError('node_version_unsupported',
-      `Node.js 26.0.0 or newer is required, running ${process.version}`,
-      'install Node.js 26.0.0 or newer');
+      `Node.js ${MINIMUM_NODE.join('.')} or newer is required, running ${process.version}`,
+      `install Node.js ${MINIMUM_NODE.join('.')} or newer`);
   }
 }
 export function configPath() { return path.join(os.homedir(), '.harness-plugin', 'wake-desktop', 'config.json'); }

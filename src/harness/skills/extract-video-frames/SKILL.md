@@ -1,7 +1,7 @@
 ---
 name: extract-video-frames
 description: "Extract all video frames, or every frame in an inclusive time range, at full resolution. Preserve PQ/HLG HDR as 10-bit HEIC and SDR as lossless PNG. Not for sampled frames, resizing, frame-rate conversion, deinterlacing, or tone mapping."
-compatibility: Requires Node.js 20.6.0 or newer, macOS 26.0 or newer, the macOS Command Line Tools, and ffmpeg-full with ffprobe, zscale, PNG, and TIFF support.
+compatibility: Requires Node.js 24.0.0 or newer, macOS 26.0 or newer, the macOS Command Line Tools, and ffmpeg-full with ffprobe, zscale, PNG, and TIFF support.
 ---
 
 # Extract full-quality video frames
@@ -142,7 +142,7 @@ complete image decoding.
 - macOS 26.0 or newer: supported.
 - Older macOS, Linux, WSL2, and native Windows: rejected.
 
-Node.js 20.6.0 is the supported runtime floor. The script has no npm dependencies.
+Node.js 24.0.0 is the supported runtime floor. The script has no npm dependencies.
 
 Media processing fails on a child signal, a nonzero exit, or any FFmpeg/ffprobe error-level diagnostic, including exit zero.
 Capability listings are exempt. FFmpeg progress uses stdout internally and does not count as a media diagnostic.

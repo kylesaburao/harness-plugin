@@ -169,14 +169,14 @@ before_nvm=$NVM_DIR
 });
 
 test('repository runtime declarations agree and bootstrap retains executable mode', () => {
-  assert.equal(fs.readFileSync(path.join(repoRoot, '.nvmrc'), 'utf8'), '26\n');
+  assert.equal(fs.readFileSync(path.join(repoRoot, '.nvmrc'), 'utf8'), '24\n');
   assert.equal(fs.statSync(path.join(repoRoot, '.nvmrc')).mode & 0o111, 0);
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8'));
-  assert.equal(pkg.engines.node, '26.x');
+  assert.equal(pkg.engines.node, '24.x');
   assert.equal(lock.packages[''].engines.node, pkg.engines.node);
   assert.equal(pkg.private, true);
   const docker = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8');
-  assert.deepEqual([...docker.matchAll(/^FROM node:([^\s@]+)/gm)].map(match => match[1]), ['26-trixie', '26-trixie']);
+  assert.deepEqual([...docker.matchAll(/^FROM node:([^\s@]+)/gm)].map(match => match[1]), ['24-trixie', '24-trixie']);
   assert.equal(fs.statSync(helper).mode & 0o777, 0o755);
 });

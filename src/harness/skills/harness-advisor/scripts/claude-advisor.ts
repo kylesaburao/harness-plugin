@@ -156,9 +156,9 @@ function main(argv: string[])
             process.stdout.write(json ? `${JSON.stringify({ usage: USAGE })}\n` : `${USAGE}\n`);
             return 0;
         }
-        if (Number(process.versions.node.split('.')[0]) < 22)
+        if (Number(process.versions.node.split('.')[0]) < 24)
         {
-            fail('node_version_unsupported', 'Node.js 22.0.0 or newer is required', 'nvm install 22');
+            fail('node_version_unsupported', 'Node.js 24.0.0 or newer is required', 'nvm install 24');
         }
         let prompt;
         try

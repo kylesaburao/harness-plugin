@@ -19,7 +19,7 @@ If the host-provided path is unavailable or a bundled file is missing, report th
 
 ## Dispatch
 
-Requires Node.js **22.0.0 or newer**, with built-in `node:crypto`. Execution is local,
+Requires Node.js **24.0.0 or newer**, with built-in `node:crypto`. Execution is local,
 with no npm dependencies, persistent state, files written, or network access.
 
 Invoke the bundled `scripts/sample.mjs` directly. Dispatch the normal operation without

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Minimum Node.js: 22.0.0. No packages or persistent state.
+// Minimum Node.js: 24.0.0. No packages or persistent state.
 import { fileURLToPath } from 'node:url';
 
 type PreservedJsonValue = null | boolean | string | number | RawJsonNumber | PreservedJsonValue[] | { [key: string]: PreservedJsonValue };
@@ -25,7 +25,7 @@ const field = (error: unknown, key: string): unknown => error !== null && typeof
 
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const helpCommand = `node ${quote(fileURLToPath(import.meta.url))} --help`;
-const runtimeRemedy = 'Install supported Node.js with: brew install node@22 && export PATH="$(brew --prefix node@22)/bin:$PATH" (macOS), or nvm install 22 && nvm use 22 (Linux with nvm).';
+const runtimeRemedy = 'Install supported Node.js with: brew install node@24 && export PATH="$(brew --prefix node@24)/bin:$PATH" (macOS), or nvm install 24 && nvm use 24 (Linux with nvm).';
 const usage = `Usage: sample.mjs [--help | --preflight] [--json]
 
 Read one complete JSON object from stdin, then output one JSON object.
@@ -40,7 +40,7 @@ Read one complete JSON object from stdin, then output one JSON object.
   shuffle: {"op":"shuffle","values":["A","B"]} -> op, indices, values
     Uniform permutation. Empty and singleton arrays are valid.
 Only the fields shown are accepted. Array entries may be any JSON values.
-System cryptographic randomness via node:crypto randomInt. Node.js >=22.0.0.
+System cryptographic randomness via node:crypto randomInt. Node.js >=24.0.0.
 --help prints usage without reading stdin or checking the runtime.
 --preflight checks runtime/crypto without reading stdin or drawing randomness.
 --json selects JSON stderr diagnostics and JSON preflight output.
@@ -62,8 +62,8 @@ function argumentsFor(argv: string[]) {
   return { help: argv.includes('--help'), preflight: argv.includes('--preflight') };
 }
 async function prerequisites(): Promise<RandomIntSource> {
-  if (Number(process.versions.node.split('.')[0]) < 22) {
-    reject('node_version_unsupported', `Node.js 22.0.0 or newer is required, found ${process.versions.node}.`, runtimeRemedy);
+  if (Number(process.versions.node.split('.')[0]) < 24) {
+    reject('node_version_unsupported', `Node.js 24.0.0 or newer is required, found ${process.versions.node}.`, runtimeRemedy);
   }
   try {
     const crypto = await import('node:crypto');

@@ -56,7 +56,7 @@ The plugin ships skills and output styles only: no commands, no hooks, no plugin
 
 ## From implementation to installed distribution
 
-Edit `src/harness/`, then build the ignored installation-shaped candidate at `.build/harness/`. Rebuild after changes to implementation, bundled resources, source manifests, compiler configuration, or build tooling. Repository development uses Node 26, declared in `.nvmrc`; see [runtime bootstrap and terminal activation](docs/development/dependencies.md#node-runtime-bootstrap). On macOS, run from the repository root:
+Edit `src/harness/`, then build the ignored installation-shaped candidate at `.build/harness/`. Rebuild after changes to implementation, bundled resources, source manifests, compiler configuration, or build tooling. Repository development uses Node 24, declared in `.nvmrc`; see [runtime bootstrap and terminal activation](docs/development/dependencies.md#node-runtime-bootstrap). On macOS, run from the repository root:
 
 ```sh
 npm ci --include=dev

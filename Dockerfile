@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Base images are pinned to their multi-platform index digests; the comment keeps the readable tag.
-# node:26-trixie
-FROM node:26-trixie@sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6 AS media-builder
+# node:24-trixie
+FROM node:24-trixie@sha256:1278a37eb510ec1606fba0e80f554bcc941ae0b44f35ae373c4822ae7717c64d AS media-builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -32,8 +32,8 @@ RUN curl -fL https://ffmpeg.org/releases/ffmpeg-8.0.3.tar.xz -o ffmpeg.tar.xz \
 FROM rust:1-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS gifski-builder
 RUN cargo install gifski --version 1.34.0 --locked --root /opt/gifski
 
-# node:26-trixie
-FROM node:26-trixie@sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6
+# node:24-trixie
+FROM node:24-trixie@sha256:1278a37eb510ec1606fba0e80f554bcc941ae0b44f35ae373c4822ae7717c64d
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates git python3 python3-venv ripgrep gifsicle libx264-164 \

@@ -23,7 +23,7 @@ Advisor use the native feature exclusively, including after native errors.
 Harness fallback is for Claude sessions without native Advisor. A native-only
 request does not authorize fallback.
 
-Harness Advisor requires Node.js 22 or newer. Claude fallback also requires a
+Harness Advisor requires Node.js 24 or newer. Claude fallback also requires a
 usable Claude Code CLI and access to the selected model. Installation does not
 prove authentication or availability. See [dependencies](../development/dependencies.md#2-using-the-plugin).
 

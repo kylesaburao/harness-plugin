@@ -73,7 +73,7 @@ function parseArguments(argv: string[], basename = 'mov-to-gif.js') {
 
 function validateNodeVersion(version = process.versions.node) {
   const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
-  if (!match || Number(match[1]) < 22) throw new StartupError('node_version_unsupported', `Node.js 22.0.0 or newer is required, got ${version}`, 'install Node.js 22.0.0 or newer');
+  if (!match || Number(match[1]) < 24) throw new StartupError('node_version_unsupported', `Node.js 24.0.0 or newer is required, got ${version}`, 'install Node.js 24.0.0 or newer');
 }
 
 function positive(env: NodeJS.ProcessEnv, name: string, fallback: number) {

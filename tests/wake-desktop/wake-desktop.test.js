@@ -111,10 +111,10 @@ test('the magic packet ignores separator style and case', () => {
 });
 
 test('nodeVersionAtLeast compares release components', () => {
-  assert.equal(nodeVersionAtLeast('v26.0.0', [26, 0, 0]), true);
-  assert.equal(nodeVersionAtLeast('v26.5.0', [26, 0, 0]), true);
-  assert.equal(nodeVersionAtLeast('v25.9.9', [26, 0, 0]), false);
-  assert.equal(nodeVersionAtLeast('v22.12.0', [26, 0, 0]), false);
+  assert.equal(nodeVersionAtLeast('v24.0.0', [24, 0, 0]), true);
+  assert.equal(nodeVersionAtLeast('v24.5.0', [24, 0, 0]), true);
+  assert.equal(nodeVersionAtLeast('v23.9.9', [24, 0, 0]), false);
+  assert.equal(nodeVersionAtLeast('v22.12.0', [24, 0, 0]), false);
 });
 
 test('explicit empty values do not fall back and both modes require MAC and IP', () => {

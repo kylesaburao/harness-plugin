@@ -79,7 +79,7 @@ const EXIT = Object.freeze({
   COPY: 5,
   INTERRUPTED: 130,
 });
-const MINIMUM_NODE = [22, 12, 0];
+const MINIMUM_NODE = [24, 0, 0];
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
 // Per-user Harness state lives under ~/.harness-plugin/<skill>/.

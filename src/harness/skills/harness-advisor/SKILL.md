@@ -80,7 +80,7 @@ silently broaden this Advisor's role to provide one.
 
 ## Resolve routing and dispatch
 
-Requires Node.js **22.0.0 or newer**, standard library only. The executor runs:
+Requires Node.js **24.0.0 or newer**, standard library only. The executor runs:
 
 ```sh
 node "<SKILL_DIR>/scripts/advisor-config.js" resolve --host codex --primary sol --json

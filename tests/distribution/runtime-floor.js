@@ -19,9 +19,25 @@ function success(relative, args, input) {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 }
+function qualifyWakeDesktop() {
+  // Management and wake validation only: no packet is sent and no socket is opened.
+  const manager = 'skills/wake-desktop/scripts/manage-targets.js';
+  const wake = 'skills/wake-desktop/scripts/wake-desktop.js';
+  const configPath = path.join(home, '.harness-plugin/wake-desktop/config.json');
+  success(manager, ['--help']);
+  success(wake, ['--help']);
+  assert.deepEqual(JSON.parse(success(manager, ['list', '--json'])), { status: 'listed', configPath, targets: [] });
+  const register = ['register', '--name', 'desktop', '--ip', '192.168.1.91', '--mac', '34:5a:60:37:3e:21', '--json'];
+  assert.equal(JSON.parse(success(manager, [...register, '--preflight'])).status, 'ready');
+  assert.equal(fs.existsSync(configPath), false);
+  assert.equal(JSON.parse(success(manager, register)).changed, true);
+  assert.deepEqual(JSON.parse(success(manager, ['list', '--json'])).targets, [{ name: 'desktop', ip: '192.168.1.91', mac: '34:5a:60:37:3e:21' }]);
+  const unknown = run(wake, ['--target', 'absent', '--no-wait', '--preflight', '--json']);
+  assert.equal(unknown.status, 2, unknown.stderr);
+  assert.equal(JSON.parse(unknown.stderr).error.code, 'target_unknown');
+}
 function qualifyBackup() {
-  const [major, minor] = process.versions.node.split('.').map(Number);
-  assert.ok(major > 22 || (major === 22 && minor >= 12), 'Backup requires Node >=22.12.0');
+  assert.ok(Number(process.versions.node.split('.')[0]) >= 24, 'Backup requires Node >=24.0.0');
   fs.writeFileSync(path.join(home, 'package.json'), '{"type":"module"}\n');
   const skill = path.join(home, 'backup installé');
   fs.cpSync(path.join(plugin, 'skills/back-up-directories'), skill, {
@@ -36,7 +52,7 @@ function qualifyBackup() {
   };
   const missing = execute(['--preflight', '--json']);
   assert.equal(missing.status, 2, missing.stderr);
-  // Node 22.12 may emit its require(esm) warning separately from the JSON error.
+  // Node may emit a require(esm) warning separately from the JSON error.
   const diagnostic = JSON.parse(missing.stderr.split('\n').find(line => line.startsWith('{')));
   assert.equal(diagnostic.error.code, 'dependency_missing');
   assert.ok(diagnostic.error.remedy.includes(skill));
@@ -68,7 +84,8 @@ function qualifyBackup() {
 try {
   if (process.argv.includes('--backup')) qualifyBackup();
   else {
-  assert.ok(Number(process.versions.node.split('.')[0]) >= 22, 'This Stage 2 qualification requires Node >=22');
+  assert.ok(Number(process.versions.node.split('.')[0]) >= 24, 'This Stage 2 qualification requires Node >=24');
+  qualifyWakeDesktop();
   const sampler = 'skills/random-sampler/scripts/sample.mjs';
   success(sampler, ['--help']);
   assert.equal(JSON.parse(success(sampler, ['--preflight', '--json'])).preflight.status, 'passed');
@@ -139,6 +156,6 @@ else {
     assert.equal(Object.hasOwn(report, 'observations'), false);
   }
   assert.equal(fs.readFileSync(calls, 'utf8').trim().split('\n').length, 3);
-  process.stdout.write(`Runtime floor passed on Node ${process.versions.node}: native ESM, preserved numeric tokens, routing mutations, bundled-contract preflight, tool-free consultation and removed-flag rejection.\n`);
+  process.stdout.write(`Runtime floor passed on Node ${process.versions.node}: wake target management and validation, native ESM, preserved numeric tokens, routing mutations, bundled-contract preflight, tool-free consultation and removed-flag rejection.\n`);
   }
 } finally { fs.rmSync(home, { recursive: true, force: true }); }

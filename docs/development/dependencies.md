@@ -11,7 +11,7 @@ On macOS, run development commands and tests directly on the host. On Linux, inc
 | Install or provide | Requirement and purpose |
 | --- | --- |
 | Git, POSIX shell, and standard command-line utilities | Checkout operations, shell-based tests, and hooks. Backup integration tests also require `unzip`. `ripgrep` is used for repository searches. |
-| Node.js and npm | Node.js **26.x**, declared in the root [`.nvmrc`](../../.nvmrc), satisfies the full development gate, including `wake-desktop`. npm installs the root build toolchain and separate backup dependencies. |
+| Node.js and npm | Node.js **24.x**, declared in the root [`.nvmrc`](../../.nvmrc), satisfies the full development gate and every skill runtime floor. npm installs the root build toolchain and separate backup dependencies. |
 | Python 3 with `venv` and pip | Creates the repository's `.venv` and runs the ASD-STE100 tests and reference tools. The Python version is not pinned locally; CI uses Python 3.12. Use an interpreter supported by the pinned `pypdfium2` release. |
 | TypeScript and Node type definitions | Root development-only exact pins: `typescript` **7.0.2** and `@types/node` **20.19.43**, installed with `npm ci --include=dev`. They do not ship and do not raise skill runtime floors. |
 | `archiver` | Direct npm dependency `^8.0.0`, with exact resolved packages in the backup skill's `package-lock.json`. Installed by setup in that skill's `node_modules`. |
@@ -29,7 +29,7 @@ The enabled [commit hooks](build.md#local-commit-policy) use only Git and POSIX 
 
 ### Node runtime bootstrap
 
-The optional host bootstrap uses an existing [nvm installation](https://github.com/nvm-sh/nvm#installing-and-updating). nvm is unnecessary for plugin installation, CI, Docker, or an already-provisioned Node 26 environment. Linux/WSL2 development uses the container workflow below.
+The optional host bootstrap uses an existing [nvm installation](https://github.com/nvm-sh/nvm#installing-and-updating). nvm is unnecessary for plugin installation, CI, Docker, or an already-provisioned Node 24 environment. Linux/WSL2 development uses the container workflow below.
 
 From the repository root, execute the Bash helper (compatible with macOS Bash 3.2):
 
@@ -56,7 +56,7 @@ nvm use
 node --version
 ```
 
-Run this from the repository root and verify `v26.*`. Then install the locked root toolchain separately:
+Run this from the repository root and verify `v24.*`. Then install the locked root toolchain separately:
 
 ```sh
 npm ci --include=dev
@@ -74,7 +74,7 @@ The [Dockerfile](../../Dockerfile) supplies the following development toolchain.
 
 | Layer | Installed items |
 | --- | --- |
-| Runtime image | `node:26-trixie`, pinned to index digest `sha256:9965105b7a4e201d7f07268402bb4971670592b46c9b9058cc643961199a1ab6`, with Node and npm, Debian Python 3 and venv support, Git, ripgrep, CA certificates, gifsicle, and the inherited shell/system utilities, including `unzip`. |
+| Runtime image | `node:24-trixie`, pinned to index digest `sha256:1278a37eb510ec1606fba0e80f554bcc941ae0b44f35ae373c4822ae7717c64d`, with Node and npm, Debian Python 3 and venv support, Git, ripgrep, CA certificates, gifsicle, and the inherited shell/system utilities, including `unzip`. |
 | Media runtime | FFmpeg **8.0.3**, VMAF **3.2.0**, and gifski **1.34.0**. FFmpeg is built with `--enable-libvmaf --enable-gpl --enable-libx264`. The build verifies the source tarballs by SHA-256: FFmpeg `ffmpeg-8.0.3.tar.xz` `6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818` and VMAF `v3.2.0.tar.gz` `a28f93f3b4fa65601be324587072e32a6a704a304ba7b1aec9b70b3f709bc1dc`. The image includes libvmaf and Debian `libx264-164` runtime libraries. |
 | C/C++ builder only | `build-essential`, curl, CA certificates, Meson, Ninja, NASM, pkg-config, `libx264-dev`, and `xxd`. `xxd` embeds the VMAF models. Source unpacking uses tar and xz from the base image. |
 | Rust builder only | Rust and Cargo from `rust:1-trixie`, pinned to index digest `sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181`, used to build gifski with its locked dependency graph. |
@@ -94,13 +94,13 @@ Install the plugin into Codex or Claude Code using the [README installation inst
 
 | Skill or component | Runtime and other requirements |
 | --- | --- |
-| `harness-advisor` | Node.js **22.0.0 or newer**, no npm packages. Codex needs fresh-agent dispatch with explicit model/effort. Claude fallback needs a local Claude Code CLI compatible with the [skill contract](../../dist/harness/skills/harness-advisor/SKILL.md). Each host needs authentication and access to the selected family/effort. See the [human guide](../skills/harness-advisor.md) for integration and the [evaluation](../../tests/harness-advisor/EVALUATION.md) for qualification limits. |
+| `harness-advisor` | Node.js **24.0.0 or newer**, no npm packages. Codex needs fresh-agent dispatch with explicit model/effort. Claude fallback needs a local Claude Code CLI compatible with the [skill contract](../../dist/harness/skills/harness-advisor/SKILL.md). Each host needs authentication and access to the selected family/effort. See the [human guide](../skills/harness-advisor.md) for integration and the [evaluation](../../tests/harness-advisor/EVALUATION.md) for qualification limits. |
 | `install-harness-plugin-capabilities` | Instruction-only, no dedicated runtime, package, or host CLI requirement. Needs ordinary agent filesystem access to the effective user instructions and host user directory. Planning and conceptual-first activation each also require verified discovery and loading of their skill in the selected host. See [integration](../skills/harness-advisor.md#enable-integration). |
-| `back-up-directories` | Node.js **22.12.0 or newer** and `archiver` **^8.0.0**. npm and network access are needed to install it. Requires a user-owned backup configuration, readable source files, writable destinations, enough free space, and interactive user confirmation. See [backup setup](../../dist/harness/skills/back-up-directories/INSTALL.md). No system ZIP executable is required by the skill. |
-| `create-discord-emoji-gif` | Node.js **22.0.0 or newer**, FFmpeg with working libvmaf models, matching `ffprobe`, and **gifski** for the default backend or **gifsicle** for the alternate backend. No npm packages. macOS and Linux are supported, including the Linux path under WSL2. Native Windows is unsupported. Requires decodable input and writable output/temporary storage. |
-| `extract-video-frames` | Node.js **20.6.0 or newer**, macOS **26.0 or newer**, Command Line Tools (`swiftc` and SDK), and `ffmpeg-full` with matching `ffprobe`. Requires `zscale`, PNG and TIFF encoding, and the system `sw_vers`, `sips`, and `/usr/bin/osascript` commands. Its Swift helper uses the system CoreGraphics, CoreImage, Foundation, and ImageIO frameworks for HEIC, and the compiled helper is cached under `~/.harness-plugin/extract-video-frames/encoder/<sha256>/`. These platform requirements apply to SDR as well as HDR. No npm packages. See the [skill contract](../../dist/harness/skills/extract-video-frames/SKILL.md). |
-| `random-sampler` | Node.js **22.0.0 or newer** with built-in `node:crypto` and callable `randomInt`. Local execution, no npm dependencies, no network access, and no persistent state. Requests arrive through stdin. |
-| `wake-desktop` | Node.js **26.0.0 or newer** on macOS or Linux, with UDP broadcast access to the target LAN. Waiting additionally needs system `ping` on PATH and ICMP permission, neither is needed for `--no-wait`. The target needs a wake-capable adapter and firmware/network settings. WSL2 NAT and container networking can prevent delivery despite a successful send. No npm packages. See the [wake guide](../skills/wake-desktop.md) for configuration. Target management needs only Node and filesystem access, on any platform. Tests simulate networking and need no ping installation or physical target. |
+| `back-up-directories` | Node.js **24.0.0 or newer** and `archiver` **^8.0.0**. npm and network access are needed to install it. Requires a user-owned backup configuration, readable source files, writable destinations, enough free space, and interactive user confirmation. See [backup setup](../../dist/harness/skills/back-up-directories/INSTALL.md). No system ZIP executable is required by the skill. |
+| `create-discord-emoji-gif` | Node.js **24.0.0 or newer**, FFmpeg with working libvmaf models, matching `ffprobe`, and **gifski** for the default backend or **gifsicle** for the alternate backend. No npm packages. macOS and Linux are supported, including the Linux path under WSL2. Native Windows is unsupported. Requires decodable input and writable output/temporary storage. |
+| `extract-video-frames` | Node.js **24.0.0 or newer**, macOS **26.0 or newer**, Command Line Tools (`swiftc` and SDK), and `ffmpeg-full` with matching `ffprobe`. Requires `zscale`, PNG and TIFF encoding, and the system `sw_vers`, `sips`, and `/usr/bin/osascript` commands. Its Swift helper uses the system CoreGraphics, CoreImage, Foundation, and ImageIO frameworks for HEIC, and the compiled helper is cached under `~/.harness-plugin/extract-video-frames/encoder/<sha256>/`. These platform requirements apply to SDR as well as HDR. No npm packages. See the [skill contract](../../dist/harness/skills/extract-video-frames/SKILL.md). |
+| `random-sampler` | Node.js **24.0.0 or newer** with built-in `node:crypto` and callable `randomInt`. Local execution, no npm dependencies, no network access, and no persistent state. Requests arrive through stdin. |
+| `wake-desktop` | Node.js **24.0.0 or newer** on macOS or Linux, with UDP broadcast access to the target LAN. Waiting additionally needs system `ping` on PATH and ICMP permission, neither is needed for `--no-wait`. The target needs a wake-capable adapter and firmware/network settings. WSL2 NAT and container networking can prevent delivery despite a successful send. No npm packages. See the [wake guide](../skills/wake-desktop.md) for configuration. Target management needs only Node and filesystem access, on any platform. Tests simulate networking and need no ping installation or physical target. |
 | `write-implementation-plan` | Instruction-only, no dedicated runtime or package. Uses available host capabilities; an explicitly authorized handoff needs access to a permitted durable destination. No initialization artifact is required. |
 | `conceptual-first` | Instruction-only, no dedicated runtime or package. Uses authorized task evidence and available host capabilities. No initialization artifact, persistent state, or external reference is required. See the [evaluation](../../tests/conceptual-first/EVALUATION.md) for qualification limits. |
 | `write-asd-ste100` | Python 3 and a valid generated ASD-STE100 reference bundle. Normal checking, lookup, and validation use only the Python standard library and do not use the network. Reference generation additionally requires `pypdfium2` and the pinned source PDF. See initialization below. |

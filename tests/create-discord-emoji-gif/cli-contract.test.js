@@ -62,7 +62,7 @@ test('both Node entrypoints reject missing conversion arguments with a JSON erro
 
 test('both Node entrypoints reject malformed arguments before the Node version check', () => {
   const preload = path.join(cliDirectory, 'unsupported-node.cjs');
-  fs.writeFileSync(preload, "Object.defineProperty(process.versions, 'node', { value: '21.9.0' });\n");
+  fs.writeFileSync(preload, "Object.defineProperty(process.versions, 'node', { value: '23.9.0' });\n");
   for (const runner of runners) {
     const result = runEntrypoint(
       runner.command,

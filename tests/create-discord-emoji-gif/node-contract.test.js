@@ -43,8 +43,8 @@ test('shared Node runner preserves backend-specific help and explicit option par
 });
 
 test('Node version and configuration errors are stable startup errors', () => {
-  assert.throws(() => shared.validateNodeVersion('21.9.0'), { code: 'node_version_unsupported', exitCode: 2 });
-  assert.doesNotThrow(() => shared.validateNodeVersion('22.0.0'));
+  assert.throws(() => shared.validateNodeVersion('23.9.0'), { code: 'node_version_unsupported', exitCode: 2 });
+  assert.doesNotThrow(() => shared.validateNodeVersion('24.0.0'));
   assert.throws(() => shared.readConfiguration({ MAX_BYTES: '0' }, 'gifsicle'), { code: 'config_invalid' });
   assert.throws(() => shared.readConfiguration({ MIN_FPS: '10', MAX_FPS: '8' }, 'gifsicle'), { code: 'config_invalid' });
   assert.throws(() => shared.readConfiguration({ MAX_FPS: '101' }, 'gifski'), { code: 'config_invalid' });

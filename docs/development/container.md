@@ -10,7 +10,7 @@ Commands below run from the repository root. Ordinary macOS development runs nat
 
 Use a normal non-root account with local Docker, a POSIX shell, Git, and the checkout. Host Node, Python, and media tools are not required. On Windows, run these commands inside WSL2 with Docker integration enabled. On macOS, start Docker Desktop.
 
-The image already supplies Node 26, consistent with the repository `.nvmrc`. The host nvm bootstrap is unnecessary for this workflow.
+The image already supplies Node 24, consistent with the repository `.nvmrc`. The host nvm bootstrap is unnecessary for this workflow.
 
 ```sh
 ./scripts/dev build

@@ -129,7 +129,7 @@ test('skill instructions define the Discord target and fallback rules', () => {
   assert.match(skill, /fewer than 256000 bytes/);
   assert.match(skill, /3 seconds or less/);
   assert.match(skill, /Use gifski by default/);
-  assert.match(skill, /Node\.js 22\.0\.0 or newer/);
+  assert.match(skill, /Node\.js 24\.0\.0 or newer/);
   assert.match(skill, /must be installed and stop there/);
   assert.match(skill, /fall through to\s+gifsicle only for/);
   assert.match(skill, /fall through only from gifski `no_candidate`/);

@@ -118,7 +118,7 @@ test('runtime failures, validation precedence, and no entropy on rejected reques
   const failure = run({op:'boolean'},['--json'],'throw');
   fail(failure,'SAMPLING_FAILED',1);
   assert.deepEqual(failure.trace,[[2]]);
-  assert.equal(ok(run('', ['--preflight','--json'],'floor')).preflight.node,'22.0.0');
+  assert.equal(ok(run('', ['--preflight','--json'],'floor')).preflight.node,'24.0.0');
 });
 test('forced outcomes and preflight use zero entropy calls', () => {
   for (const [request, expected] of [

@@ -12,7 +12,7 @@ const trace = [];
 const record = (event, details = {}) => trace.push({ event, time: performance.now(), ...details });
 process.on('exit', () => fs.writeFileSync(process.env.WAKE_TRACE, JSON.stringify(trace)));
 if (scenario === 'platform') os.platform = () => 'win32';
-if (scenario === 'old-node') Object.defineProperty(process, 'version', { value: 'v25.9.9' });
+if (scenario === 'old-node') Object.defineProperty(process, 'version', { value: 'v23.9.9' });
 dgram.createSocket = () => {
   record('socket');
   if (scenario === 'create') throw new Error('create failed');

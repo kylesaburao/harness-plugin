@@ -58,7 +58,7 @@ interface PreflightResult {
 export type ExtractionResult = ReturnType<typeof resultPayload> & { cleanupFailures?: CleanupFailure[] };
 type StructuralChecks = Awaited<ReturnType<typeof structuralChecks>>;
 
-const MINIMUM_NODE = Object.freeze([20, 6, 0]);
+const MINIMUM_NODE = Object.freeze([24, 0, 0]);
 const ENCODER_NAME = 'tiff-to-heic';
 const ENCODER_MANIFEST = 'manifest.json';
 const ENCODER_MANIFEST_SCHEMA = 1;
@@ -148,7 +148,7 @@ function parseListing(text: string) {
 }
 
 async function platformPreflight(manager: Manager) {
-  if (!versionAtLeast(process.version, MINIMUM_NODE)) throw new DraftError('node_version_unsupported', `Node.js 20.6.0 or newer is required, running ${process.version}`, 'install Node.js 20.6.0 or newer');
+  if (!versionAtLeast(process.version, MINIMUM_NODE)) throw new DraftError('node_version_unsupported', `Node.js ${MINIMUM_NODE.join('.')} or newer is required, running ${process.version}`, `install Node.js ${MINIMUM_NODE.join('.')} or newer`);
   if (process.platform !== 'darwin') throw new DraftError('platform_unsupported', `unsupported platform: ${process.platform}`, 'run this skill on macOS 26.0 or newer');
   const swVers = resolveCommand('sw_vers');
   if (!swVers) throw new DraftError('command_missing', 'macOS sw_vers was not found', 'restore /usr/bin/sw_vers, which ships with macOS');

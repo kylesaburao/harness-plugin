@@ -11,7 +11,7 @@ test('portable automatic routing and complete instructions', () => {
   assert.deepEqual(metadata.trim().split('\n').map(line => line.split(':')[0]), ['name','description']);
   assert.match(metadata,/name: random-sampler/);
   for (const fragment of ['random integers','samples','shuffle','dice','coins','recommendations','rankings','optimization','without requested randomness']) assert.ok(metadata.includes(fragment),fragment);
-  for (const fragment of ['complete sampling space before execution','original array position','Preserve duplicates','2/3','scripts/sample.mjs','quoted heredoc','delimiter is absent','Never generate sampling code','Accept the returned values and original indices exactly','preference-reroll','Relay diagnostics verbatim','actual command','22.0.0','[1,101)','[1,21)','separate invocations']) assert.ok(text.includes(fragment),fragment);
+  for (const fragment of ['complete sampling space before execution','original array position','Preserve duplicates','2/3','scripts/sample.mjs','quoted heredoc','delimiter is absent','Never generate sampling code','Accept the returned values and original indices exactly','preference-reroll','Relay diagnostics verbatim','actual command','24.0.0','[1,101)','[1,21)','separate invocations']) assert.ok(text.includes(fragment),fragment);
   assert.deepEqual(fs.readdirSync(skill).sort(),['SKILL.md','scripts']);
 });
 test('entropy boundary stays in built-in crypto with no fallback or randomized sorting', () => {
@@ -19,8 +19,8 @@ test('entropy boundary stays in built-in crypto with no fallback or randomized s
   assert.match(source,/import\('node:crypto'\)/);
   assert.match(source,/crypto\.randomInt\(/);
   assert.doesNotMatch(source,/Math\.random|\.sort\s*\(|process\.env|node:(?:fs|https?|net)|\beval\s*\(/);
-  assert.match(source,/22\.0\.0/);
+  assert.match(source,/24\.0\.0/);
   const dependencies = fs.readFileSync(path.join(root,'docs/development/dependencies.md'),'utf8').split('\n').find(line => line.startsWith('| `random-sampler`'));
-  assert.match(dependencies,/22\.0\.0/);
+  assert.match(dependencies,/24\.0\.0/);
   assert.match(dependencies,/crypto/);
 });

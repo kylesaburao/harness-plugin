@@ -1,7 +1,7 @@
 ---
 name: create-discord-emoji-gif
 description: "Create an animated Discord emoji GIF from a video, at 128x128 and under 256000 bytes (256 KB). Use for Discord emoji requests or GIFs with those same limits. Not for general video-to-GIF conversion with other size targets."
-compatibility: Requires Node.js 22.0.0 or newer, ffmpeg built with libvmaf, ffprobe, and either gifski or gifsicle.
+compatibility: Requires Node.js 24.0.0 or newer, ffmpeg built with libvmaf, ffprobe, and either gifski or gifsicle.
 ---
 
 # Create a Discord emoji GIF
@@ -41,8 +41,8 @@ Use this procedure:
    entrypoint validates its own runtime as part of the one dispatch.
 2. If the shell reports the `node` command itself as not found, that is a shell error,
    not a `code`/`condition`/`remedy` triple from the script. Tell the user Node.js
-   22.0.0 or newer must be installed and stop there. Do not invent a remedy.
-3. If `node` exists but is older than 22, the script itself exits 2 with
+   24.0.0 or newer must be installed and stop there. Do not invent a remedy.
+3. If `node` exists but is older than 24, the script itself exits 2 with
    `node_version_unsupported` and a remedy. Relay it like any other failure.
 4. A default gifski attempt that fails before work starts (exit 2) can fall through to
    gifsicle only for `command_missing` for gifski, `gifski_probe_failed`, or
@@ -53,7 +53,7 @@ Use this procedure:
    gifsicle. Never fall from a started run to the other backend.
 7. For an explicit backend comparison, dispatch both entrypoints.
 
-Node.js 22.0.0 is the supported runtime floor.
+Node.js 24.0.0 is the supported runtime floor.
 
 ## Workflow
 

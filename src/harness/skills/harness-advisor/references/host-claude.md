@@ -15,7 +15,7 @@ adapter. Consultation does not authorize installation or authentication changes.
 
 The executor writes the prepared four task sections to existing task temporary
 storage. Include substantive evidence, not file paths or URLs the Advisor must
-retrieve. Run the bundled adapter directly, with Node.js 22 or newer and no npm
+retrieve. Run the bundled adapter directly, with Node.js 24 or newer and no npm
 packages:
 
 ```sh

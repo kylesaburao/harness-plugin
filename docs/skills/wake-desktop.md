@@ -6,7 +6,7 @@ Save named computers and wake them on the same LAN with `wake-desktop`.
 
 ## Requirements
 
-Use Node.js 26 or newer. No npm packages are required. Waking runs on macOS or Linux and needs UDP broadcast access to the target's LAN or VLAN. Waiting for a response also requires system `ping` and ICMP permission.
+Use Node.js 24 or newer. No npm packages are required. Waking runs on macOS or Linux and needs UDP broadcast access to the target's LAN or VLAN. Waiting for a response also requires system `ping` and ICMP permission.
 
 Enable Wake-on-LAN in the target's firmware and operating system network settings. The adapter needs standby power and wake support, normally through wired Ethernet. Wi-Fi requires explicit hardware support. Internet routing, ordinary VPNs, WSL2 NAT, and container networking can prevent broadcast delivery.
 
