@@ -59,13 +59,15 @@ Do not use both native Advisor and Harness Advisor to obtain additional review.
 <!-- harness-plugin:implementation-planning:start -->
 # Implementation planning
 
-When drafting or revising a coding implementation plan, including in the
-current host's native plan mode, find and use the Harness
-`write-implementation-plan` Skill through the active skill catalogue.
-Apply it alongside the host's native planning process and audit the plan
-under its contract before presenting the final plan. If the Skill cannot
-be resolved or loaded, report that blocker instead of presenting an
-unaudited final implementation plan.
+When authoring, reviewing, revising, or saving a coding implementation plan,
+including plan-file-only requests and the current host's native plan mode,
+find and use the Harness `write-implementation-plan` Skill through the active
+skill catalogue. Apply it alongside the host's native planning process and
+audit the plan under its contract before delivery.
+Permission to produce or save a plan does not authorize executing its contents;
+keep any later action phase within the user's authorized scope.
+If the Skill cannot be resolved or loaded, report that blocker instead of
+presenting an unaudited final implementation plan.
 <!-- harness-plugin:implementation-planning:end -->
 ```
 
