@@ -36,7 +36,7 @@ function makeTestTree(groups) {
 
 test('target selection reaches every setup and prerequisite command without ambient fallback', t =>
 {
-  const { buildCommandPlan, buildSetupPlan, parseArguments } = loadRunner();
+  const { buildPrerequisitePlan, buildSetupPlan, parseArguments } = loadRunner();
   const root = makeTestTree({ example: ['example.test.js'] });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const previous = process.env.HARNESS_TEST_TARGET;
@@ -46,7 +46,7 @@ test('target selection reaches every setup and prerequisite command without ambi
     for (const target of ['development', 'distribution'])
     {
       assert.equal(parseArguments(['--target', target, '--skip-gif']).target, target);
-      for (const plan of [buildCommandPlan(root, false, target), buildSetupPlan(root, target)])
+      for (const plan of [buildPrerequisitePlan(root, false, target), buildSetupPlan(root, target)])
       {
         for (const command of plan)
         {
@@ -178,38 +178,43 @@ test('Node test groups are discovered deterministically and ignore non-test file
   assert.deepEqual(discoverNodeTestGroups(root, true), ['alpha', 'zebra']);
 });
 
-test('setup is separate from the validation and test command plan', () => {
+test('setup is separate from the prerequisite plan, and test groups are discovered separately', () => {
   const root = makeTestTree({
     wake: ['wake.test.js'],
     'create-discord-emoji-gif': ['gif.test.js'],
-    backup: ['backup.test.js'],
+    backup: ['backup.test.js', 'archive.test.js'],
   });
-  const { buildCommandPlan, buildSetupPlan } = loadRunner();
+  const { buildNodeTestGroups, buildPrerequisitePlan, buildSetupPlan } = loadRunner();
   assert.deepEqual(buildSetupPlan(root).find(stage => stage.label === 'initialize ASD-STE100 references').args, [path.join(root, '.build/harness/skills/write-asd-ste100/scripts/initialize_references.py')]);
-  const labels = buildCommandPlan(root, false).map(({ label }) => label);
+  const labels = buildPrerequisitePlan(root, false).map(({ label }) => label);
 
+  // The prerequisite plan holds only prerequisite stages; test groups and the Python
+  // suite are passed to runGate separately, so nothing here is built and then filtered out.
   assert.deepEqual(labels, [
     'validate test prerequisites',
     'verify selected artifact',
     'validate ASD-STE100 references',
     'preflight GIF converter (gifski)',
     'preflight GIF converter (gifsicle)',
-    'Node tests: backup',
-    'Node tests: create-discord-emoji-gif',
-    'Node tests: wake',
-    'ASD-STE100 Python tests',
   ]);
+  assert.deepEqual(buildNodeTestGroups(root, false), {
+    backup: [path.join('tests', 'backup', 'archive.test.js'), path.join('tests', 'backup', 'backup.test.js')],
+    'create-discord-emoji-gif': [path.join('tests', 'create-discord-emoji-gif', 'gif.test.js')],
+    wake: [path.join('tests', 'wake', 'wake.test.js')],
+  });
 
   // build.js --check already runs validateArtifact on the selected tree, so the gate
   // compiles and validates once instead of repeating validate-dist.js.
-  const plan = buildCommandPlan(root, false);
+  const plan = buildPrerequisitePlan(root, false);
   assert.equal(plan.some(stage => stage.args.includes('scripts/validate-dist.js')), false);
   assert.equal(plan.filter(stage => stage.args.includes('scripts/build.js')).length, 1);
 
-  const hostedLabels = buildCommandPlan(root, true).map(({ label }) => label);
-  assert.equal(hostedLabels.includes('preflight GIF converter (gifski)'), false);
-  assert.equal(hostedLabels.includes('preflight GIF converter (gifsicle)'), false);
-  assert.equal(hostedLabels.includes('Node tests: create-discord-emoji-gif'), false);
+  assert.deepEqual(buildPrerequisitePlan(root, true).map(({ label }) => label), [
+    'validate test prerequisites',
+    'verify selected artifact',
+    'validate ASD-STE100 references',
+  ]);
+  assert.deepEqual(Object.keys(buildNodeTestGroups(root, true)), ['backup', 'wake']);
 });
 
 test('setup freshness failure stops before runtime dependency installation or initialization', () => {
@@ -350,8 +355,8 @@ test('missing test prerequisites give a setup remedy without installing', () => 
   try {
     const { checkPrerequisites } = require('../../scripts/setup-tests');
     assert.throws(() => checkPrerequisites(root), /Selected artifact is missing/);
-    const { buildCommandPlan } = loadRunner();
-    assert.equal(buildCommandPlan(root, false).some(item => item.command === 'npm' || item.args.includes('pip') || item.args.some(arg => arg.includes('initialize_references'))), false);
+    const { buildPrerequisitePlan } = loadRunner();
+    assert.equal(buildPrerequisitePlan(root, false).some(item => item.command === 'npm' || item.args.includes('pip') || item.args.some(arg => arg.includes('initialize_references'))), false);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 

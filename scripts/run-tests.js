@@ -96,7 +96,12 @@ function buildSetupPlan(repoRoot, target = 'development')
   ].map(spec => ({ ...spec, env: { ...process.env, HARNESS_TEST_TARGET: target } }));
 }
 
-function buildCommandPlan(repoRoot, skipGif, target = 'development')
+function buildNodeTestGroups(repoRoot, skipGif)
+{
+  return Object.fromEntries(discoverNodeTestGroups(repoRoot, skipGif).map(group => [group, nodeTestFiles(repoRoot, group)]));
+}
+
+function buildPrerequisitePlan(repoRoot, skipGif, target = 'development')
 {
   const selected = artifactRoot(repoRoot, target);
   const steScripts = path.join(selected, 'skills/write-asd-ste100/scripts');
@@ -121,15 +126,6 @@ function buildCommandPlan(repoRoot, skipGif, target = 'development')
     );
   }
 
-  for (const group of discoverNodeTestGroups(repoRoot, skipGif)) {
-    plan.push(command(`Node tests: ${group}`, 'node', [
-      '--test', ...nodeTestFiles(repoRoot, group),
-    ], repoRoot));
-  }
-
-  plan.push(command('ASD-STE100 Python tests', python, [
-    '-m', 'unittest', 'discover', '-s', 'tests/write-asd-ste100', '-v',
-  ], repoRoot));
   return plan.map(spec => ({ ...spec, env: { ...process.env, HARNESS_TEST_TARGET: target } }));
 }
 
@@ -214,13 +210,11 @@ async function main(argv, {
     return EXIT.OK;
   }
   const { runGate } = require('./test-gate');
-  const plan = buildCommandPlan(repoRoot, options.skipGif, options.target);
-  const groups = Object.fromEntries(discoverNodeTestGroups(repoRoot, options.skipGif).map(group => [group, nodeTestFiles(repoRoot, group)]));
   return runWithVenvCleanup(repoRoot, () => runGate({
     root: repoRoot,
     env: { ...process.env, HARNESS_TEST_TARGET: validateTarget(options.target) },
-    prerequisites: plan.filter(stage => !stage.label.startsWith('Node tests:') && stage.label !== 'ASD-STE100 Python tests'),
-    groups,
+    prerequisites: buildPrerequisitePlan(repoRoot, options.skipGif, options.target),
+    groups: buildNodeTestGroups(repoRoot, options.skipGif),
     fullSearch: options.skipGif ? undefined : 'tests/create-discord-emoji-gif/full-search.test.js',
     python: command('ASD-STE100 Python tests', path.join('.venv', 'bin', 'python'), ['scripts/python-test-reporter.py'], repoRoot),
     excluded: options.skipGif ? [GIF_GROUP] : [],
@@ -231,7 +225,8 @@ if (require.main === module) Promise.resolve(main(process.argv.slice(2))).then(s
 
 module.exports = {
   buildSetupPlan,
-  buildCommandPlan,
+  buildPrerequisitePlan,
+  buildNodeTestGroups,
   discoverNodeTestGroups,
   main,
   parseArguments,
