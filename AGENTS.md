@@ -27,6 +27,17 @@ Exception limited to `demonstrate-workflow`: its shared frontmatter may contain 
 
 Claude-only component kinds with no Codex equivalent (e.g. `src/harness/output-styles/`) live at the plugin root next to `skills/`. Codex ignores them since `.codex-plugin/plugin.json` pins its component list explicitly. No dual-copy concern applies here since there is nothing to keep in sync.
 
+## Conceptual-first implementation
+
+For changes involving shared behavior, related implementations, cross-cutting
+policy, state lifetimes, or public contracts, read and apply
+`src/harness/skills/conceptual-first/SKILL.md` from the repository root before
+implementation, substantive implementation planning, or structural review,
+unless its current contents are already in context. Use this authored source
+for repository development, not a potentially older installed release.
+Preserve task authorization, valid existing decisions, and the policy's
+lightweight path for trivial local edits and verbatim plan export.
+
 ## Skills that run scripts
 
 Only `dist/harness/` is installed by the plugin. Skill entrypoints and skill-specific deterministic code live under `src/harness/skills/<skill>/`:

@@ -30,11 +30,12 @@ Some skills retain configuration or generated data under `~/.harness-plugin/`, s
 | --- | --- |
 | [harness-advisor](dist/harness/skills/harness-advisor/SKILL.md) | Get a tool-free reasoning review of executor-supplied evidence. [Guide](docs/skills/harness-advisor.md). |
 | [back-up-directories](dist/harness/skills/back-up-directories/SKILL.md) | Archive a directory to a dated ZIP and replicate it to configured destinations. |
+| [conceptual-first](dist/harness/skills/conceptual-first/SKILL.md) | Establish conceptual ownership before expanding related implementations; preserve meaningful differences and task scope. |
 | [create-discord-emoji-gif](dist/harness/skills/create-discord-emoji-gif/SKILL.md) | Convert a clip into a looping, under-256KB, 128x128 Discord emoji GIF. |
 | [diagnose-environment](dist/harness/skills/diagnose-environment/SKILL.md) | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. |
 | [extract-video-frames](dist/harness/skills/extract-video-frames/SKILL.md) | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. |
 | [inspect-development-environment](dist/harness/skills/inspect-development-environment/SKILL.md) | Produce an evidence-backed inventory of the current dev environment. |
-| [install-harness-plugin-capabilities](dist/harness/skills/install-harness-plugin-capabilities/SKILL.md) | Install or repair Advisor integration, implementation-planning activation, and Skill discovery for Codex and Claude Code through agent file edits. |
+| [install-harness-plugin-capabilities](dist/harness/skills/install-harness-plugin-capabilities/SKILL.md) | Install or repair Advisor integration, implementation-planning activation, conceptual-first activation, and Skill discovery for Codex and Claude Code through agent file edits. |
 | [record-decision](dist/harness/skills/record-decision/SKILL.md) | Capture a consequential technical decision, its constraints, and its reversibility. |
 | [demonstrate-workflow](dist/harness/skills/demonstrate-workflow/SKILL.md) | Turn completed session work or a new demonstration into a reusable skill through explicit invocation. |
 | [research-precedent](dist/harness/skills/research-precedent/SKILL.md) | Research whether a proposed approach has precedent, internally or in the wider industry. |

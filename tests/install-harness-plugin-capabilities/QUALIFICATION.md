@@ -144,3 +144,47 @@ Snapshots recorded the SHA-256, mode, and nanosecond mtime of every fixture file
 | (ii) first pass | Skill load. It read `CLAUDE.md`, then `shared/AGENTS.md` through the import. | **Finding, ungraded.** No file changed. The model treated the import as part of the effective instructions: Advisor correct, discovery correct via the import (no duplicate added), planning reported as **Blocked**, because the stale block is in a file the prompt put off-limits and adding a second block would create two active planning authorities. It offered two options: authorize editing the shared file, or have the user remove the stale block. |
 
 The installer contract does not define whether files imported with `@path` belong to the effective instruction file. Run (ii) shows a conservative, reasonable interpretation. It is one sample, not a contract. Cost: about $0.54 across the three runs. Raw evidence (`evidence/g5-*`) remains under the disposable root and was not archived.
+
+## Conceptual-first component: Claude live qualification (2026-09-30)
+
+This covers the fourth installer component, `conceptual-first` activation, added in the same change as the `conceptual-first` skill.
+
+**Environment.**
+- Host: Claude Code 2.1.286, macOS, personal claude.ai login.
+- Candidate: a fresh `npm run build` of HEAD `7179c53ed83fbeb82d30441547e1f1ca3e9fcffb` plus the uncommitted conceptual-first integration. It was copied from `.build/harness` to `/private/tmp/claude-qual-20260930205429/harness`, excluding `node_modules`. Tree SHA-256 over sorted per-file hashes: `3db47de1981c0e12f5e1cfde76d4933ff30a58082181f3224f3bf8e2196319dc`. A second copy, `harness-missing`, omits `skills/conceptual-first/`.
+- Isolation and flags match the 2026-09-25 runs above:
+  - `--plugin-dir` and `--add-dir` for the candidate and the fixture
+  - `--setting-sources '' --no-session-persistence --permission-mode dontAsk`
+  - allowed tools `Read Edit Write Glob Grep 'Bash(cat *)' 'Bash(ls *)' 'Bash(shasum *)'`
+  - each prompt named the fixture file as the target
+- Personal instruction files, settings, and plugin installations were not modified.
+
+**Fixtures.** The base `CLAUDE.md` was built from the candidate's own templates. It contains:
+- personal prose
+- the current Claude Advisor block, implementation-planning block, and Skill discovery block
+- the conceptual-first block inside a fenced example under an "Archived example (not active)" heading
+- `# Engineering context` with nested notes
+
+Fixture D omits the Advisor block. Snapshots recorded the SHA-256, mode, and nanosecond mtime before and after each run.
+
+| Run | Evidence | Result |
+| --- | --- | --- |
+| P. Initialize probe (no model turn) | The debug log reports `Loaded inline plugin from path: harness`, skills loaded from the disposable path, `Loaded 15 skills from plugin harness default directory`, and `0 duplicate/user-owned entries skipped`. | **Passed.** 15 `harness:` commands, including `harness:conceptual-first`. |
+| A. Fresh install | Skill load, then Reads of the bundled template and the fixture, then a Glob for `write-implementation-plan` and `conceptual-first` in the candidate, then one `Edit`. It reported Advisor, planning, and discovery unchanged and conceptual-first added. | **Passed.** Removing the inserted block reproduces the original SHA-256 exactly. The block equals the template and sits immediately before `# Engineering context`. The fenced example is untouched (1 fenced + 1 active start marker). Mode is unchanged. |
+| B. Repeat on A's result | Skill load, Reads, Grep, no Edit or Write. One Bash comparison was denied by the allowlist, and the model compared the blocks by reading them instead. | **Passed.** SHA-256, mode, and mtime are identical before and after. |
+| C. `harness-missing` candidate, fresh fixture | Skill load, template and fixture Reads, and a listing of the candidate skills. It reported conceptual-first **blocked** because the skill was absent from the session catalogue, and the other three components already correct. | **Passed.** No write: SHA-256, mode, and mtime are identical. No competing trigger was added. |
+| D. "Install only the Harness Advisor integration" | Skill load, Reads, one `Edit` appending the Claude Advisor block. It reported planning, discovery, and conceptual-first as outside the requested scope. | **Passed.** The original bytes are an exact prefix of the result, followed by a blank line and the exact Advisor block. The conceptual-first block was not added. Mode is unchanged. |
+
+**Limits.**
+- Default target resolution (`CLAUDE_CONFIG_DIR`, then `~/.claude`) was not exercised.
+- Codex was not run.
+- These cases were not run:
+  - ambiguous or partial markers
+  - duplicate owned blocks
+  - imported instructions
+  - two selected hosts
+- Each case is one sample, not a reliability rate.
+- These runs establish installer file behavior with this candidate. They do not establish adherence to the conceptual-first policy.
+- After these runs, a code review changed two installer sentences. Step 2 now reads "Inspect all authorized components" instead of "all four components". Step 7 now also accepts an ambiguous or out-of-scope conceptual-first outcome, and requires one active trigger rather than one marked active trigger. The runs above used the earlier wording and were not repeated.
+
+Cost: $0.74 across the four model runs (A $0.214, B $0.139, C $0.175, D $0.207). Raw evidence remains under the disposable root and was not archived.
