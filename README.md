@@ -19,7 +19,7 @@ See [DEPENDENCIES.md](DEPENDENCIES.md) for the authoritative runtime, tool, and 
 | `diagnose-environment` | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. |
 | `extract-video-frames` | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. |
 | `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. |
-| `install-harness-plugin-capabilities` | Install or repair Advisor integration and final-plan guidance for Codex and Claude Code through agent file edits. |
+| `install-harness-plugin-capabilities` | Install or repair Advisor integration, Final plans guidance, and Skill discovery for Codex and Claude Code through agent file edits. |
 | `record-decision` | Capture a consequential technical decision, its constraints, and its reversibility. |
 | `demonstrate-workflow` | Turn completed session work or a new demonstration into a reusable skill through explicit invocation. |
 | `research-precedent` | Research whether a proposed approach has precedent, internally or in the wider industry. |
@@ -62,11 +62,12 @@ Some skills generate data on first use and store it under `~/.harness-plugin/`. 
 After plugin installation, use `install-harness-plugin-capabilities` for each
 host you want to configure. This instruction-only skill has the agent copy the
 bundled `final-plan-context.md` into the host's user directory and contextually
-patch Advisor activation and a Final plans pointer into the effective user
-instructions. Codex uses `CODEX_HOME` (default `~/.codex`) and normally
-`AGENTS.md`, with `AGENTS.override.md` taking precedence when nonempty. Claude
+patch Advisor activation, a Final plans pointer, and Skill discovery guidance
+into the effective user instructions. Codex uses `CODEX_HOME` (default `~/.codex`)
+and normally `AGENTS.md`, with `AGENTS.override.md` taking precedence when nonempty. Claude
 Code uses `CLAUDE_CONFIG_DIR` (default `~/.claude`) and normally `CLAUDE.md`.
-Both hosts receive final-plan guidance, independently of Advisor availability.
+Both hosts receive Final plans and Skill discovery guidance, independently of
+Advisor availability.
 Existing unrelated instructions, settings, Advisor routing, and legacy role files
 are preserved. Start a new host session after installation, and invoke the skill
 again to update integration. No dedicated runtime, package, or host CLI is needed.

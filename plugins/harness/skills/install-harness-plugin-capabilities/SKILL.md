@@ -1,13 +1,14 @@
 ---
 name: install-harness-plugin-capabilities
-description: Install, repair, or update Harness user-level integration for Codex or Claude Code, including Advisor activation and final-plan guidance. Use when requested to configure Harness capabilities or repair their host integration.
+description: Install, repair, or update Harness user-level integration for Codex or Claude Code, including Advisor activation, Final plans guidance, and Skill discovery. Use when requested to configure Harness capabilities or repair their host integration.
 ---
 
 # Install Harness capabilities
 
 Use ordinary agent file operations. For each requested host, copy one companion
-file into its user directory and add Advisor instructions and a Final plans
-pointer to its user-level instruction file. Follow these steps in order.
+file into its user directory and add Advisor instructions, a Final plans
+pointer, and Skill discovery guidance to its user-level instruction file. Follow
+these steps in order.
 
 ## Bundled path authority
 
@@ -43,7 +44,8 @@ plugin's runtime-data root. Preserve host settings, Advisor routing (including
 ## 2. Read the source and existing destination content
 
 Read the bundled [final-plan-context.md](references/final-plan-context.md),
-the selected host's capabilities block and the shared Final plans trigger in
+the selected host's capabilities block, the shared Final plans trigger, and
+the shared Skill discovery template in
 [activation-instructions.md](references/activation-instructions.md).
 Read the existing destination companion and user instruction file if present.
 
@@ -86,14 +88,33 @@ Update existing final-plan integration in place. Preserve unrelated content
 sharing its section, including any nested capabilities block updated in step 4.
 If the guidance is missing, insert it before `# Engineering context` when
 present, otherwise append it with blank-line separation. Avoid duplicates and
-leave correct guidance alone. Always check both steps 4 and 5, even when one
-integration already matches its template.
+leave correct guidance alone.
 
-## 6. Verify and report
+## 6. Install Skill discovery in the same instruction file
+
+Copy the shared Skill discovery template from `activation-instructions.md` as
+active Markdown instructions, without its surrounding code fence, into the
+effective file selected in step 1. Install it for both hosts regardless of
+Claude native Advisor availability. Keep `# Skill discovery` a sibling of
+`# Final plans`.
+
+Update identifiable active Skill discovery guidance in place. Preserve unrelated
+prose, nested content, and examples. A heading alone does not establish ownership
+of everything beneath it. If ownership or conflicting instructions make the
+intended edit unclear, report the path and ambiguity instead of guessing.
+
+Leave matching guidance unchanged. If absent, insert it before
+`# Engineering context` when present, otherwise append it with blank-line
+separation. Avoid duplicate active guidance. Always check Advisor, Final plans,
+and Skill discovery independently in steps 4 through 6. Matching components
+must not cause a missing component to be skipped.
+
+## 7. Verify and report
 
 Inspect the resulting edits. Check that the installed companion matches the
 bundled bytes, the Final plans pointer resolves to that installed file, and
-both instruction templates are active text in the effective instruction file.
+all three instruction components (Advisor, Final plans, and Skill discovery)
+are active text in the effective instruction file.
 
 Report changed paths, unchanged artifacts, failures, and partial completion
 honestly. Remind the user to start a new host session. Installation does not

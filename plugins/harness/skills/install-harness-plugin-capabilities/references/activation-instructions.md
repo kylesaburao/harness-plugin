@@ -3,7 +3,8 @@
 Copy the selected host's capabilities block exactly, including its markers.
 Install the Final plans trigger independently for either host, replacing
 `<absolute-companion-path>` with the absolute path to the installed
-`final-plan-context.md` in that host's user directory.
+`final-plan-context.md` in that host's user directory. Install the shared Skill
+discovery template independently for both hosts, directly as active instructions.
 
 ## Codex capabilities
 
@@ -57,4 +58,23 @@ rules and fresh-context audit. Assume the planning conversation will
 be erased. The executor must need only the final plan, repository/worktree
 state, and explicitly identified artifacts. If the guidance cannot be
 read, report the blocker rather than presenting an unaudited final plan.
+```
+
+## Skill discovery (both hosts)
+
+```markdown
+# Skill discovery
+
+Before reading a skill, find it in the list of available skills supplied by
+the host (Codex or Claude Code). Use the location listed for that skill.
+If the host abbreviates part of the location, expand it using the accompanying
+directory mapping. Use the current session's mapping. Never construct a
+filesystem path from the skill's display name or a remembered installation
+location.
+
+If the host provides a tool or resource reference instead of a file path,
+use that provided mechanism to load the skill. If the supplied location
+cannot be resolved or loaded, report it, the attempted file path when
+applicable, and the failure. Use another installation only when the host
+or user explicitly selects it.
 ```
