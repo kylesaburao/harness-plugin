@@ -43,9 +43,11 @@ at every target.
    ```
 
    `sourceDirectory` and a non-empty `targetDirectories` are required. `outputDirectory` is
-   optional and defaults to the system temporary directory. Relative paths resolve from the
-   configuration file's own directory. Name the local copy something matching
-   `*.local.json`, which the repository ignores, because these paths are machine-specific.
+   optional. Without it, the archive is staged in the first `targetDirectories` entry and
+   published there by renaming it, and the preflight `output` field names that target.
+   Relative paths resolve from the configuration file's own directory. Name the local copy
+   something matching `*.local.json`, which the repository ignores, because these paths are
+   machine-specific.
 
 2. Validate the configuration without backing anything up. This is a separate dispatch
    because the real run is interactive and the agent must never invoke or answer its
@@ -102,4 +104,4 @@ about guarantees. Points that change what you should tell the user:
 - The tool is a same-user interactive utility. Its configuration and directory paths are
   trusted input, so it is not suitable for privileged services or cross-user operation.
 
-With `--json`, completion reports the source, retained archive (or `null`), staging removal, copy paths, and archive bytes. Relay these fields. A cancellation reports `{"result":{"cancelled":true,"outputDirectoryCreated":<path or null>}}`, where the path names an output directory that preflight created and the cancelled run left behind. The preview, confirmation prompt, and progress use stderr. The confirmation requirement still applies.
+With `--json`, completion reports the source, retained archive (or `null`), staging removal, copy paths, and archive bytes. `stagingRemoved` is also `true` when the staging archive was renamed into the first target. Relay these fields. A cancellation reports `{"result":{"cancelled":true,"outputDirectoryCreated":<path or null>}}`, where the path names an output directory that preflight created and the cancelled run left behind. The preview, confirmation prompt, and progress use stderr. The confirmation requirement still applies.

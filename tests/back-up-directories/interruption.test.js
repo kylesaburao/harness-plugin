@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { Readable } = require('node:stream');
 const test = require('node:test');
 
 const { OperationContext, copyAtomically, execute } = require(require('../helpers/plugin-paths').artifactPath('skills/back-up-directories/scripts/backup.js'));
@@ -107,6 +108,33 @@ test('interruption during final staging cleanup remains authoritative', async (t
   await assert.rejects(execution, (error) => error.exitCode === 130);
   assert.deepEqual(await fsp.readdir(outputPath), []);
   assert.equal(context.temporaryPaths.size, 0);
+});
+
+test('interruption during a parallel copy installs no target and leaves temporary files to cleanup', async (t) => {
+  const root = await temporaryRoot(t);
+  const paths = ['source', 'output', 'target-0', 'target-1'].map((name) => path.join(root, name));
+  await Promise.all(paths.map((directory) => fsp.mkdir(directory)));
+  const [source, output, ...targets] = await Promise.all(paths.map((directory, index) =>
+    directoryDetails(directory, ['sourceDirectory', 'outputDirectory', 'targetDirectories[0]', 'targetDirectories[1]'][index])));
+  const copyTargets = targets.map((directory) => ({ directory, destination: path.join(directory.canonicalPath, 'backup.zip') }));
+  const plan = { source, output, targets, archivePath: path.join(output.canonicalPath, 'backup.zip'), retainArchive: false, stagingTarget: null, copyTargets };
+  const context = new OperationContext();
+  let readingResolve;
+  const reading = new Promise((resolve) => { readingResolve = resolve; });
+  const createReadStream = () => new Readable({ read() { readingResolve(); } });
+
+  const execution = execute(plan, context, {
+    archive: { archiveFactory: successfulArchiveFactory('new archive') },
+    copy: { createReadStream },
+  });
+  await reading;
+  await context.interrupt('SIGTERM');
+
+  await assert.rejects(execution, (error) => error.exitCode === 143);
+  for (const target of copyTargets) await assert.rejects(fsp.access(target.destination), { code: 'ENOENT' });
+  assert.equal(context.temporaryPaths.size, 2);
+  assert.deepEqual(context.cleanupSync(), []);
+  for (const directory of [output, ...targets]) assert.deepEqual(await fsp.readdir(directory.canonicalPath), []);
 });
 
 for (const [signal, expectedExitCode] of [['SIGHUP', 129], ['SIGINT', 130], ['SIGTERM', 143]]) {

@@ -180,6 +180,36 @@ test('readAndValidate resolves relative paths and plans aliases without duplicat
   assert.equal('storage' in plan.previewTargets[1], false);
 });
 
+test('readAndValidate stages in the first target when no output directory is configured', async (t) => {
+  const root = await temporaryRoot(t);
+  const { source, first, second } = await makeDirectories(root, ['source', 'first', 'second']);
+  const firstAlias = path.join(root, 'first-alias');
+  await fsp.symlink(first, firstAlias, 'dir');
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({ sourceDirectory: './source', targetDirectories: ['./first', './second', './first-alias'] }));
+
+  const plan = await readAndValidate(config, FIXED_DATE);
+
+  const filename = backupFilename(source, FIXED_DATE);
+  assert.equal(plan.output.canonicalPath, await fsp.realpath(first));
+  assert.equal(plan.output.label, 'targetDirectories[0]');
+  assert.equal(plan.output.createdDuringPreflight, false);
+  assert.equal(plan.retainArchive, false);
+  assert.equal(plan.archivePath, path.join(await fsp.realpath(first), filename));
+  assert.deepEqual(plan.copyTargets.map((target) => target.destination), [
+    path.join(await fsp.realpath(first), filename),
+    path.join(await fsp.realpath(second), filename),
+  ]);
+  assert.equal(plan.stagingTarget, plan.copyTargets[0]);
+  assert.equal(plan.previewTargets[0].action, 'will be created');
+  assert.match(plan.previewTargets[2].action, /shared with targetDirectories\[0\]/);
+
+  await fsp.writeFile(path.join(root, 'configured.json'), JSON.stringify({
+    sourceDirectory: './source', outputDirectory: './second', targetDirectories: ['./first'],
+  }));
+  assert.equal((await readAndValidate(path.join(root, 'configured.json'), FIXED_DATE)).stagingTarget, null);
+});
+
 test('readAndValidate accepts a target root with an unreadable descendant', async (t) => {
   const root = await temporaryRoot(t);
   const { source, output, target } = await makeDirectories(root, ['source', 'output', 'target']);
@@ -521,6 +551,38 @@ test('createArchive with the real archiver produces a ZIP containing the source 
   assert(text.includes('a.txt'));
   assert(text.includes('sub/b.txt'));
   assert.deepEqual(context.cleanupSync(), []);
+});
+
+test('createArchive stores already-compressed extensions and deflates the rest', async (t) => {
+  const root = await temporaryRoot(t);
+  const source = path.join(root, 'source');
+  await fsp.mkdir(source);
+  const compressible = 'a'.repeat(64 * 1024);
+  for (const name of ['photo.JPG', 'clip.mp4', 'nested.zip', 'notes.txt', 'no-extension']) {
+    await fsp.writeFile(path.join(source, name), compressible);
+  }
+  const destination = path.join(root, '.backup-archive-store.tmp');
+  await createArchive(source, destination, new OperationContext());
+
+  const listing = spawn('unzip', ['-v', destination], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '';
+  listing.stdout.setEncoding('utf8');
+  listing.stdout.on('data', (chunk) => { stdout += chunk; });
+  assert.equal(await new Promise((resolve, reject) => {
+    listing.once('error', reject);
+    listing.once('close', resolve);
+  }), 0);
+  const methods = Object.fromEntries(stdout.split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .filter((fields) => fields.length >= 8 && /^(Stored|Defl:\w)$/.test(fields[1]))
+    .map((fields) => [fields.at(-1), fields[1]]));
+  assert.deepEqual(methods, {
+    'photo.JPG': 'Stored',
+    'clip.mp4': 'Stored',
+    'nested.zip': 'Stored',
+    'notes.txt': 'Defl:N',
+    'no-extension': 'Defl:N',
+  });
 });
 
 test('createArchive reports initial and Archiver progress while work is in flight', async (t) => {
@@ -1051,4 +1113,45 @@ test('JSON backup completion remains parseable with interactive confirmation', a
   assert.equal(result.copies.length, 1);
   assert.equal(result.bytes, (await fsp.stat(result.copies[0])).size);
   assert.match(done.stderr, /Proceed\? \[y\/N\]/);
+});
+
+test('CLI without an output directory stages in the first target and replicates real ZIPs', async (t) => {
+  const root = await temporaryRoot(t);
+  const { source, first, second } = await makeDirectories(root, ['source', 'first', 'second']);
+  await fsp.writeFile(path.join(source, 'hello.txt'), 'hello from the first target');
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({ sourceDirectory: source, targetDirectories: [first, second] }));
+  const lockPath = path.join(root, 'lock');
+
+  const preflight = await runCli(t, ['--preflight', '--json', config], { environment: { BACKUP_LOCK_PATH: lockPath } });
+  assert.equal(preflight.exitCode, 0, preflight.stderr);
+  const ready = JSON.parse(preflight.stdout);
+  assert.equal(ready.output, await fsp.realpath(first));
+  assert.equal(ready.outputDirectoryCreated, null);
+
+  const done = await runCli(t, ['--json', config], { input: 'yes\n', environment: { BACKUP_LOCK_PATH: lockPath } });
+  assert.equal(done.exitCode, 0, done.stderr);
+  assert.match(done.stderr, /Rename staging archive into target 1 after replication/);
+  const result = JSON.parse(done.stdout).result;
+  assert.equal(result.archive, null);
+  assert.equal(result.stagingRemoved, true);
+  assert.deepEqual(result.copies.map((copy) => path.dirname(copy)), [await fsp.realpath(first), await fsp.realpath(second)]);
+  const hashes = [];
+  for (const copy of result.copies) {
+    assert.deepEqual(await fsp.readdir(path.dirname(copy)), [path.basename(copy)]);
+    assert.equal((await fsp.stat(copy)).size, result.bytes);
+    if (process.platform !== 'win32') assert.equal((await fsp.stat(copy)).mode & 0o777, 0o600);
+    hashes.push(require('node:crypto').createHash('sha256').update(await fsp.readFile(copy)).digest('hex'));
+    const extracted = spawn('unzip', ['-p', copy, 'hello.txt'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let contents = '';
+    extracted.stdout.setEncoding('utf8');
+    extracted.stdout.on('data', (chunk) => { contents += chunk; });
+    assert.equal(await new Promise((resolve, reject) => {
+      extracted.once('error', reject);
+      extracted.once('close', resolve);
+    }), 0);
+    assert.equal(contents, 'hello from the first target');
+  }
+  assert.equal(hashes[0], hashes[1]);
+  await assert.rejects(fsp.access(lockPath), { code: 'ENOENT' });
 });

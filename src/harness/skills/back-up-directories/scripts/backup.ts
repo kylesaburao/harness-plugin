@@ -10,7 +10,7 @@ import nodeModule = require('node:module');
 const { createRequire } = nodeModule;
 import readline = require('node:readline/promises');
 import streamPromises = require('node:stream/promises');
-const { pipeline } = streamPromises;
+const { finished, pipeline } = streamPromises;
 import { assertDirectoryUnchanged, backupFilename, readAndValidate } from './backup-plan.js';
 import type { BackupPlan, BackupTarget, ValidatedDirectory } from './backup-plan.js';
 
@@ -34,6 +34,7 @@ function mutableFailure(error: unknown): Failure {
 }
 interface CleanupFailure { path: string; error: unknown }
 interface ArchiveOptions { zlib: { level: number } }
+interface ArchiveEntryData { name: string; store?: boolean }
 interface ArchiveProgress { entries: number; processedBytes: number; outputBytes: number }
 interface ArchiveProgressEvent { entries: { processed: number }; fs: { processedBytes: number } }
 interface ArchiveHandle {
@@ -43,7 +44,7 @@ interface ArchiveHandle {
   pointer?(): number;
   abort(): unknown;
   pipe(output: fs.WriteStream): unknown;
-  directory(source: string, destination: false): unknown;
+  directory(source: string, destination: false, data: (entry: ArchiveEntryData) => ArchiveEntryData): unknown;
   finalize(): unknown;
 }
 type ArchiveFactory = (options: ArchiveOptions) => ArchiveHandle;
@@ -92,6 +93,22 @@ const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4
 // directory, which a plugin upgrade replaces.
 const USER_STATE_RELATIVE_PATH = path.join('.harness-plugin', 'back-up-directories');
 const RUN_LOCK_RELATIVE_PATH = path.join(USER_STATE_RELATIVE_PATH, 'run.lock');
+// Entries with these extensions are already compressed, so DEFLATE spends CPU
+// for little or no saving. They are written with the STORE method instead.
+// Matching is by the final extension, case-insensitively. Fixed policy, not a
+// configuration option; references/backup-usage.md lists the same set.
+const STORED_EXTENSIONS: ReadonlySet<string> = new Set([
+  // Archives and compressed streams.
+  '7z', 'br', 'bz2', 'gz', 'lz4', 'rar', 'tgz', 'xz', 'zip', 'zst',
+  // Images.
+  'avif', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp',
+  // Audio and video.
+  'aac', 'flac', 'm4a', 'm4v', 'mkv', 'mov', 'mp3', 'mp4', 'ogg', 'opus', 'webm',
+]);
+function storeEntry(name: string): boolean {
+  const extension = path.extname(name).slice(1).toLowerCase();
+  return extension !== '' && STORED_EXTENSIONS.has(extension);
+}
 const INDENT_PREFIX = '  ';
 const LIST_DETAIL_PREFIX = '   ';
 
@@ -368,6 +385,9 @@ function printPreview(plan: BackupPlan) {
   if (plan.retainArchive) {
     humanLog(`${INDENT_PREFIX}Destination ${plan.archivePath}`);
     humanLog(`${INDENT_PREFIX}Action      ${plan.archiveExists ? 'Overwrite existing file' : 'Create new file'}`);
+  } else if (plan.stagingTarget) {
+    humanLog(`${INDENT_PREFIX}Staging     ${plan.output.canonicalPath}`);
+    humanLog(`${INDENT_PREFIX}After run   Rename staging archive into target 1 after replication`);
   } else {
     humanLog(`${INDENT_PREFIX}Staging     ${plan.output.canonicalPath}`);
     humanLog(`${INDENT_PREFIX}After run   Remove staging archive after replication`);
@@ -670,7 +690,10 @@ function createArchive(sourceDirectory: string, archivePath: string, context: Op
     if (failure) return;
     try {
       archive.pipe(output);
-      archive.directory(sourceDirectory, false);
+      archive.directory(sourceDirectory, false, (entry) => {
+        if (storeEntry(entry.name)) entry.store = true;
+        return entry;
+      });
       if (onProgress) {
         reportProgress();
         progressTimer = setInterval(reportProgress, progressIntervalMs);
@@ -713,6 +736,131 @@ async function copyAtomically(source: string, target: BackupTarget, context: Ope
   }
 }
 
+// The checks copyAtomically makes before its rename, in the same order, for a
+// temporary file that is already complete.
+async function installCopy(temporary: string, target: BackupTarget, context: OperationContext) {
+  context.throwIfInterrupted();
+  await assertDirectoryUnchanged(target.directory);
+  context.throwIfInterrupted();
+  await fsp.rename(temporary, target.destination);
+  context.untrack(temporary);
+}
+
+function closeOutput(output: fs.WriteStream | null): Promise<void> {
+  if (!output || output.closed) return Promise.resolve();
+  return new Promise((resolve) => {
+    output.once('close', () => resolve());
+    output.destroy();
+  });
+}
+
+interface FanOutCopy { target: BackupTarget; temporary: string; output: fs.WriteStream | null; failure: unknown }
+
+// Copies one file to several targets from a single read stream, writing every
+// target in parallel. Each target still gets its own temporary file and
+// rename, so each install stays atomic. A failure in one target stops only
+// that target; its partial temporary file stays tracked for context cleanup.
+// Returns each target's failure, or null when it was installed, in target
+// order. Interruption is thrown, not returned.
+async function copyToTargets(source: string, targets: BackupTarget[], context: OperationContext, dependencies: CopyDependencies = {}): Promise<unknown[]> {
+  const copies: FanOutCopy[] = targets.map((target) => ({
+    target,
+    temporary: shortTempPath(target.directory.canonicalPath, 'copy'),
+    output: null,
+    failure: null,
+  }));
+  let input: fs.ReadStream | null = null;
+  const closeAll = () => Promise.all(copies.map((copy) => closeOutput(copy.output))).then(() => {});
+  const unregister = context.onAbort(() => {
+    input?.destroy();
+    return closeAll();
+  });
+  const failCopy = (copy: FanOutCopy, error: unknown) => {
+    if (copy.failure === null) copy.failure = error;
+    copy.output?.destroy();
+  };
+  const live = () => copies.filter((copy) => copy.failure === null);
+  const writeChunk = (copy: FanOutCopy, chunk: unknown) => new Promise<void>((resolve) => {
+    copy.output!.write(chunk, (error) => {
+      if (error) failCopy(copy, error);
+      resolve();
+    });
+  });
+  try {
+    context.throwIfInterrupted();
+    for (const copy of copies) context.track(copy.temporary);
+    await Promise.all(copies.map(async (copy) => {
+      try {
+        await assertDirectoryUnchanged(copy.target.directory);
+        if (context.interruption) return;
+        const output = (dependencies.createWriteStream || fs.createWriteStream)(copy.temporary, { flags: 'wx', mode: 0o600 });
+        copy.output = output;
+        output.on('error', (error) => failCopy(copy, error));
+      } catch (error) {
+        failCopy(copy, error);
+      }
+    }));
+    context.throwIfInterrupted();
+    if (live().length) {
+      input = (dependencies.createReadStream || fs.createReadStream)(source);
+      try {
+        for await (const chunk of input) {
+          const writers = live();
+          if (!writers.length) break;
+          await Promise.all(writers.map((copy) => writeChunk(copy, chunk)));
+          context.throwIfInterrupted();
+        }
+      } catch (error) {
+        context.throwIfInterrupted();
+        for (const copy of live()) failCopy(copy, error);
+      }
+      context.throwIfInterrupted();
+      await Promise.all(live().map(async (copy) => {
+        try {
+          copy.output!.end();
+          await finished(copy.output!);
+        } catch (error) {
+          failCopy(copy, error);
+        }
+      }));
+    }
+    await closeAll();
+    context.throwIfInterrupted();
+    await Promise.all(live().map(async (copy) => {
+      try {
+        await installCopy(copy.temporary, copy.target, context);
+      } catch (error) {
+        failCopy(copy, error);
+      }
+    }));
+    context.throwIfInterrupted();
+    return copies.map((copy) => copy.failure);
+  } catch (error) {
+    input?.destroy();
+    await closeAll();
+    throw error;
+  } finally {
+    unregister();
+  }
+}
+
+// One copy-phase error for every failed target, in target order, naming the
+// copies that were installed. The first target's failure object carries it.
+function copyFailure(targets: BackupTarget[], failures: Map<BackupTarget, unknown>, copied: string[]): Failure {
+  const failed = targets.filter((target) => failures.has(target));
+  const reasons = failed.map((target) => {
+    const failure = failures.get(target);
+    const message = failureDetails(failure).message;
+    const reason = typeof message === 'string' ? message : String(failure);
+    return `Failed to copy archive to ${target.destination}: ${reason.replace(/\.$/, '')}.`;
+  });
+  const error = mutableFailure(failures.get(failed[0]!));
+  const installed = copied.length ? `Installed copies: ${copied.join(', ')}.` : 'No copy was installed.';
+  error.message = `${reasons.join(' ')} ${installed}`;
+  error.exitCode = EXIT.COPY;
+  return error;
+}
+
 async function execute(plan: BackupPlan, context: OperationContext, dependencies: ExecutionDependencies = {}): Promise<string[]> {
   const temporaryArchive = shortTempPath(plan.output.canonicalPath, 'archive');
   const removeFile = dependencies.removeFile || fsp.rm;
@@ -743,9 +891,42 @@ async function execute(plan: BackupPlan, context: OperationContext, dependencies
     throw error;
   }
 
-  const copied = [];
+  const copied: string[] = [];
   let replicationFailure: Failure | null = null;
   try {
+    if (!plan.retainArchive) {
+      // Staging-only archive: copy every other target in parallel from one
+      // read of the staging file, then publish to the staging target, if any,
+      // by renaming the staging file into it.
+      const stagingTarget = plan.stagingTarget ?? null;
+      const fanOutTargets = plan.copyTargets.filter((target) => target !== stagingTarget);
+      context.throwIfInterrupted();
+      plan.copyTargets.forEach((target, index) => {
+        onStage({ phase: 'copy-start', destination: target.destination, index, total: plan.copyTargets.length });
+      });
+      const failures = new Map<BackupTarget, unknown>();
+      if (fanOutTargets.length) {
+        const outcomes = await copyToTargets(temporaryArchive, fanOutTargets, context, dependencies.copy);
+        fanOutTargets.forEach((target, index) => {
+          if (outcomes[index] !== null) failures.set(target, outcomes[index]);
+        });
+      }
+      if (stagingTarget) {
+        try {
+          await installCopy(temporaryArchive, stagingTarget, context);
+        } catch (caught) {
+          context.throwIfInterrupted();
+          failures.set(stagingTarget, caught);
+        }
+      }
+      for (const target of plan.copyTargets) if (!failures.has(target)) copied.push(target.destination);
+      if (failures.size) {
+        replicationFailure = copyFailure(plan.copyTargets, failures, copied);
+        throw replicationFailure;
+      }
+      return copied;
+    }
+    // A retained archive is copied to the other targets one at a time.
     for (const [index, target] of plan.copyTargets.entries()) {
       context.throwIfInterrupted();
       onStage({ phase: 'copy-start', destination: target.destination, index, total: plan.copyTargets.length });
@@ -935,6 +1116,10 @@ async function main() {
         humanLog('');
         humanLog('Archive');
         humanLog(`${INDENT_PREFIX}${plan.archivePath}`);
+      } else if (plan.stagingTarget) {
+        humanLog('');
+        humanLog('Staging');
+        humanLog(`${INDENT_PREFIX}Renamed into ${plan.stagingTarget.destination}`);
       } else {
         humanLog('');
         humanLog('Staging');
