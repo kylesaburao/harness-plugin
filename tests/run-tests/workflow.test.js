@@ -157,6 +157,7 @@ test('PR GIF job runs the complete container gate on a cached image named as scr
   // The tag must be the launcher's own image name, or setup fails with a missing image.
   const launcher = fs.readFileSync(path.join(root, 'scripts/dev'), 'utf8');
   assert.ok(launcher.includes(`key=$(printf '%s\\n%s:%s\\n' "$root" "$uid" "$gid" | git hash-object --stdin)\nname=harness-dev-$key\nimage=$name:latest\n`));
-  assert.ok(gif[naming].run.includes(`key=$(printf '%s\\n%s:%s\\n' "$(pwd -P)" "$(id -u)" "$(id -g)" | git hash-object --stdin)\necho "tag=harness-dev-$key:latest" >> "$GITHUB_OUTPUT"`));
+  assert.equal(gif[naming].run, 'echo "tag=$(./scripts/dev image-name)" >> "$GITHUB_OUTPUT"');
+  assert.ok(!gif[naming].run.includes('git hash-object'));
   assert.ok(workflowSteps(verification, 'verify').some(step => step.run === 'npm test -- --skip-gif'));
 });

@@ -47,7 +47,7 @@ Before Docker receives that nested mount target, the launcher creates and valida
 
 The home volume stores backup dependencies and generated references under `/home/node/.harness-plugin/`, and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the four volumes. The source checkout is never mounted into that root container.
 
-Image and volume names use a hash of the checkout's canonical path and invoking UID/GID. Independent checkouts and users have separate dependency state. Moving a checkout or changing UID/GID selects new names and leaves the old resources in Docker. Symlink paths to the same checkout reuse its state.
+Image and volume names use a hash of the checkout's canonical path and invoking UID/GID. Independent checkouts and users have separate dependency state. Moving a checkout or changing UID/GID selects new names and leaves the old resources in Docker. Symlink paths to the same checkout reuse its state. `./scripts/dev image-name` prints this checkout's image name without contacting Docker; the CI `gif` job reads its build tag from it.
 
 After incompatible runtime changes, or to reproduce from empty dependency state:
 

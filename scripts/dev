@@ -3,7 +3,7 @@
 set -eu
 
 usage() {
-    echo 'Usage: ./scripts/dev {build|setup|exec <command> [args...]|shell|reset}'
+    echo 'Usage: ./scripts/dev {build|setup|exec <command> [args...]|shell|reset|image-name}'
 }
 fail() {
     echo "ERROR: $1" >&2
@@ -15,7 +15,7 @@ action=$1
 shift
 case "$action" in
     exec) [ "$#" -gt 0 ] || { usage >&2; exit 2; } ;;
-    build|setup|shell|reset) [ "$#" -eq 0 ] || { usage >&2; exit 2; } ;;
+    build|setup|shell|reset|image-name) [ "$#" -eq 0 ] || { usage >&2; exit 2; } ;;
     --help|-h) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
 esac
@@ -25,10 +25,15 @@ uid=$(id -u)
 gid=$(id -g)
 [ "$uid" -ne 0 ] || fail 'Use a normal non-root host account.' 'Run ./scripts/dev as your normal user.'
 command -v git >/dev/null 2>&1 || fail 'Git is missing.' 'Install Git on the host.'
-command -v docker >/dev/null 2>&1 || fail 'Docker is missing.' 'Install and start local Docker.'
 key=$(printf '%s\n%s:%s\n' "$root" "$uid" "$gid" | git hash-object --stdin)
 name=harness-dev-$key
 image=$name:latest
+# The single owner of the image name; CI reads it here instead of restating it.
+if [ "$action" = image-name ]; then
+    printf '%s\n' "$image"
+    exit 0
+fi
+command -v docker >/dev/null 2>&1 || fail 'Docker is missing.' 'Install and start local Docker.'
 venv=$name-venv
 modules=$name-node-modules
 root_modules=$name-root-node-modules

@@ -104,3 +104,13 @@ test('missing image reports explicit build remedy without building', t => {
   assert.match(result.stderr, /Remedy: \.\/scripts\/dev build/);
   assert.ok(!result.calls.some(call => ['run', 'build'].includes(call[0])));
 });
+
+test('image-name prints the image name without calling Docker', t => {
+  const result = probe(t, ['image-name']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.calls, []);
+  const root = fs.realpathSync(result.root);
+  const key = spawnSync('git', ['hash-object', '--stdin'], { input: `${root}\n${process.getuid()}:${process.getgid()}\n`, encoding: 'utf8' }).stdout.trim();
+  assert.equal(result.stdout, `harness-dev-${key}:latest\n`);
+  assert.equal(probe(t, ['image-name', 'extra']).status, 2);
+});
