@@ -93,7 +93,7 @@ test('missing sources, invalid names and command usage', t => {
   for (const args of [[], ['unknown'], ['list', '--name=x'], ['list', '--replace'], ['update', '--name=x'], ['register', '--name=x'], ['list', 'x'], ['remove', '--name'], ['remove', '--name', '--json'], ['remove', '--name=x', '--name=y'], ['list', '--bogus'], ['rename', '--name=x', '--new-name=y', '--replace'], ['list', '--json=true'], ['register', '--name=x', '--ip', ip, '--ip', ip, '--mac', mac]]) {
     fail(s.run(args, { scenario: 'old-node' }), 'usage_error');
   }
-  assert.equal(fs.existsSync(path.dirname(s.configPath)), false);
+  assert.equal(fs.existsSync(`${s.configPath}.lock`), false);
 });
 
 test('invalid configuration and supplied addresses have structured diagnostics', t => {
@@ -146,7 +146,7 @@ test('persistence failure preserves the original and cleans staging files', t =>
   s.register();
   const original = s.read();
   for (const scenario of ['write-fail', 'rename-fail', 'mkdir-fail']) {
-    fail(s.run(['update', '--name=desktop', '--ip=new.local'], { scenario }), 'target_config_write_failed', 1);
+    fail(s.run(['update', '--name=desktop', '--ip=new.local'], { scenario }), scenario === 'mkdir-fail' ? 'target_config_lock_failed' : 'target_config_write_failed', scenario === 'mkdir-fail' ? 2 : 1);
     assert.equal(s.read(), original);
     assert.deepEqual(fs.readdirSync(path.dirname(s.configPath)), ['config.json']);
   }

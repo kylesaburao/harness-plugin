@@ -71,3 +71,15 @@ test('no match returns null', t => {
   const root = fixture(t);
   assert.equal(resolveCommand('media-tool', { PATH: root }), null);
 });
+
+test('directories and symlinks to directories do not mask executable files', t => {
+  const root = fixture(t);
+  const directory = path.join(root, 'first', 'media-tool');
+  fs.mkdirSync(directory, { recursive: true });
+  const linkDir = path.join(root, 'links'); fs.mkdirSync(linkDir);
+  fs.symlinkSync(directory, path.join(linkDir, 'media-tool'));
+  const good = executable(root, 'good');
+  for (const first of [path.dirname(directory), linkDir]) {
+    assert.equal(resolveCommand('media-tool', { PATH: [first, path.dirname(good)].join(path.delimiter) }), fs.realpathSync(good));
+  }
+});

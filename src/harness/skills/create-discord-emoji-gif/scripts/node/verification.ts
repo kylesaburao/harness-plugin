@@ -65,8 +65,10 @@ export async function publishVerified<T>(source: string, output: string, prefix:
     if (fieldsOf(verified).digest && sha256File(output) !== fieldsOf(verified).digest) throw new RunError('publication_failed', 'published file digest does not match the verified content', 'ensure the output directory is on a reliable local filesystem, then run again');
     return verified;
   } catch (error) {
-    try { fs.rmSync(temporary, { force: true }); } catch {}
-    onTemporary('');
+    try {
+      fs.rmSync(temporary, { force: true });
+      onTemporary('');
+    } catch {}
     throw error;
   }
 }

@@ -53,3 +53,18 @@ Use `--help` for options or `--preflight` for an explicit readiness check withou
 A ping response proves network reachability, not desktop or application readiness. A timeout does not prove the computer stayed asleep: it may still be booting or blocking ICMP. Check LAN access, firmware/adapter settings, and ICMP filtering when investigating. Command errors include a diagnosis and remedy.
 
 The [complete skill contract](../../dist/harness/skills/wake-desktop/SKILL.md) defines validation, address precedence, result fields, and stopping behavior.
+
+## Configuration mutation locks
+
+Register, update, rename, and remove hold an exclusive sibling `config.json.lock`
+directory from the fresh read through atomic publication. No-op mutations also lock
+but do not rewrite the registry. Help, list, and preflight remain lock-free.
+Contention returns `target_config_busy` (exit 2), without saving. Retry explicitly
+after the other mutation finishes. Locks are never retried, expired, or stolen.
+
+Acquisition failures return `target_config_lock_failed` (exit 2). Release or ownership
+failures return `target_config_lock_cleanup_failed` (exit 1), with the absolute lock
+path and a quoted recovery command. The diagnostic says when configuration was
+saved and retains any operation failure. An abruptly terminated writer can leave a
+lock. Confirm no target configuration mutation is running before executing the
+reported recovery command. Relay failure code, condition, and remedy verbatim.

@@ -157,21 +157,35 @@ function main(argv) {
             return 0;
         }
         (0, target_config_js_1.checkNodeVersion)();
-        const config = (0, target_config_js_1.loadConfig)();
-        const result = applyOperation(config, options);
-        (0, target_config_js_1.validateRegistry)(config);
+        const release = options.preflight || options.command === 'list' ? undefined : (0, target_config_js_1.acquireConfigLock)();
+        let saved = false;
+        let failure;
+        let result;
+        try {
+            const config = (0, target_config_js_1.loadConfig)();
+            result = applyOperation(config, options);
+            (0, target_config_js_1.validateRegistry)(config);
+            if (!options.preflight && result.changed) {
+                (0, target_config_js_1.saveConfig)(config);
+                saved = true;
+            }
+        }
+        catch (error) {
+            failure = error;
+            throw error;
+        }
+        finally {
+            release?.(saved, failure);
+        }
         if (options.preflight)
             report(json, { status: 'ready', configPath: (0, target_config_js_1.configPath)(), operation: options.command });
-        else {
-            if (result.changed)
-                (0, target_config_js_1.saveConfig)(config);
+        else
             report(json, result);
-        }
         return 0;
     }
     catch (error) {
         (0, target_config_js_1.reportError)(json, error);
-        return (0, target_config_js_1.errorDetails)(error).code === 'target_config_write_failed' ? 1 : 2;
+        return ['target_config_write_failed', 'target_config_lock_cleanup_failed'].includes((0, target_config_js_1.errorDetails)(error).code || '') ? 1 : 2;
     }
 }
 if (require.main === module)

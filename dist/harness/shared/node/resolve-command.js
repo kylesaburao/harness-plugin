@@ -7,6 +7,8 @@ function resolveCommand(name, env = process.env) {
     for (const directory of (env.PATH || '').split(path.delimiter)) {
         const candidate = path.join(directory || '.', name);
         try {
+            if (!fs.statSync(candidate).isFile())
+                continue;
             fs.accessSync(candidate, fs.constants.X_OK);
             return fs.realpathSync(candidate);
         }

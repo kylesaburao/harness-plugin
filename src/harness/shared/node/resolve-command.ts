@@ -6,7 +6,11 @@ import path = require('node:path');
 export function resolveCommand(name: string, env: NodeJS.ProcessEnv = process.env): string | null {
   for (const directory of (env.PATH || '').split(path.delimiter)) {
     const candidate = path.join(directory || '.', name);
-    try { fs.accessSync(candidate, fs.constants.X_OK); return fs.realpathSync(candidate); } catch {}
+    try {
+      if (!fs.statSync(candidate).isFile()) continue;
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return fs.realpathSync(candidate);
+    } catch {}
   }
   return null;
 }

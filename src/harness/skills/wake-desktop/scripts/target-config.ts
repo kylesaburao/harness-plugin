@@ -141,6 +141,45 @@ export function loadTarget(name: string): WakeTarget {
     throw error;
   }
 }
+// The management CLI owns the transaction, including the read before mutation.
+export function acquireConfigLock(): (saved: boolean, operationFailure?: unknown) => void {
+  const lock = `${configPath()}.lock`;
+  const recovery = `confirm no target configuration mutation is running, then run rmdir -- '${lock.replaceAll("'", "'\\''")}'`;
+  let identity: fs.Stats;
+  try { fs.mkdirSync(path.dirname(lock), { recursive: true }); }
+  catch (error) {
+    throw new StartupError('target_config_lock_failed',
+      `${lock}: cannot prepare configuration directory: ${errorDetails(error).message}`, recovery);
+  }
+  try {
+    fs.mkdirSync(lock);
+  } catch (error) {
+    const busy = errorDetails(error).code === 'EEXIST';
+    throw new StartupError(busy ? 'target_config_busy' : 'target_config_lock_failed',
+      `${lock}: ${busy ? 'another mutation holds the configuration lock' : `cannot acquire configuration lock: ${errorDetails(error).message}`}`, recovery);
+  }
+  try { identity = fs.lstatSync(lock); }
+  catch (error) {
+    // Without an identity it is unsafe to remove this directory.
+    throw new StartupError('target_config_lock_cleanup_failed',
+      `${lock}: cannot establish acquired lock ownership: ${errorDetails(error).message}`, recovery);
+  }
+  return (saved, operationFailure) => {
+    try {
+      const current = fs.lstatSync(lock);
+      if (!current.isDirectory() || current.dev !== identity.dev || current.ino !== identity.ino) {
+        throw new Error('configuration lock ownership changed');
+      }
+      fs.rmdirSync(lock);
+    } catch (error) {
+      const previous = operationFailure === undefined ? ''
+        : `; operation also failed: ${errorDetails(operationFailure).code || 'internal_error'}: ${errorDetails(operationFailure).condition || errorDetails(operationFailure).message || String(operationFailure)}`;
+      throw new StartupError('target_config_lock_cleanup_failed',
+        `${lock}: ${saved ? 'configuration was saved; ' : ''}cannot release configuration lock: ${errorDetails(error).message}${previous}`, recovery);
+    }
+  };
+}
+
 export function saveConfig(config: unknown) {
   validateRegistry(config);
   const destination = configPath();

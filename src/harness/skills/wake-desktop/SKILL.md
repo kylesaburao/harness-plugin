@@ -109,8 +109,8 @@ files. Management validates every entry, while waking validates the root schema 
 selected entry only. Unknown properties and address spelling are preserved. Writes
 use a uniquely named sibling temporary file and atomic rename, two-space JSON and a
 trailing newline. Failed staging or publication preserves the original file and
-cleans up the temporary file. There are no locks, backups, or history. Concurrent
-modifications use last-successful-write behavior.
+cleans up the temporary file. Mutations use the configuration lock described below.
+There are no backups or history.
 
 Relay reported management fields: `status` (`registered`, `updated`, `renamed`,
 `removed`, `listed`, or `ready`), absolute `configPath`, and `changed` for completed
@@ -139,3 +139,18 @@ with `--json`, or `ERROR [code]: condition` followed by `Remedy: ...` otherwise.
 Relay the diagnosis verbatim from the failing call. Stop after timeout, report
 what was observed, and do not resend or restart polling. A timeout does not prove
 that waking failed, since the target may block ICMP or still be booting.
+
+## Configuration mutation locks
+
+Register, update, rename, and remove hold an exclusive sibling `config.json.lock`
+directory from the fresh read through atomic publication. No-op mutations also lock
+but do not rewrite the registry. Help, list, and preflight remain lock-free.
+Contention returns `target_config_busy` (exit 2), without saving. Retry explicitly
+after the other mutation finishes. Locks are never retried, expired, or stolen.
+
+Acquisition failures return `target_config_lock_failed` (exit 2). Release or ownership
+failures return `target_config_lock_cleanup_failed` (exit 1), with the absolute lock
+path and a quoted recovery command. The diagnostic says when configuration was
+saved and retains any operation failure. An abruptly terminated writer can leave a
+lock. Confirm no target configuration mutation is running before executing the
+reported recovery command. Relay failure code, condition, and remedy verbatim.

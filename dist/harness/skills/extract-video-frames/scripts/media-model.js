@@ -57,6 +57,9 @@ function sameIdentity(left, right) {
     return left.dev === right.dev && left.ino === right.ino && left.size === right.size && left.mtimeMs === right.mtimeMs;
 }
 function integerTimestamp(value) {
+    if (typeof value === 'number' && (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER)) {
+        throw new errors_js_1.DraftError('input_unusable', 'timestamp or duration is an unsafe JavaScript number', 'supply exact integer timestamp and duration text or raw integer JSON from ffprobe');
+    }
     return /^-?[0-9]+$/.test(String(value)) ? BigInt(String(value)) : null;
 }
 function parseTimeBase(value) {

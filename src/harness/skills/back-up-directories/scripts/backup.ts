@@ -123,12 +123,15 @@ class StartupError extends Error {
 // otherwise pass this preflight and fail much later, mid-run, as a bare
 // "ZipArchive is not a constructor".
 function loadArchiver(): ArchiveFactory {
-  const remedy = `npm install --omit=dev --prefix ${path.resolve(__dirname, '..')}`;
+  const remedy = `npm install --omit=dev --prefix '${path.resolve(__dirname, '..').replaceAll("'", "'\\''")}'`;
   let archiver: unknown;
   try {
     archiver = require('archiver');
   } catch (error) {
-    if (failureDetails(error).code !== 'MODULE_NOT_FOUND') throw error;
+    if (failureDetails(error).code !== 'MODULE_NOT_FOUND') {
+      throw new StartupError('dependency_load_failed',
+        `the installed archiver package could not load: ${failureDetails(error).message || String(error)}`, remedy);
+    }
     throw new StartupError(
       'dependency_missing',
       'the archiver package is not installed, so no ZIP can be written',
@@ -183,15 +186,14 @@ function fail(message: unknown, exitCode: number, code = 'run_failed', remedy = 
 
 function failStartup(caught: unknown) {
   const error = failureDetails(caught);
-  if (jsonOutput) {
-    console.error(JSON.stringify({
-      error: { code: error.code, condition: error.condition, remedy: error.remedy },
-    }));
-  } else {
-    console.error(`ERROR [${error.code}]: ${error.condition}`);
-    if (error.remedy) console.error(`Remedy: ${error.remedy}`);
-  }
-  process.exitCode = error.exitCode;
+  const nonempty = (value: unknown, fallback: string): string =>
+    typeof value === 'string' && value.trim() ? value : fallback;
+  const code = nonempty(error.code, 'startup_failed');
+  const condition = nonempty(error.condition, nonempty(error.message, String(caught)));
+  const remedy = nonempty(error.remedy, 'correct the reported startup failure and run the same command again');
+  const exitCode = error.exitCode !== undefined && Number.isInteger(error.exitCode)
+    && error.exitCode > 0 && error.exitCode <= 255 ? error.exitCode : EXIT.USAGE;
+  fail(condition, exitCode, code, remedy);
 }
 
 function usage() {

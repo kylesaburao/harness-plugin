@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 import { StartupError, checkNodeVersion, reportError, configPath, configError,
-  validateName, validateTarget, validateRegistry, loadConfig, selectTarget, saveConfig, errorDetails } from './target-config.js';
+  validateName, validateTarget, validateRegistry, loadConfig, selectTarget, saveConfig, errorDetails, acquireConfigLock } from './target-config.js';
 import type { WakeRegistry } from './target-config.js';
 
 type CommandName = 'register' | 'update' | 'rename' | 'remove' | 'list';
@@ -159,18 +159,27 @@ function main(argv: string[]) {
     const options = parseArguments(argv);
     if (isHelp(options)) { process.stdout.write(`${USAGE}\n`); return 0; }
     checkNodeVersion();
-    const config = loadConfig();
-    const result = applyOperation(config, options);
-    validateRegistry(config);
-    if (options.preflight) report(json, { status: 'ready', configPath: configPath(), operation: options.command });
-    else {
-      if (result.changed) saveConfig(config);
-      report(json, result);
+    const release = options.preflight || options.command === 'list' ? undefined : acquireConfigLock();
+    let saved = false;
+    let failure: unknown;
+    let result: TargetOperationResult;
+    try {
+      const config = loadConfig();
+      result = applyOperation(config, options);
+      validateRegistry(config);
+      if (!options.preflight && result.changed) { saveConfig(config); saved = true; }
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      release?.(saved, failure);
     }
+    if (options.preflight) report(json, { status: 'ready', configPath: configPath(), operation: options.command });
+    else report(json, result);
     return 0;
   } catch (error) {
     reportError(json, error);
-    return errorDetails(error).code === 'target_config_write_failed' ? 1 : 2;
+    return ['target_config_write_failed', 'target_config_lock_cleanup_failed'].includes(errorDetails(error).code || '') ? 1 : 2;
   }
 }
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

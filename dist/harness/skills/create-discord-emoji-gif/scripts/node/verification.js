@@ -99,9 +99,9 @@ async function publishVerified(source, output, prefix, verify, onTemporary = () 
     catch (error) {
         try {
             fs.rmSync(temporary, { force: true });
+            onTemporary('');
         }
         catch { }
-        onTemporary('');
         throw error;
     }
 }

@@ -2,6 +2,65 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.frameRecords = frameRecords;
 const fs = require("node:fs");
+// JSON.parse validates syntax first. Scan only direct property values afterward,
+// recovering integer tokens before the model performs exact timestamp arithmetic.
+function parseFrameRecord(raw) {
+    const record = JSON.parse(raw);
+    let index = 1;
+    const whitespace = () => { while (/\s/.test(raw[index] || '') && index < raw.length)
+        index++; };
+    const stringEnd = () => {
+        index++;
+        while (index < raw.length) {
+            const c = raw[index++];
+            if (c === '\\')
+                index++;
+            else if (c === '"')
+                break;
+        }
+    };
+    while (index < raw.length) {
+        whitespace();
+        if (raw[index] === '}')
+            break;
+        const keyStart = index;
+        stringEnd();
+        const key = JSON.parse(raw.slice(keyStart, index));
+        whitespace();
+        index++; // colon, already validated by JSON.parse
+        whitespace();
+        const start = index;
+        let depth = 0;
+        while (index < raw.length) {
+            const c = raw[index];
+            if (c === '"') {
+                stringEnd();
+                continue;
+            }
+            if (depth === 0 && (c === ',' || c === '}'))
+                break;
+            if (c === '{' || c === '[')
+                depth++;
+            else if (c === '}' || c === ']')
+                depth--;
+            index++;
+        }
+        if (key === 'best_effort_timestamp' || key === 'duration' || key === 'pkt_duration') {
+            const token = raw.slice(start, index).trim();
+            // Assign every occurrence so a later duplicate, of any type, wins.
+            if (/^-?[0-9]+$/.test(token) && (BigInt(token) > BigInt(Number.MAX_SAFE_INTEGER)
+                || BigInt(token) < BigInt(Number.MIN_SAFE_INTEGER)))
+                record[key] = token;
+            else
+                record[key] = JSON.parse(token);
+        }
+        if (raw[index] === ',')
+            index++;
+        else
+            break;
+    }
+    return record;
+}
 // The selected ffprobe JSON envelope, with at most one frame retained at a time.
 async function* frameRecords(filename, { highWaterMark = 64 * 1024, assertRunning = () => { } } = {}) {
     const input = fs.createReadStream(filename, { highWaterMark, encoding: 'utf8' });
@@ -33,7 +92,7 @@ async function* frameRecords(filename, { highWaterMark = 64 * 1024, assertRunnin
                     else if (c === '}' && --depth === 0) {
                         parts.push(chunk.slice(start, index + 1));
                         // The envelope parser admits only a complete object at this boundary.
-                        const record = JSON.parse(parts.join(''));
+                        const record = parseFrameRecord(parts.join(''));
                         parts = [];
                         phase = 'separator';
                         start = -1;

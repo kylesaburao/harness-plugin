@@ -118,3 +118,53 @@ test('interruption with duplicate score waiters prevents publication and cleans 
   assert.equal(fs.readFileSync(path.join(root,'calls'),'utf8'),'1');
   assert.equal(fs.readdirSync(root).filter(name=>name.startsWith('work-')).length,0);
 });
+
+for (const cause of ['verification', 'rename']) for (const persistent of [false, true]) for (const json of [false, true]) {
+  test(`${cause} failure retains publication temporary for ${persistent ? 'failed' : 'successful'} outer cleanup in ${json ? 'JSON' : 'plain'} report`, t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gif-publication-cleanup-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const output = path.join(root, 'output.gif'), unrelated = path.join(root, 'unrelated');
+    fs.writeFileSync(output, 'existing'); fs.writeFileSync(unrelated, 'untouched');
+    const child = spawnSync(process.execPath, ['-e', `
+      const fs = require('node:fs'), path = require('node:path');
+      const shared = require(${JSON.stringify(base + '/shared')});
+      const { runConverter } = require(${JSON.stringify(base + '/converter-runner')});
+      shared.validateInput = () => {}; shared.inspectInput = async () => [];
+      shared.checkGifskiPreflight = async () => ({ commands: { ffmpeg:'unused', ffprobe:'unused', gifski:'unused' } });
+      shared.preflightError = () => null;
+      shared.validateOutput = () => ({ output: ${JSON.stringify(output)} });
+      let temporary = '', attempts = 0;
+      const remove = fs.rmSync, rename = fs.renameSync;
+      fs.rmSync = (file, options) => {
+        if (file === temporary && (++attempts === 1 || ${persistent})) throw Object.assign(new Error('exact temporary deletion denied'), { code:'EACCES' });
+        return remove(file, options);
+      };
+      fs.renameSync = (from, to) => {
+        if (from === temporary && ${cause === 'rename'}) throw new Error('original rename failure');
+        return rename(from, to);
+      };
+      runConverter({ argv: [${json ? "'--json'," : ''} 'input'], env: { TMPDIR: ${JSON.stringify(root)} }, backend:'gifski', defaultScriptName:'test', workPrefix:'work-', convert: async state => {
+        const source = path.join(state.workDir, 'source.gif'); fs.writeFileSync(source, 'candidate');
+        await shared.publishVerified(source, state.output, 'test', async () => {
+          if (${cause === 'verification'}) throw new shared.RunError('verification_failed', 'original verification failure', 'repair verifier');
+          return {};
+        }, file => { state.outputTemp = file; if (file) temporary = file; });
+        return {};
+      }}).then(code => { fs.writeFileSync(${JSON.stringify(path.join(root, 'trace.json'))}, JSON.stringify({temporary, attempts})); process.exitCode = code; });
+    `], { encoding:'utf8', timeout:10000 });
+    assert.ifError(child.error); assert.equal(child.status, 1, child.stderr); assert.equal(child.stdout, '');
+    const trace = JSON.parse(fs.readFileSync(path.join(root, 'trace.json'), 'utf8'));
+    assert.equal(trace.attempts, 2); assert.equal(fs.existsSync(trace.temporary), persistent);
+    assert.equal(fs.readFileSync(output, 'utf8'), 'existing'); assert.equal(fs.readFileSync(unrelated, 'utf8'), 'untouched');
+    assert.match(child.stderr, new RegExp(`original ${cause} failure`));
+    if (json) {
+      const error = JSON.parse(child.stderr).error;
+      assert.equal(error.code, cause === 'rename' ? 'publication_failed' : 'verification_failed');
+      if (persistent) assert.deepEqual(error.cleanupFailures, [{ path: trace.temporary, code:'EACCES', condition:'exact temporary deletion denied' }]);
+      else assert.equal(error.cleanupFailures, undefined);
+    } else {
+      assert.equal(child.stderr.includes('exact temporary deletion denied'), persistent);
+      if (persistent) assert.ok(child.stderr.includes(trace.temporary));
+    }
+  });
+}
