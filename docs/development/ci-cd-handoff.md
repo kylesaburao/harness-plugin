@@ -12,6 +12,8 @@ Reduce CI/CD latency and maintenance overhead while retaining existing test cove
 Read `AGENTS.md` and the [build](build.md), [testing](testing.md), [dependencies](dependencies.md), and [versioning](versioning.md) guides. Reconcile drift without discarding work. Development and PR checks test `.build/harness/`; publication tests newly generated `dist/harness/`. Testing committed distribution alone misses unpublished source changes.
 
 Refer to [ci-cd-plan](ci-cd-plan.md) as the concrete implementation plan to follow.
+This document itself serves as the ongoing work-log and handoff to maintain and update as work progresses; it is
+the entry point in which Codex "/goal" is used to point the model across compactions.
 
 The [latest successful release run inspected during planning](https://github.com/kylesaburao/harness-plugin/actions/runs/35402301978) supplied this baseline:
 
