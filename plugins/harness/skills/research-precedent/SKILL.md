@@ -1,6 +1,6 @@
 ---
 name: research-precedent
-description: Research whether a problem, architecture, or proposed approach has precedent in the wider organization where such sources are reachable, in authoritative public sources and adopted industry practice, or in this repository's own history, then report what happened, why it happened, whether the original reasoning still applies, and what the evidence fails to establish. Use before committing to a consequential technical direction, such as choosing between architectures, planning a migration, changing an established subsystem, adopting a new infrastructure pattern, or diagnosing a recurring architectural problem, and use when asked whether something has been tried before, why a subsystem is built the way it is, or how the wider ecosystem approaches the same problem. Do not use for routine edits, bug fixes, formatting, or questions the current code answers directly.
+description: "Research technical precedent in repository history and external practice before consequential architecture, migration, or subsystem decisions, or for recurring architectural problems. Use when asked what was tried before, why a system was built that way, or how others solve similar problems. Not for routine edits, bug fixes, or current-code lookup."
 ---
 
 # Research historical precedent

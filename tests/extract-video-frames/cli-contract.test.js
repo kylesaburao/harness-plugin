@@ -42,6 +42,5 @@ test('skill documentation defines the entrypoint and forbids redundant reinspect
   assert.doesNotMatch(skill, /untested working draft/i);
   assert.match(skill, /Do not recreate or modify its FFmpeg commands/);
   assert.match(skill, /Do\s+not run ffprobe, ffmpeg/);
-  assert.match(skill, /10-bit BT\.2100 HEIC/);
   assert.doesNotMatch(skill, /OpenEXR|Linux\/WSL2/);
 });

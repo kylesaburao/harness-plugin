@@ -1,6 +1,6 @@
 ---
 name: inspect-development-environment
-description: Use when a durable inventory of a macOS or Linux development environment is needed to understand active tools, installed alternatives, providers, command resolution, project expectations, or reproducibility-relevant state. Do not use to diagnose a specific failure, modify or reproduce the environment, generate Docker or bootstrap artifacts, or inspect a different container, VM, or remote host.
+description: "Inspect this macOS or Linux development environment and create a durable inventory of tools, versions, providers, command resolution, and project requirements. Not for diagnosing failures, changing or reproducing the setup, or inspecting another host, VM, or container."
 ---
 
 # Inspect Development Environment

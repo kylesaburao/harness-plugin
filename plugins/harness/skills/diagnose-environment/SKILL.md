@@ -1,6 +1,6 @@
 ---
 name: diagnose-environment
-description: Diagnose a failure that lives in the machine rather than in the code - PATH and shell-init ordering, version-manager shims, architecture mismatch, stale caches and build artifacts, permissions, and configuration that drifted from what a clean install would produce. Use when the same code works elsewhere but not here, when a command resolves to an unexpected binary or version, when a build breaks only after an OS or toolchain upgrade, or when a fix only sticks after a reinstall. Do not use when the failure reproduces from a clean checkout on another machine or in CI, which points at the code rather than the environment.
+description: "Diagnose environment failures specific to this machine when code works elsewhere, a command uses the wrong binary or version, an upgrade breaks a build, or reinstalling only temporarily fixes it. Check PATH, shims, architecture, caches, and permissions. Not for failures reproduced in a clean checkout on another machine or in CI."
 ---
 
 # Diagnose an environment problem

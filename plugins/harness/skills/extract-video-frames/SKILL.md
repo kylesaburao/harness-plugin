@@ -1,6 +1,6 @@
 ---
 name: extract-video-frames
-description: Extract every presented frame from a video at full resolution, preserving PQ or HLG HDR as 10-bit BT.2100 HEIC and SDR as lossless PNG. Use when the user wants all video frames, or all frames inside an inclusive time window, without frame-rate conversion, resizing, deinterlacing, or tone mapping.
+description: "Extract all video frames, or every frame in an inclusive time range, at full resolution. Preserve PQ/HLG HDR as 10-bit HEIC and SDR as lossless PNG. Not for sampled frames, resizing, frame-rate conversion, deinterlacing, or tone mapping."
 compatibility: Requires Node.js 20.6.0 or newer, macOS 26.0 or newer, the macOS Command Line Tools, and ffmpeg-full with ffprobe, zscale, PNG, and TIFF support.
 ---
 

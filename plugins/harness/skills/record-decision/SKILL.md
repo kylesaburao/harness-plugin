@@ -1,6 +1,6 @@
 ---
 name: record-decision
-description: Capture a consequential technical decision as a durable record - the constraints that forced it, the alternatives rejected and why, how reversible it is, and what evidence would justify revisiting it. Use after choosing an architecture, a storage format, a dependency, or a deliberate deviation from a documented convention, and use when asked to write down why something is built the way it is. Do not use for routine implementation choices the code already makes obvious, for planning work not yet done, or for instructions aimed at future agents, which belong in CLAUDE.md or AGENTS.md.
+description: "Write a technical decision record after choosing an architecture, storage format, dependency, or exception to a convention. Use for consequential decisions or requests to document an existing decision's rationale. Not for routine choices, undecided plans, or agent instructions."
 ---
 
 # Record a decision

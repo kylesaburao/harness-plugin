@@ -1,6 +1,6 @@
 ---
 name: create-discord-emoji-gif
-description: Create an animated 128x128 GIF for a Discord emoji, with a strict target of fewer than 256000 bytes and VMAF-based quality selection. Use when the user asks for a Discord emoji GIF or an equivalent animated 128x128 GIF under 256 KB. Prefer clips of 3 seconds or less for better quality. Do not use for general video-to-GIF requests without these size and dimension targets, or when the user wants a video file rather than a GIF.
+description: "Create an animated Discord emoji GIF from a video, at 128x128 and under 256000 bytes (256 KB). Use for Discord emoji requests or GIFs with those same limits. Not for general video-to-GIF conversion with other size targets."
 compatibility: Requires Node.js 22.0.0 or newer, ffmpeg built with libvmaf, ffprobe, and either gifski or gifsicle.
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: back-up-directories
-description: Archive one directory into a dated ZIP and replicate it to several destinations, with validation, a confirmation prompt, a run lock, and cleanup of interrupted runs. Use when the user asks to back up a folder to external drives or cloud-synced directories, to make a dated archive of a project, or to repeat a configured backup. Do not use for incremental or versioned backups, for restoring from an archive, or as a substitute for a filesystem snapshot when the source is being written to.
+description: "Back up a folder as a dated ZIP copied to external drives or cloud-synced directories. Use for a new dated ZIP backup or a repeat of a configured backup. Not for incremental backups, versioned backup systems, restoring archives, or snapshots of files being written."
 ---
 
 # Back up directories
