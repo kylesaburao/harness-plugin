@@ -75,6 +75,9 @@ Resolve the script relative to this skill directory, not the caller's working di
 
 3. On failure, relay every reported `code`, `condition`, and `remedy` verbatim. Do not
    independently replace the remedy. Ask before running any installation command.
+   Relay every `cleanupFailures` entry, including its `path`, `code`, and `condition`.
+   Stop on incomplete cleanup, including after publication or a passed readiness check.
+   Do not autonomously delete retained paths or rerun extraction.
 
 4. On success, relay the output directory, frame count, format/depth, dynamic-range
    classification, dimensions, and actual first/last PTS from the script's report. Do
@@ -86,17 +89,22 @@ HLG TIFF-to-HEIC conversion. Window flags require an input.
 
 ## Result contract
 
-- Exit `0`: passed preflight or completed and published.
+- Exit `0`: passed preflight or completed and published, with cleanup complete.
 - Exit `2`: work never started because usage, environment, input, color, transform,
   window, or destination validation failed.
 - Exit `1`: extraction, structural checking, source-stability checking, or publication
-  failed after work began.
+  failed after work began, or cleanup failed after a successful operation.
 - `SIGHUP`, `SIGINT`, and `SIGTERM` exit `129`, `130`, and `143` after child termination
-  and temporary-output cleanup.
+  and attempted temporary-output cleanup. Incomplete cleanup adds an `interrupted`
+  diagnosis with retained paths.
 
 Plain failures use `ERROR [code]: condition` followed by `Remedy: ...`. JSON failures
 use `{"error":{"code","condition","remedy"}}`. A capability preflight can include a
-`failures` array containing the same stable triples.
+`failures` array containing the same stable triples. Cleanup failures appear as
+`cleanupFailures: [{path, code, condition}]`, preserving the primary error and exit
+status. Plain output includes the same paths and filesystem codes. A published artifact
+remains a successful `result` with `cleanupFailures` and exit `1`. A passed readiness
+check with cleanup failure remains `preflight` with `cleanupFailures` and exit `1`.
 
 A successful JSON run returns `{"result": ...}` with supplied and resolved input paths,
 selected stream, output directory, source and output color properties, PNG or HEIC

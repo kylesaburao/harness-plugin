@@ -533,16 +533,13 @@ async function representativeDecodePreflight(manager, state) {
   const hdr = state.media.color.dynamicRange !== 'sdr';
   const tiff = hdr ? path.join(state.encoderDirectory, 'preflight-frame.tiff') : null;
   const heic = hdr ? path.join(state.encoderDirectory, 'preflight-frame.heic') : null;
-  try {
-    const result = await manager.run(state.commands.ffmpeg, decodeProbeArguments(state));
-    if (mediaFailed(result)) throw new DraftError('input_decode_failed', `ffmpeg could not decode and convert a representative selected frame${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair or re-export the input with a supported video codec and color description', EXIT.CANNOT_START, childDetails('input_decode_failed', result));
-    if (!/(?:^|\n)frame=1(?:\r?\n|$)/.test(result.stdout)) throw new DraftError('input_decode_failed', 'ffmpeg completed the representative decode probe without producing the selected frame', 'repair or re-export the input with valid presentation timestamps', EXIT.CANNOT_START, childDetails('input_decode_failed', result));
-    if (hdr) {
-      await encodeHeic(manager, state, tiff, heic, EXIT.CANNOT_START);
-      await inspectHeic(manager, state, heic, path.basename(heic), EXIT.CANNOT_START);
-    }
-  } finally {
-    for (const filename of [tiff, heic].filter(Boolean)) { try { fs.rmSync(filename, { force: true }); } catch {} }
+  // The invocation-owned encoder directory is cleaned after children terminate.
+  const result = await manager.run(state.commands.ffmpeg, decodeProbeArguments(state));
+  if (mediaFailed(result)) throw new DraftError('input_decode_failed', `ffmpeg could not decode and convert a representative selected frame${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'repair or re-export the input with a supported video codec and color description', EXIT.CANNOT_START, childDetails('input_decode_failed', result));
+  if (!/(?:^|\n)frame=1(?:\r?\n|$)/.test(result.stdout)) throw new DraftError('input_decode_failed', 'ffmpeg completed the representative decode probe without producing the selected frame', 'repair or re-export the input with valid presentation timestamps', EXIT.CANNOT_START, childDetails('input_decode_failed', result));
+  if (hdr) {
+    await encodeHeic(manager, state, tiff, heic, EXIT.CANNOT_START);
+    await inspectHeic(manager, state, heic, path.basename(heic), EXIT.CANNOT_START);
   }
 }
 
@@ -561,7 +558,6 @@ async function syntheticEncoderPreflight(manager, state) {
     await inspectHeic(manager, state, heic, path.basename(heic), EXIT.CANNOT_START);
   } finally {
     state.media = originalMedia;
-    for (const filename of [tiff, heic]) { try { fs.rmSync(filename, { force: true }); } catch {} }
   }
 }
 
@@ -688,6 +684,7 @@ function emit(payload, json, kind = 'result') {
   if (json) { process.stdout.write(`${JSON.stringify({ [kind]: payload })}\n`); return; }
   if (kind === 'preflight') {
     process.stdout.write(`READY: ${payload.platform.os}${payload.expectedFrames ? `, ${payload.expectedFrames} frames -> ${payload.outputDirectory}` : ''}\n`);
+    emitCleanupFailures(payload.cleanupFailures);
     return;
   }
   process.stdout.write([
@@ -700,22 +697,40 @@ function emit(payload, json, kind = 'result') {
     `Actual PTS: ${payload.window.firstPtsSeconds}..${payload.window.lastPtsSeconds}`,
     'Status: complete structural checks',
   ].join('\n') + '\n');
+  emitCleanupFailures(payload.cleanupFailures);
+}
+
+function emitCleanupFailures(failures) {
+  if (failures?.length) {
+    process.stderr.write('Cleanup incomplete:\n');
+    for (const failure of failures) process.stderr.write(`  [${failure.code}] ${failure.path}: ${failure.condition}\n`);
+  }
+}
+
+function cleanupPaths(paths) {
+  const failures = [];
+  for (const pathname of paths.filter(Boolean)) {
+    try { fs.rmSync(pathname, { recursive: true, force: true }); }
+    catch (error) { failures.push({ path: path.resolve(pathname), code: error.code || 'cleanup_failed', condition: errorText(error) }); }
+  }
+  return failures;
 }
 
 function emitError(error, json) {
   const payload = { code: error.code || 'unexpected_failure', condition: error.condition || error.message, remedy: error.remedy || 'inspect the reported failure and run again' };
-  for (const key of ['failures', 'task', 'childExitCode', 'childSignal', 'stderr']) if (error[key] !== undefined) payload[key] = error[key];
+  for (const key of ['failures', 'task', 'childExitCode', 'childSignal', 'stderr', 'cleanupFailures']) if (error[key] !== undefined) payload[key] = error[key];
   if (json) process.stderr.write(`${JSON.stringify({ error: payload })}\n`);
   else {
     process.stderr.write(`ERROR [${payload.code}]: ${payload.condition}\n`);
     if (payload.failures) for (const failure of payload.failures) process.stderr.write(`  [${failure.code}] ${failure.condition}\n      Remedy: ${failure.remedy}\n`);
     process.stderr.write(`Remedy: ${payload.remedy}\n`);
+    emitCleanupFailures(payload.cleanupFailures);
     for (const key of ['task', 'childExitCode', 'childSignal', 'stderr']) if (payload[key] !== undefined) process.stderr.write(`${key}: ${JSON.stringify(payload[key])}\n`);
   }
 }
 
 function usage(basename = 'extract-video-frames.js') {
-  return `Usage: ${basename} [OPTIONS] INPUT_VIDEO\n\nOptions:\n  --start TIME       Inclusive start, decimal seconds or HH:MM:SS[.fraction]\n  --end TIME         Inclusive end, decimal seconds or HH:MM:SS[.fraction]\n  --preflight        Check readiness and input without creating frames\n  --json             Emit machine-readable readiness, result, or error data\n  -h, --help         Print this message\n  --                 Stop option parsing\n\nOutput:\n  <input-stem>-frames/frame-000001.png   for SDR\n  <input-stem>-frames/frame-000001.heic  for PQ or HLG HDR\n\nExit status:\n  0 success or passed preflight; 2 work did not start; 1 work started and failed\n  129 SIGHUP; 130 SIGINT; 143 SIGTERM\n`;
+  return `Usage: ${basename} [OPTIONS] INPUT_VIDEO\n\nOptions:\n  --start TIME       Inclusive start, decimal seconds or HH:MM:SS[.fraction]\n  --end TIME         Inclusive end, decimal seconds or HH:MM:SS[.fraction]\n  --preflight        Check readiness and input without creating frames\n  --json             Emit machine-readable readiness, result, or error data\n  -h, --help         Print this message\n  --                 Stop option parsing\n\nOutput:\n  <input-stem>-frames/frame-000001.png   for SDR\n  <input-stem>-frames/frame-000001.heic  for PQ or HLG HDR\n\nExit status:\n  0 success or passed preflight; 2 work did not start; 1 work or cleanup failed\n  129 SIGHUP; 130 SIGINT; 143 SIGTERM\n`;
 }
 
 async function compileEncoder(manager, state, encoderDirectory) {
@@ -766,6 +781,10 @@ async function main(argv) {
   const manager = new ProcessManager();
   let temporary = null;
   let encoderDirectory = null;
+  let payload;
+  let primaryError;
+  let kind = 'result';
+  let cleanupFailures;
   const signalHandler = signal => manager.interrupt(signal);
   for (const signal of Object.keys(SIGNAL_EXIT)) process.once(signal, signalHandler);
   try {
@@ -773,34 +792,47 @@ async function main(argv) {
     if (options.help) { process.stdout.write(usage(path.basename(process.argv[1] || 'extract-video-frames.js'))); return EXIT.OK; }
     encoderDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'extract-video-frames-encoder-'));
     const state = await prepare(manager, options, encoderDirectory);
-    if (manager.signal) return SIGNAL_EXIT[manager.signal];
-    if (options.preflight) { emit(preflightPayload(state), options.json, 'preflight'); return EXIT.OK; }
-    if (pathExists(state.paths.output)) throw new DraftError('output_collision', `output appeared during preflight: ${state.paths.output}`, 'move or remove the existing path, then run again');
-    temporary = fs.mkdtempSync(path.join(path.dirname(state.paths.output), `.${path.basename(state.paths.output)}.partial-`));
-    const extraction = await manager.run(state.commands.ffmpeg, ffmpegArguments(state, temporary), { progress: progressReporter(options.json) });
-    if (manager.signal) return SIGNAL_EXIT[manager.signal];
-    if (mediaFailed(extraction)) throw new DraftError('extraction_failed', `ffmpeg extraction failed${extraction.stderr.trim() ? `: ${extraction.stderr.trim()}` : ''}`, 'fix the reported decode, color-conversion, or image-encoder error and run again', EXIT.FAILED, childDetails('extraction', extraction));
-    if (state.media.color.dynamicRange !== 'sdr') await convertHdrFrames(manager, state, temporary);
-    if (manager.signal) return SIGNAL_EXIT[manager.signal];
-    const checks = await structuralChecks(manager, state, temporary);
     manager.assertRunning();
-    assertSourceUnchanged(state.paths);
-    await publishDirectoryNoReplace(manager, state, temporary);
-    temporary = null;
-    emit(resultPayload(state, checks), options.json);
-    return EXIT.OK;
+    if (options.preflight) {
+      payload = preflightPayload(state);
+      kind = 'preflight';
+    } else {
+      if (pathExists(state.paths.output)) throw new DraftError('output_collision', `output appeared during preflight: ${state.paths.output}`, 'move or remove the existing path, then run again');
+      temporary = fs.mkdtempSync(path.join(path.dirname(state.paths.output), `.${path.basename(state.paths.output)}.partial-`));
+      const extraction = await manager.run(state.commands.ffmpeg, ffmpegArguments(state, temporary), { progress: progressReporter(options.json) });
+      manager.assertRunning();
+      if (mediaFailed(extraction)) throw new DraftError('extraction_failed', `ffmpeg extraction failed${extraction.stderr.trim() ? `: ${extraction.stderr.trim()}` : ''}`, 'fix the reported decode, color-conversion, or image-encoder error and run again', EXIT.FAILED, childDetails('extraction', extraction));
+      if (state.media.color.dynamicRange !== 'sdr') await convertHdrFrames(manager, state, temporary);
+      manager.assertRunning();
+      const checks = await structuralChecks(manager, state, temporary);
+      manager.assertRunning();
+      assertSourceUnchanged(state.paths);
+      await publishDirectoryNoReplace(manager, state, temporary);
+      temporary = null;
+      payload = resultPayload(state, checks);
+    }
   } catch (error) {
-    if (manager.signal) return SIGNAL_EXIT[manager.signal];
-    emitError(error, options ? options.json : argv.includes('--json'));
-    return error.exitCode || EXIT.FAILED;
+    primaryError = error;
   } finally {
     if (manager.active.size || manager.signal) await manager.interrupt(manager.signal || 'SIGTERM');
-    if (temporary) { try { fs.rmSync(temporary, { recursive: true, force: true }); } catch {} }
-    if (encoderDirectory) { try { fs.rmSync(encoderDirectory, { recursive: true, force: true }); } catch {} }
+    cleanupFailures = cleanupPaths([temporary, encoderDirectory]);
     for (const signal of Object.keys(SIGNAL_EXIT)) process.removeListener(signal, signalHandler);
   }
+  const json = options ? options.json : argv.includes('--json');
+  if (manager.signal) {
+    if (cleanupFailures.length) emitError(new DraftError('interrupted', `interrupted by ${manager.signal}`, 'inspect the retained paths before deciding whether to remove them or run again', SIGNAL_EXIT[manager.signal], { cleanupFailures }), json);
+    return SIGNAL_EXIT[manager.signal];
+  }
+  if (primaryError) {
+    if (cleanupFailures.length) primaryError.cleanupFailures = cleanupFailures;
+    emitError(primaryError, json);
+    return primaryError.exitCode || EXIT.FAILED;
+  }
+  if (cleanupFailures.length) payload.cleanupFailures = cleanupFailures;
+  emit(payload, json, kind);
+  return cleanupFailures.length ? EXIT.FAILED : EXIT.OK;
 }
 
 if (require.main === module) main(process.argv.slice(2)).then(code => { process.exitCode = code; }, error => { emitError(error, process.argv.includes('--json')); process.exitCode = EXIT.FAILED; });
 
-module.exports = { descriptorMap, pixelProperties, emitError, ProcessManager, analyzePresentedFrames, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };
+module.exports = { cleanupPaths, descriptorMap, pixelProperties, emitError, ProcessManager, analyzePresentedFrames, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };
