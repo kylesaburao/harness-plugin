@@ -163,7 +163,7 @@ test('workflow limits credentials and tests each exact revision before bumping i
   assert.match(workflow, /ref: \$\{\{ github\.event_name == 'workflow_dispatch' && 'main' \|\| github\.sha \}\}/);
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /bump:\n\s+needs: test\n\s+permissions:\n\s+contents: write/);
-  assert.equal((workflow.match(/node-version: '22'/g) || []).length, 2);
+  assert.equal((workflow.match(/node-version: '26'/g) || []).length, 2);
   assert.equal((workflow.match(/python-version: '3\.12'/g) || []).length, 2);
   const reset = workflow.indexOf('git reset --hard origin/main');
   const derive = workflow.indexOf('level="$(node scripts/derive-bump-level.js)"', reset);
