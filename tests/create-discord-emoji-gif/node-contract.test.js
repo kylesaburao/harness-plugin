@@ -98,8 +98,8 @@ test('a non-GIF verification result preserves the destination and removes the pu
   fs.writeFileSync(output, 'old output');
   const manager = {
     async runOwned(task) {
-      assert.equal(task, 'output codec');
-      return { code: 0, stdout: 'png|video\n', stderr: '' };
+      assert.equal(task, 'output verification');
+      return { code: 0, stdout: JSON.stringify({ streams: [{ codec_name: 'png', codec_type: 'video' }] }), stderr: '' };
     },
   };
   try {
@@ -236,5 +236,53 @@ test('every ranking field wins independently of completion order', () => {
       assert.equal(backend.selectWinner([base, better]), better, field);
       assert.equal(backend.selectWinner([better, base]), better, field);
     }
+  }
+});
+
+test('combined final verification preserves values and rejects incomplete reports before publication', async t => {
+  const directory = temporaryDirectory('node-combined-probe.');
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const source = path.join(directory, 'source.gif');
+  const output = path.join(directory, 'output.gif');
+  fs.writeFileSync(source, 'winner');
+  fs.writeFileSync(output, 'existing');
+  const valid = { streams: [{ codec_name: 'gif', codec_type: 'video', width: 64, height: 64, nb_read_frames: '12' }], format: { duration: '0.500000' } };
+  const expected = { size: 64, maxBytes: 256000, referenceFrames: 12, fps: 24, bytes: 6, digest: shared.sha256File(source) };
+  let calls = 0;
+  let response = JSON.stringify(valid);
+  let child = {};
+  const manager = { runOwned: async (task, command, args, options) => {
+    calls += 1;
+    assert.equal(task, 'output verification');
+    assert.equal(command, 'ffprobe');
+    assert.ok(args.includes('-count_frames'));
+    assert.equal(args[args.indexOf('-select_streams') + 1], 'v:0');
+    assert.equal(args[args.indexOf('-of') + 1], 'json');
+    assert.deepEqual(options, { stdout: 'capture', stderr: 'capture' });
+    return { code: 0, signal: null, stdout: response, stderr: '', ...child };
+  } };
+  const verify = (file, overrides = {}) => shared.verifyFinalGif(manager, { ffprobe: 'ffprobe' }, file, { ...expected, ...overrides });
+  assert.deepEqual(await verify(source), { dimensions: '64x64', frameCount: 12, duration: '0.500000', bytes: 6, digest: expected.digest });
+  assert.equal(calls, 1);
+  const invalid = ['{', 'null', '{}', JSON.stringify({ ...valid, streams: [] }), JSON.stringify({ ...valid, streams: [valid.streams[0], valid.streams[0]] })];
+  for (const field of Object.keys(valid.streams[0])) {
+    const report = structuredClone(valid);
+    delete report.streams[0][field];
+    invalid.push(JSON.stringify(report));
+  }
+  for (const [field, value] of [['codec_name', ['gif']], ['codec_type', ['video']], ['width', '64'], ['height', null], ['nb_read_frames', 12], ['nb_read_frames', 'N/A'], ['nb_read_frames', '1']]) {
+    invalid.push(JSON.stringify({ ...valid, streams: [{ ...valid.streams[0], [field]: value }] }));
+  }
+  for (const duration of [undefined, null, 0.5, 'N/A', '0', '3']) invalid.push(JSON.stringify({ ...valid, format: { duration } }));
+  for (response of invalid) {
+    await assert.rejects(shared.publishVerified(source, output, 'test', verify), error => error.code === 'verification_failed' && Boolean(error.condition) && Boolean(error.remedy));
+    assert.equal(fs.readFileSync(output, 'utf8'), 'existing');
+    assert.equal(fs.readdirSync(directory).some(name => name.startsWith('.test-output.')), false);
+  }
+  response = JSON.stringify(valid);
+  for (const overrides of [{ maxBytes: 6 }, { bytes: 7 }, { digest: 'wrong' }]) await assert.rejects(verify(source, overrides), { code: 'verification_failed' });
+  for (child of [{ code: 0, stderr: 'decode error' }, { code: null, signal: 'SIGTERM', stderr: 'signal evidence' }, { code: 1, stderr: 'probe failed' }]) {
+    await assert.rejects(shared.publishVerified(source, output, 'test', verify), error => error.code === 'verification_failed' && error.task === 'output verification' && error.childExitCode === child.code && error.childSignal === (child.signal ?? null) && error.stderr === child.stderr);
+    assert.equal(fs.readFileSync(output, 'utf8'), 'existing');
   }
 });

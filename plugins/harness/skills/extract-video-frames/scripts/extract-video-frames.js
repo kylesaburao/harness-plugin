@@ -444,7 +444,7 @@ async function inspectInput(manager, state, options) {
   if (!stream.width || !stream.height) throw new DraftError('stream_unsupported', 'selected video stream has no valid dimensions', 're-export the source with a decodable video stream');
   const color = classifyStream(stream);
   const transform = displayTransform(stream);
-  const frameData = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-select_streams', String(stream.index), '-show_frames', '-show_entries', 'frame=best_effort_timestamp,duration,pkt_duration,color_range,color_space,color_primaries,color_transfer,pix_fmt', '-of', 'json', state.paths.supplied], 'input_unusable', 'ffprobe could not enumerate frame timestamps', 'repair or re-export the video with valid presentation timestamps');
+  const frameData = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-threads', '0', '-select_streams', String(stream.index), '-show_frames', '-show_entries', 'frame=best_effort_timestamp,duration,pkt_duration,color_range,color_space,color_primaries,color_transfer,pix_fmt', '-of', 'json', state.paths.supplied], 'input_unusable', 'ffprobe could not enumerate frame timestamps', 'repair or re-export the video with valid presentation timestamps');
   const timing = analyzePresentedFrames(frameData, color, { ...options, timeBase: stream.time_base });
   const orientedWidth = transform.swapsDimensions ? stream.height : stream.width;
   const orientedHeight = transform.swapsDimensions ? stream.width : stream.height;

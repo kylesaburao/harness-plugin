@@ -145,6 +145,15 @@ for (const kind of ['sdr', 'hdr', 'synthetic']) {
       assert.ok(compileIndex >= 0);
       if (input) assert.ok(calls.slice(0, compileIndex).some(call => call.args.includes('-show_frames')));
     }
+    if (input) {
+      const reports = calls.filter(call => call.args.includes('-show_frames'));
+      assert.equal(reports.length, 1);
+      const args = reports[0].args;
+      assert.equal(args[args.indexOf('-threads') + 1], '0');
+      assert.equal(args[args.indexOf('-select_streams') + 1], '0');
+      assert.equal(args[args.indexOf('-show_entries') + 1], 'frame=best_effort_timestamp,duration,pkt_duration,color_range,color_space,color_primaries,color_transfer,pix_fmt');
+      assert.ok(args.indexOf('-threads') < args.indexOf(input));
+    }
   });
 }
 

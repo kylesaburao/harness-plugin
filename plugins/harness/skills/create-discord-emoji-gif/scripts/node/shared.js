@@ -272,14 +272,21 @@ async function probeValue(manager, command, task, args, code = 'verification_fai
 }
 
 async function verifyFinalGif(manager, commands, file, expected) {
-  const codec = await probeValue(manager, commands.ffprobe, 'output codec', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,codec_type', '-of', "csv=s=|:p=0", file]);
-  if (codec !== 'gif|video') throw new RunError('verification_failed', `verification failed, expected a GIF video stream, got ${codec || 'missing'}`, 'repair or reinstall the selected GIF encoder, then run the conversion again');
-  const dimensions = await probeValue(manager, commands.ffprobe, 'output dimensions', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=s=x:p=0', file]);
-  if (dimensions !== `${expected.size}x${expected.size}`) throw new RunError('verification_failed', `verification failed, expected ${expected.size}x${expected.size}, got ${dimensions}`, 'repair or reinstall the selected GIF encoder, then run the conversion again');
-  const frames = await probeValue(manager, commands.ffprobe, 'output frames', ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'default=nw=1:nk=1', file]);
-  if (!/^[0-9]+$/.test(frames) || Number(frames) <= 1) throw new RunError('verification_failed', `verification failed, invalid frame count: ${frames || 'missing'}`, 'raise the selected FPS or use an input with more than one frame');
-  const duration = await probeValue(manager, commands.ffprobe, 'output duration', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file]);
-  if (!/^[0-9]+(?:\.[0-9]+)?$/.test(duration) || Number(duration) <= 0) throw new RunError('verification_failed', `verification failed, invalid duration: ${duration || 'missing'}`, 'use an input video with a positive duration and run the conversion again');
+  const text = await probeValue(manager, commands.ffprobe, 'output verification', ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,codec_type,width,height,nb_read_frames:format=duration', '-of', 'json', file]);
+  let report;
+  try { report = JSON.parse(text); } catch {
+    throw new RunError('verification_failed', 'verification failed, ffprobe returned invalid JSON for output verification', 'reinstall ffmpeg, then run the conversion again');
+  }
+  if (!Array.isArray(report?.streams) || report.streams.length !== 1 || !report.streams[0] || typeof report.streams[0] !== 'object' || Array.isArray(report.streams[0])) throw new RunError('verification_failed', 'verification failed, expected one selected output video stream', 'repair or reinstall the selected GIF encoder, then run the conversion again');
+  const stream = report.streams[0];
+  const codec = `${stream.codec_name || 'missing'}|${stream.codec_type || 'missing'}`;
+  if (stream.codec_name !== 'gif' || stream.codec_type !== 'video') throw new RunError('verification_failed', `verification failed, expected a GIF video stream, got ${codec || 'missing'}`, 'repair or reinstall the selected GIF encoder, then run the conversion again');
+  const dimensions = `${stream.width}x${stream.height}`;
+  if (!Number.isInteger(stream.width) || !Number.isInteger(stream.height) || dimensions !== `${expected.size}x${expected.size}`) throw new RunError('verification_failed', `verification failed, expected ${expected.size}x${expected.size}, got ${dimensions}`, 'repair or reinstall the selected GIF encoder, then run the conversion again');
+  const frames = stream.nb_read_frames;
+  if (typeof frames !== 'string' || !/^[0-9]+$/.test(frames) || Number(frames) <= 1) throw new RunError('verification_failed', `verification failed, invalid frame count: ${frames || 'missing'}`, 'raise the selected FPS or use an input with more than one frame');
+  const duration = report.format?.duration;
+  if (typeof duration !== 'string' || !/^[0-9]+(?:\.[0-9]+)?$/.test(duration) || Number(duration) <= 0) throw new RunError('verification_failed', `verification failed, invalid duration: ${duration || 'missing'}`, 'use an input video with a positive duration and run the conversion again');
   if (!Number.isSafeInteger(expected.referenceFrames) || expected.referenceFrames <= 0 || !Number.isFinite(expected.fps) || expected.fps <= 0 || Math.abs(Number(duration) - expected.referenceFrames / 24) > durationTolerance(expected.fps)) throw new RunError('verification_failed', `verification failed, GIF duration ${duration}s differs from reference ${expected.referenceFrames / 24}s`, 'use a candidate that covers the complete reference clip');
   const bytes = fs.statSync(file).size;
   if (bytes >= expected.maxBytes) throw new RunError('verification_failed', `verification failed, output is ${bytes} bytes, limit is strictly below ${expected.maxBytes}`, 'increase MAX_BYTES or reduce GIF_SIZE, then run the conversion again');
