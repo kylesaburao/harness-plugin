@@ -10,6 +10,8 @@ const policy = read('harness-advisor/SKILL.md');
 const contract = read('harness-advisor/references/contract.md');
 const codex = read('harness-advisor/references/host-codex.md');
 const claude = read('harness-advisor/references/host-claude.md');
+const carryover = read('harness-advisor/references/carryover.md');
+const caching = read('harness-advisor/references/caching.md');
 const activation = fs.readFileSync(path.join(root, 'install-harness-plugin-capabilities/references/activation-instructions.md'), 'utf8');
 const [codexBlock, claudeBlock] = [...activation.matchAll(/```markdown\n([\s\S]*?)```/g)].map(match => normalize(match[1]));
 function includes(text, phrases) {
@@ -40,20 +42,23 @@ test('executor prepares substantive state-specific evidence without child retrie
 });
 
 test('context retains ordered records, four sections, actual capacity and compaction accounting', () => {
-  includes(policy, ['CONSTRAINT', 'EVIDENCE', 'DECISION', 'FAILURE', 'SUPERSEDES',
+  includes(carryover, ['CONSTRAINT', 'EVIDENCE', 'DECISION', 'FAILURE', 'SUPERSEDES',
     'monotonically increasing IDs', 'names the old record, which stays unchanged',
-    'Advisor speculation is not evidence', 'Copy the baseline and existing serialized ledger verbatim',
-    'Append records without reordering old entries', 'obsolete material, confusing supersessions',
+    'Advisor speculation is not evidence', 'obsolete material, confusing supersessions',
     'Do not remove necessary evidence merely to shorten the prompt',
     'no fixed Harness input token, byte, or file-count limit', 'Respect actual host/model request capacity',
     'room for output and host instructions', 'explicit user cost or latency budgets',
-    'Report unavoidable omissions', 'Missing telemetry alone does not block',
+    'Report unavoidable omissions', 'Missing telemetry alone does not block']);
+  includes(caching, ['not the semantic epoch', 'policy version (4)']);
+  includes(policy, ['[carryover.md](references/carryover.md)', '[caching.md](references/caching.md)',
+    'Copy the baseline and existing serialized ledger verbatim',
+    'Append records without reordering old entries',
     'Compaction preserves useful task facts and all task accounting', '**not** reset task call counts',
-    'not the semantic epoch', 'policy version (4)', 'sparse schema-version-1']);
+    'sparse schema-version-1']);
   const sections = ['[TASK BASELINE]', '[DURABLE CARRYOVER]', '[NEW EVIDENCE]', '[QUESTION]'];
   const indices = sections.map(section => policy.indexOf(section));
   assert.ok(indices.every((index, i) => index >= 0 && (i === 0 || index > indices[i - 1])));
-  assert.doesNotMatch(policy, /policy version \(3\)|8,000|16,000/);
+  for (const text of [policy, carryover, caching]) assert.doesNotMatch(text, /policy version \(3\)|8,000|16,000/);
 });
 
 test('separate budgets, failed dispatch reservation, same-family gate and unknown accounting survive', () => {
