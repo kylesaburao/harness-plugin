@@ -56,7 +56,9 @@ interface ArchiveDependencies {
 }
 interface CopyDependencies { createReadStream?: typeof fs.createReadStream; createWriteStream?: typeof fs.createWriteStream }
 type BackupStage = { phase: 'archive-start' | 'archive-complete' }
-  | { phase: 'copy-start'; destination: string; index: number; total: number };
+  | { phase: 'copy-start'; destination: string; index: number; total: number }
+  | { phase: 'copy-parallel-start'; total: number }
+  | { phase: 'copy-complete'; destination: string; index: number; total: number; failed: boolean };
 interface ExecutionDependencies {
   archive?: ArchiveDependencies;
   copy?: CopyDependencies;
@@ -88,6 +90,12 @@ const SIGNAL_EXIT: Readonly<Record<string, number>> = Object.freeze({ SIGHUP: 12
 const MINIMUM_NODE = [24, 0, 0];
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
+// Earlier releases staged archives (never copies) in the system
+// temporary directory. Such a file is removed only once it is old enough that
+// no run of an older installed release, which takes a different lock, can
+// still be writing it.
+const LEGACY_STAGING_PATTERN = new RegExp(`^\\.backup-archive-${UUID_V4_PATTERN}\\.tmp$`, 'i');
+const LEGACY_STAGING_MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
 // Per-user Harness state lives under ~/.harness-plugin/<skill>/: the run lock
 // and the installed npm dependencies. Neither lives in the installed skill
 // directory, which a plugin upgrade replaces.
@@ -514,7 +522,6 @@ function resolveRunLockPath(environment = process.env, homeDirectory = os.homedi
         'usage_error',
         'BACKUP_LOCK_PATH must be an absolute path.',
         'set BACKUP_LOCK_PATH to an absolute path or unset it to use the default lock location',
-        EXIT.VALIDATION,
       );
     }
     return path.normalize(environment.BACKUP_LOCK_PATH);
@@ -525,12 +532,23 @@ function resolveRunLockPath(environment = process.env, homeDirectory = os.homedi
 async function acquireRunLock(lockPath = resolveRunLockPath()) {
   const token = crypto.randomUUID();
   const owner = { pid: process.pid, hostname: os.hostname(), token };
-  await fsp.mkdir(path.dirname(lockPath), { recursive: true, mode: 0o700 });
+  const directory = path.dirname(lockPath);
+  const unavailable = (error: unknown) => new StartupError(
+    'lock_directory_failed',
+    `Cannot create the run lock in ${directory}: ${failureDetails(error).code || failureDetails(error).message}.`,
+    `make ${directory} a writable directory (or set BACKUP_LOCK_PATH to an absolute path in a writable directory) and run the same command again`,
+    EXIT.VALIDATION,
+  );
+  try {
+    await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    throw unavailable(error);
+  }
   try {
     await fsp.writeFile(lockPath, JSON.stringify(owner), { flag: 'wx' });
     return new RunLock(lockPath, token);
   } catch (error) {
-    if (failureDetails(error).code !== 'EEXIST') throw error;
+    if (failureDetails(error).code !== 'EEXIST') throw unavailable(error);
     throw new Error(
       `Another backup run may already be active (lock: ${lockPath}). ` +
       'If no backup is running, inspect and remove this stale lock manually.',
@@ -586,6 +604,49 @@ async function cleanupStartupArtifacts(plan: BackupPlan, dependencies: StartupCl
     });
     if (unexpected.length) throw unexpected[0];
   }
+  return retained;
+}
+
+interface LegacyStagingDependencies extends StartupCleanupDependencies {
+  tmpdir?: string;
+  now?: number;
+  lstat?: (file: string) => Promise<{ isFile(): boolean; uid: number; mtimeMs: number }>;
+}
+
+// Removes this user's staging archives that older releases left in the system
+// temporary directory. The directory is not part of the plan, so nothing here
+// fails the run: an unreadable directory is skipped, and a file that cannot be
+// inspected or removed is returned as a retained path.
+async function cleanupLegacyStaging(plan: BackupPlan, dependencies: LegacyStagingDependencies = {}): Promise<CleanupFailure[]> {
+  const removeFile = dependencies.removeFile || fsp.rm;
+  const lstat = dependencies.lstat || ((file: string) => fsp.lstat(file));
+  const uid = dependencies.uid !== undefined ? dependencies.uid
+    : (typeof process.getuid === 'function' ? process.getuid() : null);
+  const now = dependencies.now ?? Date.now();
+  let directory: string;
+  let entries: fs.Dirent[];
+  try {
+    directory = await fsp.realpath(dependencies.tmpdir ?? os.tmpdir());
+    if ([plan.output, ...plan.targets].some((scanned) => scanned.canonicalPath === directory)) return [];
+    entries = await fsp.readdir(directory, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const candidates = entries
+    .filter((entry) => LEGACY_STAGING_PATTERN.test(entry.name) && (entry.isFile() || direntTypeIsUnknown(entry)))
+    .map((entry) => path.join(directory, entry.name));
+  const outcomes = await Promise.allSettled(candidates.map(async (entryPath) => {
+    const details = await lstat(entryPath);
+    if (!details.isFile()) return;
+    if (uid !== null && details.uid !== uid) return;
+    if (now - details.mtimeMs < LEGACY_STAGING_MINIMUM_AGE_MS) return;
+    await removeFile(entryPath, { force: true });
+  }));
+  const retained: CleanupFailure[] = [];
+  outcomes.forEach((outcome, index) => {
+    if (outcome.status === 'fulfilled' || failureDetails(outcome.reason).code === 'ENOENT') return;
+    retained.push({ path: candidates[index]!, error: outcome.reason });
+  });
   return retained;
 }
 
@@ -762,7 +823,7 @@ interface FanOutCopy { target: BackupTarget; temporary: string; output: fs.Write
 // that target; its partial temporary file stays tracked for context cleanup.
 // Returns each target's failure, or null when it was installed, in target
 // order. Interruption is thrown, not returned.
-async function copyToTargets(source: string, targets: BackupTarget[], context: OperationContext, dependencies: CopyDependencies = {}): Promise<unknown[]> {
+async function copyToTargets(source: string, targets: BackupTarget[], context: OperationContext, dependencies: CopyDependencies = {}, onSettled: (index: number, failure: unknown) => void = () => {}): Promise<unknown[]> {
   const copies: FanOutCopy[] = targets.map((target) => ({
     target,
     temporary: shortTempPath(target.directory.canonicalPath, 'copy'),
@@ -826,12 +887,15 @@ async function copyToTargets(source: string, targets: BackupTarget[], context: O
     }
     await closeAll();
     context.throwIfInterrupted();
-    await Promise.all(live().map(async (copy) => {
-      try {
-        await installCopy(copy.temporary, copy.target, context);
-      } catch (error) {
-        failCopy(copy, error);
+    await Promise.all(copies.map(async (copy, index) => {
+      if (copy.failure === null) {
+        try {
+          await installCopy(copy.temporary, copy.target, context);
+        } catch (error) {
+          failCopy(copy, error);
+        }
       }
+      if (!context.interruption) onSettled(index, copy.failure);
     }));
     context.throwIfInterrupted();
     return copies.map((copy) => copy.failure);
@@ -901,12 +965,15 @@ async function execute(plan: BackupPlan, context: OperationContext, dependencies
       const stagingTarget = plan.stagingTarget ?? null;
       const fanOutTargets = plan.copyTargets.filter((target) => target !== stagingTarget);
       context.throwIfInterrupted();
-      plan.copyTargets.forEach((target, index) => {
-        onStage({ phase: 'copy-start', destination: target.destination, index, total: plan.copyTargets.length });
+      const total = plan.copyTargets.length;
+      const settled = (target: BackupTarget, failure: unknown) => onStage({
+        phase: 'copy-complete', destination: target.destination, index: plan.copyTargets.indexOf(target), total, failed: failure !== null,
       });
+      onStage({ phase: 'copy-parallel-start', total });
       const failures = new Map<BackupTarget, unknown>();
       if (fanOutTargets.length) {
-        const outcomes = await copyToTargets(temporaryArchive, fanOutTargets, context, dependencies.copy);
+        const outcomes = await copyToTargets(temporaryArchive, fanOutTargets, context, dependencies.copy,
+          (index, failure) => settled(fanOutTargets[index]!, failure));
         fanOutTargets.forEach((target, index) => {
           if (outcomes[index] !== null) failures.set(target, outcomes[index]);
         });
@@ -914,9 +981,11 @@ async function execute(plan: BackupPlan, context: OperationContext, dependencies
       if (stagingTarget) {
         try {
           await installCopy(temporaryArchive, stagingTarget, context);
+          settled(stagingTarget, null);
         } catch (caught) {
           context.throwIfInterrupted();
           failures.set(stagingTarget, caught);
+          settled(stagingTarget, caught);
         }
       }
       for (const target of plan.copyTargets) if (!failures.has(target)) copied.push(target.destination);
@@ -1074,6 +1143,7 @@ async function main() {
       runLock = await acquireRunLock(lockPath);
       context.throwIfInterrupted();
       reportRetainedStartupArtifacts(await cleanupStartupArtifacts(plan));
+      reportRetainedStartupArtifacts(await cleanupLegacyStaging(plan));
       context.throwIfInterrupted();
     } catch (caught) {
       const error = mutableFailure(caught);
@@ -1086,6 +1156,10 @@ async function main() {
         if (status.phase === 'archive-complete') humanLog('Archive created.');
         if (status.phase === 'copy-start') {
           humanLog(`Replicating copy ${status.index + 1} of ${status.total}: ${status.destination}`);
+        }
+        if (status.phase === 'copy-parallel-start') humanLog(`Replicating ${status.total} copies in parallel...`);
+        if (status.phase === 'copy-complete') {
+          humanLog(`Copy ${status.index + 1} of ${status.total} ${status.failed ? 'failed' : 'finished'}: ${status.destination}`);
         }
       },
       archive: {
@@ -1130,7 +1204,8 @@ async function main() {
       copied.forEach((destination, index) => humanLog(`${INDENT_PREFIX}${index + 1}. ${destination}`));
     }
   } catch (error) {
-    fail(failureDetails(error).message, failureDetails(error).exitCode || EXIT.ARCHIVE);
+    if (error instanceof StartupError) failStartup(error);
+    else fail(failureDetails(error).message, failureDetails(error).exitCode || EXIT.ARCHIVE);
   } finally {
     process.removeListener('SIGINT', onSigint);
     process.removeListener('SIGTERM', onSigterm);
@@ -1157,6 +1232,7 @@ export {
   backupFilename,
   copyAtomically,
   cleanupStartupArtifacts,
+  cleanupLegacyStaging,
   acquireRunLock,
   createArchive,
   execute,

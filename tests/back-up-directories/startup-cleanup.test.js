@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { cleanupStartupArtifacts } = require(require('../helpers/plugin-paths').artifactPath('skills/back-up-directories/scripts/backup.js'));
+const { cleanupStartupArtifacts, cleanupLegacyStaging } = require(require('../helpers/plugin-paths').artifactPath('skills/back-up-directories/scripts/backup.js'));
 
 function unknownDirent(name) {
   return {
@@ -107,4 +107,53 @@ test('startup cleanup raises unexpected removal failures', async (t) => {
     cleanupStartupArtifacts({ output: directory, targets: [] }, { removeFile }),
     { code: 'EIO' },
   );
+});
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const oldArchive = '.backup-archive-33333333-3333-4333-8333-333333333333.tmp';
+const freshArchive = '.backup-archive-44444444-4444-4444-9444-444444444444.tmp';
+const foreignArchive = '.backup-archive-55555555-5555-4555-a555-555555555555.tmp';
+const legacyCopy = '.backup-copy-66666666-6666-4666-b666-666666666666.tmp';
+
+async function legacyFixture(t) {
+  const { canonicalPath, directory } = await cleanupFixture(t, [oldArchive, freshArchive, foreignArchive, legacyCopy, 'unrelated.tmp']);
+  const plan = { output: { ...directory, canonicalPath: `${canonicalPath}-elsewhere` }, targets: [] };
+  const now = Date.now();
+  const lstat = async (file) => ({
+    isFile: () => true,
+    uid: path.basename(file) === foreignArchive ? 4242 : 1000,
+    mtimeMs: path.basename(file) === freshArchive ? now - 60 * 1000 : now - 2 * DAY_MS,
+  });
+  return { tmpdir: canonicalPath, plan, now, lstat };
+}
+
+test('legacy staging cleanup removes only owned archive staging files untouched for a day', async (t) => {
+  const { tmpdir, plan, now, lstat } = await legacyFixture(t);
+
+  const retained = await cleanupLegacyStaging(plan, { tmpdir, now, lstat, uid: 1000 });
+
+  assert.deepEqual(retained, []);
+  assert.deepEqual((await fsp.readdir(tmpdir)).sort(), [foreignArchive, freshArchive, legacyCopy, 'unrelated.tmp'].sort());
+});
+
+test('legacy staging cleanup skips a temporary directory the plan already scans', async (t) => {
+  const { tmpdir, plan, now, lstat } = await legacyFixture(t);
+  plan.targets.push({ canonicalPath: tmpdir });
+
+  assert.deepEqual(await cleanupLegacyStaging(plan, { tmpdir, now, lstat, uid: 1000 }), []);
+  assert.ok((await fsp.readdir(tmpdir)).includes(oldArchive));
+});
+
+test('legacy staging cleanup ignores an unreadable temporary directory', async () => {
+  const plan = { output: { canonicalPath: '/nonexistent-output' }, targets: [] };
+  assert.deepEqual(await cleanupLegacyStaging(plan, { tmpdir: path.join(os.tmpdir(), 'backup-legacy-missing-directory') }), []);
+});
+
+test('legacy staging cleanup retains files it cannot remove instead of failing', async (t) => {
+  const { tmpdir, plan, now, lstat } = await legacyFixture(t);
+  const removeFile = async () => { throw Object.assign(new Error('i/o error'), { code: 'EIO' }); };
+
+  const retained = await cleanupLegacyStaging(plan, { tmpdir, now, lstat, uid: 1000, removeFile });
+
+  assert.deepEqual(retained.map((item) => [path.basename(item.path), item.error.code]), [[oldArchive, 'EIO']]);
 });

@@ -202,8 +202,7 @@ test('a staging-only archive is read once and written to every target in paralle
   await firstChunkWritten;
 
   try {
-    assert.deepEqual(stages.filter((stage) => stage.phase === 'copy-start'), plan.copyTargets.map((target, index) => (
-      { phase: 'copy-start', destination: target.destination, index, total: 2 })));
+    assert.deepEqual(stages.filter((stage) => stage.phase.startsWith('copy-')), [{ phase: 'copy-parallel-start', total: 2 }]);
     for (const target of plan.copyTargets) {
       assert.equal((await fsp.readdir(target.directory.canonicalPath)).filter((name) => COPY_TEMPORARY.test(name)).length, 1);
       await assert.rejects(fsp.access(target.destination), { code: 'ENOENT' });
@@ -222,6 +221,10 @@ test('a staging-only archive is read once and written to every target in paralle
   }
   assert.deepEqual(await fsp.readdir(plan.output.canonicalPath), []);
   assert.equal(context.temporaryPaths.size, 0);
+  assert.deepEqual(
+    stages.filter((stage) => stage.phase === 'copy-complete').sort((left, right) => left.index - right.index),
+    plan.copyTargets.map((target, index) => ({ phase: 'copy-complete', destination: target.destination, index, total: 2, failed: false })),
+  );
 });
 
 test('a failed parallel target reports EXIT.COPY with the other outcomes and leaves its temporary file to cleanup', async (t) => {

@@ -80,7 +80,7 @@ at every target.
 | --- | --- |
 | `0` | The archive was created and every copy was installed, or the user answered no at the prompt |
 | `2` | Did not start: `usage_error`, `dependency_missing`, or `node_version_unsupported` |
-| `3` | Did not start: `config_invalid`. Nothing was archived or copied |
+| `3` | Did not start: `config_invalid`, or `lock_directory_failed` when the run lock cannot be created. Nothing was archived or copied |
 | `4` | Archive creation failed |
 | `5` | A copy failed. Copies installed before it remain in place |
 | `129` / `130` / `143` | Interrupted by `SIGHUP`, `SIGINT`, or `SIGTERM`. Temporary artifacts were cleaned up |

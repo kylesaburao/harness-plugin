@@ -866,7 +866,7 @@ test('run lock path honors an absolute override and rejects a relative override'
   assert.equal(resolveRunLockPath({ BACKUP_LOCK_PATH: absolute }, '/unused-home'), absolute);
   assert.throws(
     () => resolveRunLockPath({ BACKUP_LOCK_PATH: 'relative.lock' }, '/unused-home'),
-    { code: 'usage_error', exitCode: EXIT.VALIDATION, message: /BACKUP_LOCK_PATH must be an absolute path/ },
+    { code: 'usage_error', exitCode: EXIT.USAGE, message: /BACKUP_LOCK_PATH must be an absolute path/ },
   );
 });
 
@@ -982,7 +982,7 @@ test('CLI rejects a relative BACKUP_LOCK_PATH before creating a lock', async (t)
     environment: { BACKUP_LOCK_PATH: 'relative.lock' },
   });
 
-  assert.equal(result.exitCode, EXIT.VALIDATION);
+  assert.equal(result.exitCode, EXIT.USAGE);
   assert.match(result.stderr, /BACKUP_LOCK_PATH must be an absolute path/);
   assert.deepEqual(await fsp.readdir(output), []);
 });
@@ -1002,7 +1002,7 @@ test('CLI reports a relative BACKUP_LOCK_PATH in the JSON error contract', async
     environment: { BACKUP_LOCK_PATH: 'relative.lock' },
   });
 
-  assert.equal(result.exitCode, EXIT.VALIDATION);
+  assert.equal(result.exitCode, EXIT.USAGE);
   assert.equal(result.stdout, '');
   const { error } = JSON.parse(result.stderr);
   assert.deepEqual(Object.keys(error).sort(), ['code', 'condition', 'remedy']);
@@ -1010,6 +1010,80 @@ test('CLI reports a relative BACKUP_LOCK_PATH in the JSON error contract', async
   assert.equal(error.condition, 'BACKUP_LOCK_PATH must be an absolute path.');
   assert.match(error.remedy, /absolute path/);
   assert.deepEqual(await fsp.readdir(output), []);
+});
+
+for (const json of [false, true]) {
+  test(`CLI reports an unusable lock directory as lock_directory_failed${json ? ' in JSON' : ''}`, async (t) => {
+    const root = await temporaryRoot(t, 'backup-cli-lock-directory-');
+    const { source, output } = await makeDirectories(root, ['source', 'output']);
+    const config = path.join(root, 'config.json');
+    await fsp.writeFile(config, JSON.stringify({ sourceDirectory: source, outputDirectory: output, targetDirectories: [output] }));
+    const blocker = path.join(root, 'not-a-directory');
+    await fsp.writeFile(blocker, 'file');
+
+    const result = await runCli(t, [...(json ? ['--json'] : []), config], {
+      input: 'yes\n',
+      environment: { BACKUP_LOCK_PATH: path.join(blocker, 'run.lock') },
+    });
+
+    assert.equal(result.exitCode, EXIT.VALIDATION, result.stderr);
+    if (json) {
+      assert.equal(result.stdout, '');
+      const { error } = JSON.parse(result.stderr.trimEnd().split('\n').at(-1));
+      assert.equal(error.code, 'lock_directory_failed');
+      assert.match(error.condition, new RegExp(`Cannot create the run lock in ${blocker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+      assert.match(error.remedy, /a writable directory/);
+    } else {
+      const lines = result.stderr.trimEnd().split('\n');
+      assert.match(lines.at(-2), /^ERROR \[lock_directory_failed\]: Cannot create the run lock in /);
+      assert.match(lines.at(-1), /^Remedy: make .*not-a-directory a writable directory/);
+    }
+    assert.deepEqual(await fsp.readdir(output), []);
+  });
+}
+
+test('CLI reports a lock directory it cannot write as lock_directory_failed', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async (t) => {
+  const root = await temporaryRoot(t, 'backup-cli-lock-readonly-');
+  const { source, output } = await makeDirectories(root, ['source', 'output']);
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({ sourceDirectory: source, outputDirectory: output, targetDirectories: [output] }));
+  const locked = path.join(root, 'locked');
+  await fsp.mkdir(locked, { mode: 0o500 });
+  t.after(() => fsp.chmod(locked, 0o700).catch(() => {}));
+
+  const result = await runCli(t, ['--json', config], { input: 'yes\n', environment: { BACKUP_LOCK_PATH: path.join(locked, 'run.lock') } });
+
+  assert.equal(result.exitCode, EXIT.VALIDATION, result.stderr);
+  assert.equal(JSON.parse(result.stderr.trimEnd().split('\n').at(-1)).error.code, 'lock_directory_failed');
+  assert.deepEqual(await fsp.readdir(output), []);
+});
+
+test('CLI reports parallel copies with one start line and a completion line per copy', async (t) => {
+  const root = await temporaryRoot(t, 'backup-cli-parallel-progress-');
+  const { source, first, second, third } = await makeDirectories(root, ['source', 'first', 'second', 'third']);
+  await fsp.writeFile(path.join(source, 'file.txt'), 'data');
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({ sourceDirectory: source, targetDirectories: [first, second, third] }));
+  const environment = { BACKUP_LOCK_PATH: path.join(root, 'lock') };
+
+  const human = await runCli(t, [config], { input: 'yes\n', environment });
+  assert.equal(human.exitCode, 0, human.stderr);
+  const output = `${human.stdout}${human.stderr}`.split('\n');
+  const start = output.findIndex((line) => line === 'Replicating 3 copies in parallel...');
+  assert.ok(start >= 0, human.stdout);
+  const completions = output.map((line, index) => [line, index]).filter(([line]) => /^Copy [0-9] of 3 finished: /.test(line));
+  assert.equal(completions.length, 3);
+  assert.ok(completions.every(([, index]) => index > start));
+  assert.deepEqual(completions.map(([line]) => line.slice(0, 'Copy 1 of 3'.length)).sort(), ['Copy 1 of 3', 'Copy 2 of 3', 'Copy 3 of 3']);
+  assert.equal(output.some((line) => line.startsWith('Replicating copy ')), false);
+
+  const again = await makeDirectories(root, ['fourth', 'fifth', 'sixth']);
+  const jsonConfig = path.join(root, 'json-config.json');
+  await fsp.writeFile(jsonConfig, JSON.stringify({ sourceDirectory: source, targetDirectories: Object.values(again) }));
+  const json = await runCli(t, ['--json', jsonConfig], { input: 'yes\n', environment });
+  assert.equal(json.exitCode, 0, json.stderr);
+  assert.equal(json.stdout.trimEnd().split('\n').length, 1);
+  assert.equal(JSON.parse(json.stdout).result.copies.length, 3);
 });
 
 test('CLI cancellation leaves backup directories untouched', async (t) => {
