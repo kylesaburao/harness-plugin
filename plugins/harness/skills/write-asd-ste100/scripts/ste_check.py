@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left
+from collections.abc import Iterable
 import argparse
 import errno
 import json
@@ -52,12 +53,26 @@ Severity = Category = ActionType = str
 Position = SourceSpan = Action = Finding = dict
 
 
-def mask_span(text: str, start: int, end: int) -> str:
-    return text[:start] + " " * (end - start) + text[end:]
+def mask_spans(text: str, spans: Iterable[tuple[int, int]]) -> str:
+    """Mask valid character-offset spans, including newlines, in one reconstruction."""
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if start == end:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    pieces = []
+    cursor = 0
+    for start, end in merged:
+        pieces.extend((text[cursor:start], " " * (end - start)))
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces)
 
 
 def protect_markdown(text: str) -> str:
-    masked = text
     protected: list[tuple[int, int]] = []
     fence = None
     offset = 0
@@ -79,9 +94,7 @@ def protect_markdown(text: str) -> str:
     for pattern in PROTECTED:
         for match in pattern.finditer(text):
             protected.append(match.span())
-    for start, end in sorted(protected, reverse=True):
-        masked = mask_span(masked, start, end)
-    return masked
+    return mask_spans(text, protected)
 
 
 def position(newline_offsets: list[int], offset: int) -> Position:
@@ -262,9 +275,7 @@ def check_file(
                     evidence={"sentence_count": count, "limit": 6},
                 ))
 
-    vocabulary_masked = masked
-    for match in contraction_matches:
-        vocabulary_masked = mask_span(vocabulary_masked, match.start(), match.end())
+    vocabulary_masked = mask_spans(masked, (match.span() for match in contraction_matches))
     protected_phrases = sorted(
         {key for key in approved_forms if " " in key} | {key for key in terms if " " in key},
         key=len,
@@ -272,14 +283,16 @@ def check_file(
     )
     for phrase in protected_phrases:
         pattern = re.compile(r"(?<![A-Za-z])" + re.escape(phrase) + r"(?![A-Za-z])", re.I)
-        for match in list(pattern.finditer(vocabulary_masked)):
-            vocabulary_masked = mask_span(vocabulary_masked, match.start(), match.end())
+        vocabulary_masked = mask_spans(
+            vocabulary_masked, (match.span() for match in pattern.finditer(vocabulary_masked))
+        )
     unapproved_phrases = sorted((key for key in unapproved if " " in key), key=len, reverse=True)
     for phrase in unapproved_phrases:
         pattern = re.compile(r"(?<![A-Za-z])" + re.escape(phrase) + r"(?![A-Za-z])", re.I)
         records = unapproved[phrase]
         source = records[0].get("source")
-        for match in list(pattern.finditer(vocabulary_masked)):
+        matches = list(pattern.finditer(vocabulary_masked))
+        for match in matches:
             if source == SOURCE_SOFTWARE:
                 findings.append(make_finding(
                     newline_offsets=newline_offsets,
@@ -298,7 +311,7 @@ def check_file(
                     instruction="Replace this expression with an approved alternative.",
                     candidates=dictionary_candidates(records), evidence={"source": source},
                 ))
-            vocabulary_masked = mask_span(vocabulary_masked, match.start(), match.end())
+        vocabulary_masked = mask_spans(vocabulary_masked, (match.span() for match in matches))
 
     for match in WORD.finditer(vocabulary_masked):
         token = match.group(0)
