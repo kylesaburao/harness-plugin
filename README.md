@@ -14,7 +14,6 @@ The two `.claude-plugin/` and `.codex-plugin/` directories are thin packaging la
 | `diagnose-environment` | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. | |
 | `extract-video-frames` | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. | Node ≥20.6, macOS ≥26.0, Command Line Tools, and `ffmpeg-full` with `ffprobe`, `zscale`, PNG, and TIFF |
 | `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. | |
-| `natural-style` | Rewrite supplied text into natural, conversational technical prose. | |
 | `record-decision` | Capture a consequential technical decision, its constraints, and its reversibility. | |
 | `research-precedent` | Research whether a proposed approach has precedent, internally or in the wider industry. | |
 | `write-asd-ste100` | Draft or revise technical English against the ASD-STE100 Simplified Technical English ruleset. | `python3`, plus a locally generated reference bundle; see its `INSTALL.md` |
