@@ -74,7 +74,7 @@ ProcessManager.prototype.runOldestBounded = function(items, jobs, worker) {
   });
 };
 // Deterministic scores isolate ordering from codec/toolchain variation.
-shared.scoreCandidate = async (_manager, _commands, _work, file, task) => {
+shared.createCandidateScorer = () => async (file, task) => {
   if (task !== 'final') scored.push({ name: path.basename(file), digest: shared.sha256File(file) });
   if (scenario === 'interrupt' && scored.length === 2) process.kill(process.pid, 'SIGTERM');
   return '90';

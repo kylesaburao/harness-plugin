@@ -102,10 +102,11 @@ jobs:
               # earlier un-bumped plugins/ commit in the range, and still bumps it. A paths:
               # filter would skip that run and strand the bump.
               #
-              # --name-only feeds the script each commit's files; --no-renames matters because
+              # The script selects the first-parent anchor and reads each commit's files.
+              # Its --no-renames matters because
               # with git's default rename detection a file moved out of plugins/ shows only its
               # destination path, so deleting something that ships would read as irrelevant.
-              level="$(git log --format='commit%x09%H%x09%s' --name-only --no-renames HEAD | node scripts/derive-bump-level.js --from-stdin)"
+              level="$(node scripts/derive-bump-level.js)"
             fi
 
             if [ "$level" = "none" ]; then

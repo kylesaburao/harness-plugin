@@ -692,6 +692,28 @@ class RuntimeEntryPointTests(unittest.TestCase):
                     self.assertEqual(result.returncode, status, result.stderr)
                     self.assertEqual(json.loads(result.stdout)["files"][0]["outcome"], outcome)
 
+    def test_stdin_is_strict_utf8_independent_of_inherited_encoding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scripts, document = self.make_runtime(Path(directory), valid=True)
+            command = [sys.executable, str(scripts / "ste_check.py"), "-", "--mode", "procedural"]
+            for json_output in (False, True):
+                result = subprocess.run(command + (["--json"] if json_output else []), input=b"\xff", capture_output=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, b"")
+                self.assertIn(b"input_read_failed", result.stderr)
+                self.assertIn(b"invalid UTF-8", result.stderr)
+                if json_output:
+                    self.assertEqual(json.loads(result.stderr)["error"]["inputs"], [{"path": "-", "condition": "invalid UTF-8"}])
+            text = "Café.\n"
+            result = subprocess.run(command + ["--json"], input=text.encode("utf-8"), capture_output=True,
+                                    env={**os.environ, "PYTHONIOENCODING": "latin-1"})
+            document.write_text(text, encoding="utf-8")
+            expected = subprocess.run([sys.executable, str(scripts / "ste_check.py"), str(document), "--mode", "procedural", "--json"], capture_output=True)
+            actual_file = json.loads(result.stdout)["files"][0]
+            expected_file = json.loads(expected.stdout)["files"][0]
+            actual_file["path"] = expected_file["path"]
+            self.assertEqual(actual_file, expected_file)
+
     def test_multiple_files_have_ordered_reports_and_aggregate_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             scripts, first = self.make_runtime(Path(directory), valid=True)
@@ -1314,6 +1336,33 @@ class CheckerTests(unittest.TestCase):
 
     def limit_failures(self, result):
         return [item for item in result["findings"] if item["category"] == "long_sentence"]
+
+    def test_fence_delimiters_protect_only_the_fenced_text(self):
+        for fenced in (
+            "````text\n```python\nUse the part; move it.\n```\n````\n",
+            "~~~text\n```\nUse the part; move it.\n~~~ trailing\nUse it; move it.\n~~~~\n",
+            "````\nUse it; move it.\n`````\n",
+        ):
+            text = fenced + "Use the part; move it.\n"
+            findings = [f for f in self.result(text)["findings"] if f["category"] == "semicolon"]
+            self.assertEqual(len(findings), 1)
+            self.assertEqual(findings[0]["source"]["start"]["line"], fenced.count("\n") + 1)
+            self.assertEqual(findings[0]["source"]["text"], ";")
+        self.assertEqual(self.result("````\nUse it; move it.\n```\nUse it; move it.")["findings"], [])
+
+    def test_indexed_positions_equal_legacy_results_and_boundaries(self):
+        import ste_check
+        from unittest.mock import patch
+        for text in ("", "\n", "Use " + "the part " * 12 + "\n" + "the part " * 12 + ".", "é\n\nUse it; move it.\n````\ncode;\n````\nFoobarqux.\n" * 2):
+            offsets = [-1] + [i for i, c in enumerate(text) if c == "\n"]
+            def legacy(_index, offset):
+                return {"offset": offset, "line": text.count("\n", 0, offset) + 1,
+                        "column": offset - text.rfind("\n", 0, offset)}
+            for offset in range(len(text) + 1):
+                self.assertEqual(ste_check.position(offsets, offset), legacy(None, offset))
+            actual = self.result(text)
+            with patch.object(ste_check, "position", side_effect=legacy):
+                self.assertEqual(actual, self.result(text))
 
     def test_procedural_boundaries(self):
         self.assertFalse(self.limit_failures(self.result(self.sentence(19), "procedural")))

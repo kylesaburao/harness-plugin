@@ -188,12 +188,13 @@ function validateInput(input) {
 }
 
 async function inspectInput(manager, commands, input) {
-  const stream = await manager.runOwned('input-stream', commands.ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=index', '-of', 'csv=p=0', input], { stdout: 'capture', stderr: 'capture' });
+  const inputPath = path.resolve(input);
+  const stream = await manager.runOwned('input-stream', commands.ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=index', '-of', 'csv=p=0', inputPath], { stdout: 'capture', stderr: 'capture' });
   if (mediaFailed(stream)) throw new StartupError('input_unusable', `ffprobe could not read input video: ${input}`, 'confirm the file is a video ffmpeg can decode', childDetails('input-stream', stream));
   if (!stream.stdout.trim()) throw new StartupError('input_unusable', `input contains no video stream: ${input}`, 'pass a file that contains video, not audio or still images only');
-  const decode = await manager.runOwned('input-decode', commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', input, '-map', '0:v:0', '-frames:v', '1', '-an', '-sn', '-dn', '-f', 'null', '-'], { stderr: 'capture' });
+  const decode = await manager.runOwned('input-decode', commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', inputPath, '-map', '0:v:0', '-frames:v', '1', '-an', '-sn', '-dn', '-f', 'null', '-'], { stderr: 'capture' });
   if (mediaFailed(decode)) throw new StartupError('input_unusable', `input video does not have a decodable first frame: ${input}`, 'the file is truncated or corrupt, re-export it and try again', childDetails('input-decode', decode));
-  const durationResult = await manager.runOwned('input-duration', commands.ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', input], { stdout: 'capture', stderr: 'capture' });
+  const durationResult = await manager.runOwned('input-duration', commands.ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', inputPath], { stdout: 'capture', stderr: 'capture' });
   const duration = durationResult.stdout.trim();
   if (mediaFailed(durationResult) || !/^[0-9]+(?:\.[0-9]+)?$/.test(duration) || Number(duration) <= 0) throw new StartupError('input_unusable', `ffprobe could not read a valid input duration: ${input}`, 'confirm the file is a complete video with a positive duration', childDetails('input-duration', durationResult));
   return Number(duration) > 3 ? [{ code: 'input_duration_long', condition: `input duration is ${duration}s, which is longer than 3 seconds`, recommendation: 'trim the clip to 3 seconds or less for better quality' }] : [];
@@ -254,6 +255,33 @@ async function scoreCandidate(manager, commands, workDir, candidate, task, refer
   } finally { if (!keepWork) fs.rmSync(logPath, { force: true }); }
 }
 
+// One fixed reference/scoring context per conversion. Store promises before yielding
+// so concurrent identical candidates share work without retaining candidate files.
+function createCandidateScorer(state) {
+  const { manager, workDir, referenceFrames } = state;
+  const commands = { ...state.commands };
+  const keepWork = state.config.keepWork;
+  const scores = new Map();
+  const checkCancellation = () => {
+    if (manager.cancelling) throw new RunError('cancelled', 'candidate scoring was cancelled', 'run the conversion again');
+  };
+  return async (candidate, task, candidateFps, digest) => {
+    checkCancellation();
+    const key = JSON.stringify([candidateFps, digest]);
+    let pending = keepWork ? undefined : scores.get(key);
+    if (!pending) {
+      pending = scoreCandidate(manager, commands, workDir, candidate, task, referenceFrames, candidateFps, keepWork);
+      if (!keepWork) {
+        scores.set(key, pending);
+        pending.catch(() => { if (scores.get(key) === pending) scores.delete(key); });
+      }
+    }
+    const score = await pending;
+    checkCancellation();
+    return score;
+  };
+}
+
 function sha256File(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
 
 async function probeValue(manager, command, task, args, code = 'verification_failed') {
@@ -288,7 +316,7 @@ async function verifyFinalGif(manager, commands, file, expected) {
 }
 
 function createPublicationTemp(outputDir, prefix) {
-  const file = path.join(outputDir, `.${prefix}-output.${crypto.randomBytes(6).toString('hex')}`);
+  const file = path.join(path.resolve(outputDir), `.${prefix}-output.${crypto.randomBytes(6).toString('hex')}`);
   try { fs.closeSync(fs.openSync(file, 'wx', 0o600)); return file; } catch { throw new RunError('publication_failed', 'could not create the destination temporary file', 'make the output directory writable and ensure it has free space'); }
 }
 async function publishVerified(source, output, prefix, verify, onTemporary = () => {}) {
@@ -430,4 +458,4 @@ function usage(backend, basename) {
   return `Usage: ${basename} [OPTIONS] INPUT_VIDEO [OUTPUT.gif]\n\nOptions:\n  --preflight [INPUT_VIDEO]\n                  Check the environment and optional input, convert nothing, then exit\n  --json          Report readiness and errors as JSON\n  --help, -h      Print this message\n  --              Stop option parsing\n\nEnvironment:\n  MAX_BYTES       Strict byte ceiling (default: 256000, maximum: ${MAX_EXACT_INTEGER})\n  GIF_SIZE        Square width and height (default: 128, maximum: ${MAX_EXACT_INTEGER})\n  MIN_FPS         Minimum frame rate (default: 15, maximum: ${MAX_EXACT_INTEGER})\n  MAX_FPS         Maximum frame rate (default: 24, maximum: ${maxFpsMaximum})\n  JOBS            Parallel work limit (default: logical CPUs minus 2, minimum 1, maximum: ${MAX_EXACT_INTEGER})\n${quality}  KEEP_WORK       Keep the work directory when set to 1 (default: unset)\n\nAll positive integers have an exact-value ceiling of ${MAX_EXACT_INTEGER}.\n\nExit status:\n  0    Success or passed preflight\n  1    Conversion work started and failed\n  2    Work did not start\n  129  SIGHUP\n  130  SIGINT\n  143  SIGTERM\n`;
 }
 
-module.exports = { mediaFailed, referenceFrameCount, durationTolerance, subprocessError, errorDetails, StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, platformPolicy, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, sha256File, verifyFinalGif, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, resultPayload, emitResult, preflightError, usage };
+module.exports = { mediaFailed, referenceFrameCount, durationTolerance, subprocessError, errorDetails, StartupError, RunError, parseArguments, validateNodeVersion, readConfiguration, platformPolicy, checkGifskiPreflight, checkGifsiclePreflight, validateInput, inspectInput, validateOutput, parseVmafScore, scoreCandidate, createCandidateScorer, sha256File, verifyFinalGif, publishVerified, cleanupArtifacts, emitError, emitWarnings, emitPreflightReady, resultPayload, emitResult, preflightError, usage };

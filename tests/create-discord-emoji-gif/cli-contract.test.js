@@ -116,3 +116,26 @@ for (const runner of runners.filter(candidate => candidate.backend === 'gifski')
     assertPublishedResult(payload, runner.backend, cliInput, output, maxBytes);
   });
 }
+
+for (const runner of runners) test(`${runner.name} accepts dash-prefixed media and temporary paths`, t => {
+  const { narrowSearch } = require('./test-helpers');
+  const root = temporaryDirectory('dash-paths.');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const input = '-clip with spaces.mkv';
+  const output = '-output dir/-result with spaces.gif';
+  fs.mkdirSync(path.join(root, '-output dir'));
+  fs.mkdirSync(path.join(root, '-tmp dir'));
+  const generated = spawnSync('ffmpeg', ['-v','error','-f','lavfi','-i','testsrc2=size=64x64:rate=6:duration=0.5','-c:v','ffv1', path.join(root, input)], { encoding:'utf8' });
+  assert.equal(generated.status, 0, generated.stderr);
+  const env = { ...process.env, TMPDIR: '-tmp dir', GIF_SIZE:'64', MIN_FPS:'6', MAX_FPS:'6', MIN_QUALITY:'50', MAX_QUALITY:'50', JOBS:'2' };
+  const entry = path.join(skillDir, runner.file);
+  const probe = spawnSync(process.execPath, [entry, '--preflight','--json','--',input], { cwd:root, env, encoding:'utf8' });
+  assert.equal(probe.status, 0, probe.stderr);
+  const result = spawnSync(process.execPath, ['--require',narrowSearch(root),entry,'--json','--',input,output], { cwd:root, env, encoding:'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout).result;
+  assert.equal(payload.input, input);
+  assert.equal(payload.output, output);
+  assert.ok(fs.statSync(path.join(root, output)).size > 0);
+  assert.deepEqual(fs.readdirSync(path.join(root, '-tmp dir')), []);
+});

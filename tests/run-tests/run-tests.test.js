@@ -166,7 +166,7 @@ test('workflow limits credentials and tests each exact revision before bumping i
   assert.equal((workflow.match(/node-version: '22'/g) || []).length, 2);
   assert.equal((workflow.match(/python-version: '3\.12'/g) || []).length, 2);
   const reset = workflow.indexOf('git reset --hard origin/main');
-  const derive = workflow.indexOf('level="$(git log', reset);
+  const derive = workflow.indexOf('level="$(node scripts/derive-bump-level.js)"', reset);
   const setup = workflow.indexOf('node scripts/setup-tests.js', derive);
   const testGate = workflow.indexOf('node scripts/run-tests.js --skip-gif', derive);
   const bump = workflow.indexOf('node scripts/bump-version.js', testGate);

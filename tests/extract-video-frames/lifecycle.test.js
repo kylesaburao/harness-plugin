@@ -348,3 +348,52 @@ childProcess.spawn = function(command, args, options) {
   assert.equal(fs.existsSync(path.join(root, 'input-frames')), false);
   assert.equal(fs.readdirSync(root).some(name => name.includes('.partial-')), false);
 });
+
+for (const format of ['rgb48be', 'rgba64be', 'gray16be', 'yuv420p']) {
+  test(`real ${format} extraction preserves depth and fractional duration`, { skip: process.platform !== 'darwin' || !realFfmpeg }, t => {
+    const root = temporaryRoot(t);
+    const input = path.join(root, 'depth.mov');
+    const high = format !== 'yuv420p';
+    const channels = format === 'rgba64be' ? 4 : format === 'gray16be' ? 1 : 3;
+    const raw = Buffer.alloc(512 * 2 * channels * 2);
+    for (let pixel = 0; pixel < 1024; pixel++) {
+      for (let channel = 0; channel < channels; channel++) raw.writeUInt16BE(channel === 3 ? 32768 : (pixel % 512) * 128, (pixel * channels + channel) * 2);
+    }
+    const rawPath = path.join(root, 'ramp.raw');
+    fs.writeFileSync(rawPath, raw);
+    const source = high ? ['-f', 'rawvideo', '-pixel_format', format, '-video_size', '512x2', '-framerate', '30', '-i', rawPath] : ['-f', 'lavfi', '-i', 'testsrc2=size=512x2:rate=30'];
+    const generated = spawnSync(realFfmpeg, ['-v', 'error', ...source, ...(high ? ['-vf', 'setparams=range=full:color_primaries=bt709:color_trc=iec61966-2-1:colorspace=gbr'] : []), '-frames:v', '1', '-c:v', high ? 'png' : 'libx264', '-pix_fmt', format, ...(high ? [] : ['-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709']), '-color_primaries', 'bt709', '-color_trc', high ? 'iec61966-2-1' : 'bt709', '-colorspace', high ? 'rgb' : 'bt709', '-color_range', high ? 'pc' : 'tv', input], { encoding: 'utf8' });
+    assert.equal(generated.status, 0, generated.stderr);
+    const probe = spawnSync(path.join(path.dirname(realFfmpeg), 'ffprobe'), ['-v', 'error', '-show_streams', '-of', 'json', input], { encoding: 'utf8' });
+    assert.equal(probe.status, 0, probe.stderr);
+    const stream = JSON.parse(probe.stdout).streams[0];
+    assert.equal(stream.pix_fmt, format);
+    if (high) assert.ok(!(Number(stream.bits_per_raw_sample) > 0 || Number(stream.bits_per_coded_sample) > 0));
+    const result = spawnSync(process.execPath, [require.resolve('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js'), '--json', input], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout).result;
+    assert.equal(report.output.depth, high ? '16' : '8');
+    assert.equal(report.sourceColor.bitDepth, high ? 16 : 8);
+    const files = fs.readdirSync(path.join(root, 'depth-frames'));
+    assert.equal(files.length, 1);
+    const output = path.join(root, 'depth-frames', files[0]);
+    const png = fs.readFileSync(output);
+    assert.equal(png[24], high ? 16 : 8);
+    assert.equal(png.readUInt32BE(16), 512);
+    assert.equal(png.readUInt32BE(20), 2);
+    if (format === 'rgba64be') {
+      assert.equal(png[25], 6);
+      assert.equal(report.output.alpha, true);
+      const decoded = spawnSync(realFfmpeg, ['-v', 'error', '-i', output, '-f', 'rawvideo', '-pix_fmt', 'rgba64be', '-']);
+      assert.equal(decoded.status, 0, decoded.stderr.toString());
+      for (let i = 6; i < decoded.stdout.length; i += 8) assert.equal(decoded.stdout.readUInt16BE(i), 32768);
+    }
+    if (format === 'rgb48be') {
+      const decoded = spawnSync(realFfmpeg, ['-v', 'error', '-i', output, '-f', 'rawvideo', '-pix_fmt', 'rgb48be', '-']);
+      assert.equal(decoded.status, 0, decoded.stderr.toString());
+      const values = new Set();
+      for (let i = 0; i < decoded.stdout.length; i += 6) values.add(decoded.stdout.readUInt16BE(i));
+      assert.ok(values.size > 256, `only ${values.size} channel values survived`);
+    }
+  });
+}

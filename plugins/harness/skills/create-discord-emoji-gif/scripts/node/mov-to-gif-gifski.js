@@ -45,12 +45,12 @@ function selectWinner(results) {
 
 async function prepareReference(state) {
   const target = path.join(state.workDir, 'vmaf-reference.mkv');
-  const result = await state.manager.runOwned('vmaf-reference', state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,fps=24,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'yuv420p', '-color_range', 'pc', '-f', 'matroska', target], { stderr: 'capture' });
+  const result = await state.manager.runOwned('vmaf-reference', state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.inputPath, '-map', '0:v:0', '-vf', `scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,fps=24,setpts=PTS-STARTPTS`, '-an', '-sn', '-dn', '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'yuv420p', '-color_range', 'pc', '-f', 'matroska', target], { stderr: 'capture' });
   if (shared.mediaFailed(result)) throw shared.subprocessError('reference_failed', `could not prepare the VMAF reference${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`, 'fix the ffmpeg decode or filter error, then run again', 'vmaf-reference', result);
 }
 
 async function prepareSourceCaches(state) {
-  const args = ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input];
+  const args = ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.inputPath];
   for (let fps = state.config.minFps; fps <= state.config.maxFps; fps += 1) {
     const target = path.join(state.workDir, `source-f${fps}.y4m`);
     fs.rmSync(target, { force: true });
@@ -76,8 +76,9 @@ async function evaluateCandidate(state, { fps, candidate }) {
   const bytes = fs.statSync(target).size;
   let fit = false;
   if (bytes < state.config.maxBytes) {
-    const score = await shared.scoreCandidate(state.manager, state.commands, state.workDir, target, stem, state.referenceFrames, fps, state.config.keepWork);
-    const completed = { ...candidate, fps, bytes, score, path: target, digest: shared.sha256File(target) };
+    const digest = shared.sha256File(target);
+    const score = await state.scoreCandidate(target, stem, fps, digest);
+    const completed = { ...candidate, fps, bytes, score, path: target, digest };
     const previous = state.bestCandidate;
     state.bestCandidate = selectWinner(previous ? [previous, completed] : [completed]);
     if (!state.config.keepWork && previous && previous !== state.bestCandidate) fs.rmSync(previous.path, { force: true });
@@ -99,6 +100,7 @@ async function convert(state) {
   if (!state.json) process.stderr.write(`Searching ${state.config.minFps}-${state.config.maxFps} FPS, gifski quality ${state.config.minQuality}-${state.config.maxQuality} under ${state.config.maxBytes} bytes at ${state.config.gifSize}x${state.config.gifSize}...\n`);
   await state.manager.runOldestBounded([prepareReference, prepareSourceCaches], state.config.jobs, prepare => prepare(state));
   state.referenceFrames = await shared.referenceFrameCount(state);
+  state.scoreCandidate = shared.createCandidateScorer(state);
   const fpsValues = Array.from({ length: state.config.maxFps - state.config.minFps + 1 }, (_, i) => state.config.minFps + i);
   state.bestCandidate = undefined;
   const coarse = candidateSequence(state.config);

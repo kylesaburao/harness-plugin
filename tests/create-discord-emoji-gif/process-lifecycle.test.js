@@ -230,3 +230,46 @@ child.unref();
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+for (const [entry, preflight, signal, phase] of [
+  ['mov-to-gif.js', true, 'SIGHUP', 'capability'],
+  ['mov-to-gif-gifski.js', true, 'SIGINT', 'capability'],
+  ['mov-to-gif.js', false, 'SIGTERM', 'capability'],
+  ['mov-to-gif-gifski.js', false, 'SIGTERM', 'input'],
+]) test(`${entry} owns ${phase} interruption during ${preflight ? 'preflight' : 'startup'}`, { timeout: 15000 }, async t => {
+  const { spawn } = require('node:child_process');
+  const root = temporaryDirectory('early-signal.');
+  const base = path.resolve(__dirname, '../../plugins/harness/skills/create-discord-emoji-gif/scripts/node');
+  const preload = path.join(root, 'preload.cjs');
+  const ready = path.join(root, 'ready');
+  const pidFile = path.join(root, 'pid');
+  const input = path.join(root, 'input.mkv');
+  fs.writeFileSync(input, 'fixture');
+  fs.writeFileSync(preload, `
+    const shared = require(${JSON.stringify(base + '/shared')});
+    const slow = async manager => {
+      await manager.runOwned('slow-probe', process.execPath, ['-e', ${JSON.stringify(`const fs=require('node:fs'); const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid)); setInterval(()=>{},1000)`)}],{stdio:'ignore'}); fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid)); process.on('${signal}',()=>setTimeout(()=>process.exit(0),50)); setInterval(()=>{},1000);`)}]);
+      return { commands: {} };
+    };
+    shared.checkGifskiPreflight = shared.checkGifsiclePreflight = ${phase === 'capability' ? 'slow' : 'async () => ({ commands: {} })'};
+    shared.preflightError = () => null;
+    ${phase === 'input' ? 'shared.inspectInput = slow;' : ''}
+  `);
+  const child = spawn(process.execPath, ['--require', preload, path.join(base, entry), '--json', ...(preflight ? ['--preflight'] : []), input], { stdio: ['ignore','pipe','pipe'] });
+  let stdout = ''; let stderr = '';
+  child.stdout.on('data', c => stdout += c);
+  child.stderr.on('data', c => stderr += c);
+  const closed = new Promise(resolve => child.on('close', (code, signal) => resolve({ code, signal })));
+  t.after(() => {
+    child.kill('SIGKILL');
+    if (fs.existsSync(pidFile)) { try { process.kill(-Number(fs.readFileSync(pidFile)), 'SIGKILL'); } catch {} }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const deadline = Date.now() + 5000;
+  while (!fs.existsSync(ready) && Date.now() < deadline) await new Promise(r => setTimeout(r, 10));
+  assert.ok(fs.existsSync(ready), stderr);
+  child.kill(signal);
+  assert.deepEqual(await closed, { code: { SIGHUP:129, SIGINT:130, SIGTERM:143 }[signal], signal:null });
+  assert.equal(stdout, '');
+  for (const file of [pidFile, ready]) assert.throws(() => process.kill(Number(fs.readFileSync(file)), 0), { code: 'ESRCH' });
+});

@@ -107,3 +107,22 @@ test(`${RUNNER.name} normal runs warn before work-directory creation without cha
   assert.match(longResult.stderr, /trim the clip to 3 seconds or less/);
   assert.equal(fs.existsSync(missingTmp), false);
 });
+
+test('all input probes use absolute lexical paths while diagnoses retain spelling', async () => {
+  const shared = require(path.join(SKILL_DIR, 'scripts/node/shared'));
+  const input = '-relative dir/-clip with spaces.mkv';
+  const calls = [];
+  const manager = { runOwned: async (task, command, args) => {
+    calls.push({ task, args });
+    return { code:0, signal:null, stderr:'', stdout: task === 'input-stream' ? '0' : '0.5' };
+  } };
+  await shared.inspectInput(manager,{ ffmpeg:'ffmpeg', ffprobe:'ffprobe' },input);
+  assert.equal(calls.length,3);
+  for (const { args } of calls) assert.ok(args.includes(path.resolve(input)));
+  manager.runOwned = async () => ({ code:1, signal:null, stdout:'', stderr:'invalid input' });
+  await assert.rejects(shared.inspectInput(manager,{ ffprobe:'ffprobe' },input), error => {
+    assert.equal(error.code,'input_unusable');
+    assert.ok(error.condition.endsWith(input));
+    return true;
+  });
+});

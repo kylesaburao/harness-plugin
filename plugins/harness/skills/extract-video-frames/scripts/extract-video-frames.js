@@ -293,7 +293,12 @@ async function readJson(manager, command, args, code, condition, remedy, exitCod
 function sourceBitDepth(stream) {
   const explicit = Number.parseInt(stream.bits_per_raw_sample || stream.bits_per_coded_sample, 10);
   if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  const match = String(stream.pix_fmt || '').match(/(?:p|f)(9|10|12|14|16|32)(?:le|be)?$/);
+  const format = String(stream.pix_fmt || '');
+  if (/^(?:rgb48|bgr48|rgba64|bgra64)(?:le|be)$/.test(format)) return 16;
+  if (/^x2(?:rgb|bgr)10(?:le|be)$/.test(format)) return 10;
+  const gray = format.match(/^gray(9|10|12|14|16)(?:le|be)$/);
+  if (gray) return Number(gray[1]);
+  const match = format.match(/(?:p|f)(9|10|12|14|16|32)(?:le|be)?$/);
   return match ? Number(match[1]) : 8;
 }
 
@@ -327,7 +332,7 @@ function normalizedMatrixComponent(value) {
 
 function transformFromMatrix(values) {
   if (!values || values.length !== 9 || values.some(value => !Number.isFinite(value))) return null;
-  const [a, b, translateX, c, d, translateY, perspectiveX, perspectiveY, scale] = values;
+  const [a, b, perspectiveX, c, d, perspectiveY, translateX, translateY, scale] = values;
   const normalized = [a, b, c, d].map(normalizedMatrixComponent);
   if (normalized.includes(null) || perspectiveX !== 0 || perspectiveY !== 0 || scale !== 1073741824 || !Number.isInteger(translateX) || !Number.isInteger(translateY)) return null;
   const supported = DISPLAY_TRANSFORMS.get(normalized.join(','));
@@ -409,9 +414,9 @@ function analyzePresentedFrames(frameData, color, options) {
   const duration = ticksToNanoseconds(durationTicks, timeBase, true);
   const start = options.start === null ? 0n : options.start;
   const end = options.end === null ? duration : options.end;
-  if (start < 0n || end < 0n || compareNanosecondsToTicks(start, durationTicks, timeBase) > 0 || compareNanosecondsToTicks(end, durationTicks, timeBase) > 0) throw new DraftError('window_out_of_range', `requested window ${formatTime(start)}..${formatTime(end)} is outside 0..${formatTime(duration)}`, `pass bounds between 0 and ${formatTime(duration)} seconds`);
+  if (start < 0n || end < 0n || compareNanosecondsToTicks(start, durationTicks, timeBase) > 0 || (options.end !== null && compareNanosecondsToTicks(end, durationTicks, timeBase) > 0)) throw new DraftError('window_out_of_range', `requested window ${formatTime(start)}..${formatTime(end)} is outside 0..${formatTime(duration)}`, `pass bounds between 0 and ${formatTime(duration)} seconds`);
   const startTick = ceilDivide(start * timeBase.denominator, timeBase.numerator * NS_PER_SECOND);
-  const endTick = end * timeBase.denominator / (timeBase.numerator * NS_PER_SECOND);
+  const endTick = options.end === null ? durationTicks : end * timeBase.denominator / (timeBase.numerator * NS_PER_SECOND);
   let expectedFrames = 0;
   let firstTick;
   let lastTick;

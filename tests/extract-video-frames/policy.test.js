@@ -73,14 +73,14 @@ test('non-orthogonal display rotation is rejected', () => {
 
 test('complete display matrices become explicit rotation and flip filters', () => {
   const cases = [
-    [[65536, 0, 7, 0, 65536, 9, 0, 0, 1073741824], []],
-    [[-65536, 0, 7, 0, 65536, 9, 0, 0, 1073741824], ['hflip']],
-    [[65536, 0, 7, 0, -65536, 9, 0, 0, 1073741824], ['vflip']],
-    [[-65536, 0, 7, 0, -65536, 9, 0, 0, 1073741824], ['hflip', 'vflip']],
-    [[0, -65536, 7, 65536, 0, 9, 0, 0, 1073741824], ['transpose=clock']],
-    [[0, 65536, 7, -65536, 0, 9, 0, 0, 1073741824], ['transpose=cclock']],
-    [[0, -65536, 7, -65536, 0, 9, 0, 0, 1073741824], ['hflip', 'transpose=clock']],
-    [[0, 65536, 7, 65536, 0, 9, 0, 0, 1073741824], ['vflip', 'transpose=clock']],
+    [[65536, 0, 0, 0, 65536, 0, 7, 9, 1073741824], []],
+    [[-65536, 0, 0, 0, 65536, 0, 7, 9, 1073741824], ['hflip']],
+    [[65536, 0, 0, 0, -65536, 0, 7, 9, 1073741824], ['vflip']],
+    [[-65536, 0, 0, 0, -65536, 0, 7, 9, 1073741824], ['hflip', 'vflip']],
+    [[0, -65536, 0, 65536, 0, 0, 7, 9, 1073741824], ['transpose=clock']],
+    [[0, 65536, 0, -65536, 0, 0, 7, 9, 1073741824], ['transpose=cclock']],
+    [[0, -65536, 0, -65536, 0, 0, 7, 9, 1073741824], ['hflip', 'transpose=clock']],
+    [[0, 65536, 0, 65536, 0, 0, 7, 9, 1073741824], ['vflip', 'transpose=clock']],
   ];
   for (const [matrix, filters] of cases) assert.deepEqual(subject.transformFromMatrix(matrix).filters, filters);
 });
@@ -88,7 +88,7 @@ test('complete display matrices become explicit rotation and flip filters', () =
 test('display matrices with scale, shear, perspective, or arbitrary angles are rejected', () => {
   const scaled = [131072, 0, 0, 0, 65536, 0, 0, 0, 1073741824];
   const sheared = [65536, 32768, 0, 0, 65536, 0, 0, 0, 1073741824];
-  const perspective = [65536, 0, 0, 0, 65536, 0, 1, 0, 1073741824];
+  const perspective = [65536, 0, 1, 0, 65536, 0, 0, 0, 1073741824];
   assert.equal(subject.transformFromMatrix(scaled), null);
   assert.equal(subject.transformFromMatrix(sheared), null);
   assert.equal(subject.transformFromMatrix(perspective), null);
@@ -237,4 +237,34 @@ test('representative decode accepts normal stdout progress', async () => {
   const args = subject.ffmpegArguments(fixtureState(), '/tmp/frames');
   assert.equal(args[args.indexOf('-progress') + 1], 'pipe:1');
   assert.ok(args.includes('-xerror'));
+});
+
+test('packed component depths and explicit metadata select the correct SDR path', () => {
+  const tags = { color_primaries: 'bt709', color_transfer: 'bt709', color_space: 'bt709', color_range: 'tv' };
+  for (const endian of ['le', 'be']) {
+    for (const [format, depth] of [['rgb48',16],['bgr48',16],['rgba64',16],['bgra64',16],['gray9',9],['gray10',10],['gray12',12],['gray14',14],['gray16',16],['x2rgb10',10],['x2bgr10',10],['yuv420p10',10]]) {
+      const result = subject.classifyStream({ ...tags, pix_fmt: format + endian });
+      assert.equal(result.bitDepth, depth, format + endian);
+      assert.equal(result.outputDepth, '16');
+    }
+  }
+  assert.equal(subject.classifyStream({ ...tags, pix_fmt: 'rgb24' }).bitDepth, 8);
+  assert.equal(subject.classifyStream({ ...tags, pix_fmt: 'rgb48be', bits_per_raw_sample: '12' }).bitDepth, 12);
+});
+
+test('omitted fractional end uses exact duration ticks', () => {
+  const data = { frames: [{ best_effort_timestamp: '0', duration: '1' }] };
+  const options = { start: null, end: null, timeBase: '1/30' };
+  const result = subject.analyzePresentedFrames(data, {}, options);
+  assert.equal(result.endTick, 1n);
+  assert.equal(result.expectedFrames, 1);
+  assert.throws(() => subject.analyzePresentedFrames(data, {}, { ...options, end: 33333334n }), { code: 'window_out_of_range' });
+});
+
+test('textual display matrices accept translation and reject both perspective fields', () => {
+  const stream = values => ({ side_data_list: [{ side_data_type: 'Display Matrix', displaymatrix: values.map((row, i) => `${i}: ${row.join(' ')}`).join('\n') }] });
+  assert.equal(subject.displayRotation(stream([[0,65536,0],[-65536,0,0],[7,9,1073741824]])), 90);
+  for (const rows of [[[65536,0,1],[0,65536,0],[0,0,1073741824]], [[65536,0,0],[0,65536,1],[0,0,1073741824]]]) {
+    assert.throws(() => subject.displayRotation(stream(rows)), { code: 'display_transform_unsupported' });
+  }
 });

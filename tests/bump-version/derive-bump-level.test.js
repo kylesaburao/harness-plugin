@@ -36,12 +36,11 @@ test('deriveBumpLevel: the tag matches wherever it sits in the subject', () => {
   assert.equal(deriveBumpLevel(['add foo [bump:minor] skill']), 'minor');
 });
 
-test('deriveFromLog: stops at the last bump commit, ignoring everything at or before it', () => {
+test('deriveFromLog: scans the complete selected range', () => {
   const entries = [
     commit('add foo skill'),
+    commit('chore: bump version to 99.0.0', []),
     commit('add bar skill [bump:minor]'),
-    commit('chore: bump version to 0.1.1'),
-    commit('add baz skill [bump:major]'),
   ];
   assert.equal(deriveFromLog(entries), 'minor');
 });
@@ -52,13 +51,12 @@ test('deriveFromLog: a batched push spanning several commits still finds the dee
     commit('fix typo'),
     commit('add foo [bump:major]'),
     commit('add bar skill'),
-    commit('chore: bump version to 0.1.0'),
   ];
   assert.equal(deriveFromLog(entries), 'major');
 });
 
 test('deriveFromLog: nothing since the last bump is "none"', () => {
-  const entries = [commit('chore: bump version to 0.1.1'), commit('add foo skill')];
+  const entries = [];
   assert.equal(deriveFromLog(entries), 'none');
 });
 
@@ -75,12 +73,9 @@ test('deriveFromLog: no prior bump commit at all scans the whole history', () =>
   assert.equal(deriveFromLog(entries), 'minor');
 });
 
-test('deriveFromLog: a human commit body containing bump-looking text is not mistaken for the anchor', () => {
-  // Only the exact subject "chore: bump version to X.Y.Z" is the anchor - grep-style substring
-  // matching against a full commit message would false-positive here.
+test('deriveFromLog: bump-looking prose does not affect the selected range', () => {
   const entries = [
     commit('document the chore: bump version to X.Y.Z convention'),
-    commit('chore: bump version to 0.1.0'),
   ];
   assert.equal(deriveFromLog(entries), 'patch');
 });
@@ -89,7 +84,6 @@ test('deriveFromLog: a docs-only range is "none"', () => {
   const entries = [
     commit('clarify the install steps', ['README.md']),
     commit('document the preflight contract', ['AGENTS.md', 'CLAUDE.md']),
-    commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'none');
 });
@@ -97,7 +91,6 @@ test('deriveFromLog: a docs-only range is "none"', () => {
 test('deriveFromLog: a tests-only range is "none"', () => {
   const entries = [
     commit('cover the GIF CLI contract', ['tests/create-discord-emoji-gif/cli-contract.test.js']),
-    commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'none');
 });
@@ -111,7 +104,6 @@ test('deriveFromLog: changes to this repo\'s own tooling are "none"', () => {
       '.github/workflows/bump-version.yml',
       '.githooks/post-commit',
     ]),
-    commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'none');
 });
@@ -121,7 +113,6 @@ test('deriveFromLog: one relevant commit among docs commits still bumps', () => 
     commit('fix a README typo', ['README.md']),
     commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
     commit('rework the test layout', ['tests/bump-version/derive-bump-level.test.js']),
-    commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'patch');
 });
@@ -132,7 +123,6 @@ test('deriveFromLog: a tag on an irrelevant commit is honored when the range is 
   const entries = [
     commit('note the new skill in the readme [bump:minor]', ['README.md']),
     commit('add the natural-style skill', ['plugins/harness/skills/natural-style/SKILL.md']),
-    commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'minor');
 });
@@ -140,7 +130,6 @@ test('deriveFromLog: a tag on an irrelevant commit is honored when the range is 
 test('deriveFromLog: a tag cannot force a bump when nothing relevant changed', () => {
   const entries = [
     commit('rewrite the docs [bump:major]', ['README.md', 'AGENTS.md']),
-    commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'none');
 });
@@ -148,7 +137,6 @@ test('deriveFromLog: a tag cannot force a bump when nothing relevant changed', (
 test('deriveFromLog: touching the root claude marketplace manifest bumps', () => {
   const entries = [
     commit('rename the marketplace owner', ['.claude-plugin/marketplace.json']),
-    commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'patch');
 });
@@ -156,14 +144,12 @@ test('deriveFromLog: touching the root claude marketplace manifest bumps', () =>
 test('deriveFromLog: touching the codex marketplace manifest bumps', () => {
   const entries = [
     commit('tighten the codex install policy', ['.agents/plugins/marketplace.json']),
-    commit('chore: bump version to 1.0.2'),
   ];
   assert.equal(deriveFromLog(entries), 'patch');
 });
 
-test('deriveFromLog: a merge commit contributes no paths of its own', () => {
-  // `git log --name-only` prints no file list for a merge. Alone that is "none"; the commits it
-  // merges appear in the same log and carry the real paths.
+test('deriveFromLog: an empty merge diff relies on the merged commits', () => {
+  // A merge with an empty diff is irrelevant by itself. Merged commits still count.
   assert.equal(deriveFromLog([commit('Merge pull request #7 from foo/bar', [])]), 'none');
   const withMergedCommits = [
     commit('Merge pull request #7 from foo/bar', []),
@@ -250,4 +236,81 @@ test('parseLog: a subject containing a tab is not truncated', () => {
 test('parseLog: empty input yields no entries, which derives as "none"', () => {
   assert.deepEqual(parseLog(''), []);
   assert.equal(deriveFromLog(parseLog('')), 'none');
+});
+
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const cli = path.resolve(__dirname, '../../scripts/derive-bump-level.js');
+function repository(t) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'release-graph-'));
+  t.after(() => fs.rmSync(cwd, { recursive:true, force:true }));
+  const env = { ...process.env, GIT_AUTHOR_DATE:'1999-12-31T23:59:00-08:00', GIT_COMMITTER_DATE:'1999-12-31T23:59:00-08:00' };
+  const git = (...args) => {
+    const r = spawnSync('git', args, { cwd, env, encoding:'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  };
+  const commitFile = (file, text, subject) => {
+    fs.mkdirSync(path.dirname(path.join(cwd,file)), { recursive:true });
+    fs.writeFileSync(path.join(cwd,file), text);
+    git('add','--all'); git('commit','-m',subject);
+  };
+  const level = () => {
+    const r = spawnSync(process.execPath, [cli], { cwd, encoding:'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  };
+  git('init','-b','main'); git('config','user.name','Test'); git('config','user.email','test@example.invalid'); git('config','core.hooksPath','/dev/null');
+  return { cwd, git, commitFile, level };
+}
+
+test('CLI release range includes features created before the release and merged afterward', t => {
+  const { git, commitFile, level } = repository(t);
+  commitFile('README.md','initial','initial');
+  git('checkout','-b','feature');
+  commitFile('plugins/new','feature','feature [bump:minor]');
+  git('commit','--allow-empty','-m','chore: bump version to 99.0.0');
+  git('checkout','main');
+  commitFile('README.md','release','chore: bump version to 1.0.1');
+  git('merge','--no-ff','feature','-m','merge feature');
+  assert.equal(level(),'minor');
+});
+
+test('CLI handles no anchor, anchor HEAD, docs, catch-up, and rename out of the plugin', t => {
+  const { git, commitFile, level } = repository(t);
+  commitFile('plugins/file','initial','initial');
+  assert.equal(level(),'patch');
+  git('commit','--allow-empty','-m','chore: bump version to 1.0.0');
+  assert.equal(level(),'none');
+  commitFile('README.md','docs','docs [bump:minor]');
+  assert.equal(level(),'none');
+  commitFile('plugins/file','changed','change');
+  commitFile('README.md','more docs','docs');
+  assert.equal(level(),'minor');
+  git('commit','--allow-empty','-m','chore: bump version to 1.1.0');
+  git('mv','plugins/file','moved'); git('commit','-m','move out');
+  assert.equal(level(),'patch');
+});
+
+test('CLI includes plugin changes introduced only during merge resolution', t => {
+  const { git, commitFile, level } = repository(t);
+  commitFile('README.md','initial','initial');
+  git('checkout','-b','feature');
+  commitFile('feature.md','feature','feature');
+  git('checkout','main');
+  git('commit','--allow-empty','-m','chore: bump version to 1.0.0');
+  git('merge','--no-ff','--no-commit','feature');
+  commitFile('plugins/resolution','merge-only','merge resolution');
+  assert.equal(level(),'patch');
+});
+
+test('CLI Git failures emit diagnostics and never a release level', t => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(),'not-git-'));
+  t.after(() => fs.rmSync(cwd,{ recursive:true,force:true }));
+  const result = spawnSync(process.execPath,[cli],{ cwd,encoding:'utf8' });
+  assert.equal(result.status,1);
+  assert.equal(result.stdout,'');
+  assert.match(result.stderr,/not a git repository/);
 });

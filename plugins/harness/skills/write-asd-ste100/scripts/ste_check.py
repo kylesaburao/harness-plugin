@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
 import argparse
 import errno
 import json
@@ -58,16 +59,21 @@ def mask_span(text: str, start: int, end: int) -> str:
 def protect_markdown(text: str) -> str:
     masked = text
     protected: list[tuple[int, int]] = []
-    in_fence = False
+    fence = None
     offset = 0
     for line in text.splitlines(keepends=True):
         stripped = line.lstrip()
         line_start = offset
         line_end = offset + len(line)
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            in_fence = not in_fence
+        delimiter = re.match(r"(`{3,}|~{3,})(.*)$", stripped.rstrip("\r\n"))
+        if fence:
             protected.append((line_start, line_end))
-        elif in_fence or stripped.startswith(">") or DIAGNOSTIC.match(line):
+            if delimiter and delimiter[1][0] == fence[0] and len(delimiter[1]) >= fence[1] and not delimiter[2].strip():
+                fence = None
+        elif delimiter:
+            fence = (delimiter[1][0], len(delimiter[1]))
+            protected.append((line_start, line_end))
+        elif stripped.startswith(">") or DIAGNOSTIC.match(line):
             protected.append((line_start, line_end))
         offset = line_end
     for pattern in PROTECTED:
@@ -78,10 +84,9 @@ def protect_markdown(text: str) -> str:
     return masked
 
 
-def position(text: str, offset: int) -> Position:
-    line = text.count("\n", 0, offset) + 1
-    last_newline = text.rfind("\n", 0, offset)
-    return {"offset": offset, "line": line, "column": offset - last_newline}
+def position(newline_offsets: list[int], offset: int) -> Position:
+    line = bisect_left(newline_offsets, offset)
+    return {"offset": offset, "line": line, "column": offset - newline_offsets[line - 1]}
 
 
 def trimmed_span(text: str, start: int, end: int) -> tuple[int, int]:
@@ -113,6 +118,7 @@ def make_finding(
     category: Category,
     problem: str,
     text: str,
+    newline_offsets: list[int],
     start: int,
     end: int,
     action_type: ActionType,
@@ -128,8 +134,8 @@ def make_finding(
         "problem": problem,
         "source": {
             "text": text[start:end],
-            "start": position(text, start),
-            "end": position(text, end),
+            "start": position(newline_offsets, start),
+            "end": position(newline_offsets, end),
         },
         "action": {
             "type": action_type,
@@ -201,12 +207,14 @@ def check_file(
     terms: dict,
     report_unknown_terms: bool = True,
 ) -> dict:
+    newline_offsets = [-1] + [i for i, character in enumerate(text) if character == "\n"]
     masked = protect_markdown(text)
     contraction_matches = list(CONTRACTION.finditer(masked))
     findings: list[Finding] = []
 
     for match in re.finditer(";", masked):
         findings.append(make_finding(
+            newline_offsets=newline_offsets,
             severity="error", rule="8.1", category="semicolon",
             problem="Natural-language prose contains a semicolon.", text=text,
             start=match.start(), end=match.end(), action_type="rewrite_without_semicolon",
@@ -214,6 +222,7 @@ def check_file(
         ))
     for match in contraction_matches:
         findings.append(make_finding(
+            newline_offsets=newline_offsets,
             severity="error", rule="4.2", category="contraction",
             problem="Natural-language prose contains a contraction.", text=text,
             start=match.start(), end=match.end(), action_type="expand_contraction",
@@ -232,6 +241,7 @@ def check_file(
             if total > limit:
                 rule = "5.1" if limit == 20 else "6.3"
                 findings.append(make_finding(
+                    newline_offsets=newline_offsets,
                     severity="error", rule=rule, category="long_sentence",
                     problem=f"The sentence has {total} words. The limit is {limit}.", text=text,
                     start=start, end=end, action_type="shorten_sentence",
@@ -244,6 +254,7 @@ def check_file(
             count = sum(1 for item in SENTENCE.finditer(masked, start, end) if item.group(0).strip())
             if count > 6:
                 findings.append(make_finding(
+                    newline_offsets=newline_offsets,
                     severity="error", rule="6.6", category="long_paragraph",
                     problem=f"The paragraph has {count} sentences. The limit is 6.", text=text,
                     start=start, end=end, action_type="split_paragraph",
@@ -271,6 +282,7 @@ def check_file(
         for match in list(pattern.finditer(vocabulary_masked)):
             if source == SOURCE_SOFTWARE:
                 findings.append(make_finding(
+                    newline_offsets=newline_offsets,
                     severity="review", rule=records[0].get("rule", "1.1"), category="overused_term",
                     problem="The expression is an overused AI-coding-assistant tic.", text=text,
                     start=match.start(), end=match.end(), action_type="review_overused_term",
@@ -279,6 +291,7 @@ def check_file(
                 ))
             else:
                 findings.append(make_finding(
+                    newline_offsets=newline_offsets,
                     severity="error", rule="1.1", category="unapproved_expression",
                     problem="The expression is not approved.", text=text,
                     start=match.start(), end=match.end(), action_type="replace",
@@ -299,6 +312,7 @@ def check_file(
             source = records[0].get("source")
             if source == SOURCE_SOFTWARE:
                 findings.append(make_finding(
+                    newline_offsets=newline_offsets,
                     severity="review", rule=records[0].get("rule", "1.1"), category="overused_term",
                     problem="The word is an overused AI-coding-assistant tic.", text=text,
                     start=match.start(), end=match.end(), action_type="review_overused_term",
@@ -307,6 +321,7 @@ def check_file(
                 ))
             else:
                 findings.append(make_finding(
+                    newline_offsets=newline_offsets,
                     severity="error", rule="1.1", category="unapproved_word",
                     problem="The word is not approved.", text=text,
                     start=match.start(), end=match.end(), action_type="replace",
@@ -317,6 +332,7 @@ def check_file(
         if key in by_headword and any(entry["status"] == "approved" for entry in by_headword[key]):
             allowed = sorted({form for entry in by_headword[key] if entry["status"] == "approved" for form in entry["forms"]})
             findings.append(make_finding(
+                newline_offsets=newline_offsets,
                 severity="error", rule="1.4", category="unapproved_form",
                 problem="The word form is not approved.", text=text,
                 start=match.start(), end=match.end(), action_type="use_approved_form",
@@ -325,6 +341,7 @@ def check_file(
             continue
         if report_unknown_terms:
             findings.append(make_finding(
+                newline_offsets=newline_offsets,
                 severity="review", rule="1.5/1.12", category="unknown_term",
                 problem="The term is not in the approved dictionary or project terminology.", text=text,
                 start=match.start(), end=match.end(), action_type="review_terminology",
@@ -334,6 +351,7 @@ def check_file(
 
     for match in PASSIVE.finditer(masked):
         findings.append(make_finding(
+            newline_offsets=newline_offsets,
             severity="warning", rule="3.6", category="passive_voice",
             problem="The text can contain passive voice.", text=text,
             start=match.start(), end=match.end(), action_type="review_active_voice",
@@ -343,6 +361,7 @@ def check_file(
         key = match.group(0).casefold()
         if key not in approved_forms and key not in terms:
             findings.append(make_finding(
+                newline_offsets=newline_offsets,
                 severity="warning", rule="3.5", category="unapproved_ing_form",
                 problem="The -ing form can be unapproved.", text=text,
                 start=match.start(), end=match.end(), action_type="review_word_form",
@@ -353,6 +372,7 @@ def check_file(
         words = WORD.findall(match.group(0))
         if 4 <= len(words) <= 6 and not any(word.casefold() in {"and", "or", "the", "a", "an", "to", "of", "in", "for", "with"} for word in words):
             findings.append(make_finding(
+                newline_offsets=newline_offsets,
                 severity="warning", rule="2.1", category="long_multiword_noun",
                 problem="The possible multi-word noun has more than three words.", text=text,
                 start=match.start(), end=match.end(), action_type="shorten_noun_phrase",
@@ -444,6 +464,7 @@ def read_file_input(path: str) -> tuple[str | None, str | None]:
 def read_inputs(paths: list[str]) -> list[tuple[str, str]]:
     if paths == ["-"]:
         try:
+            sys.stdin.reconfigure(encoding="utf-8", errors="strict")
             return [("-", sys.stdin.read())]
         except UnicodeError:
             raise InvocationError(

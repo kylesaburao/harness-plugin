@@ -24,11 +24,11 @@ async function checked(state, task, command, args, options, code, condition, rem
 }
 
 async function prepareReference(state) {
-  await checked(state, 'vmaf-reference', state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input, '-map', '0:v:0', '-vf', `scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,fps=24`, '-an', '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'yuv420p', '-color_range', 'pc', '-f', 'matroska', path.join(state.workDir, 'vmaf-reference.mkv')], {}, 'reference_failed', 'could not prepare the VMAF reference', 'fix the reported ffmpeg decode or filter error, then run again');
+  await checked(state, 'vmaf-reference', state.commands.ffmpeg, ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.inputPath, '-map', '0:v:0', '-vf', `scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,fps=24`, '-an', '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'yuv420p', '-color_range', 'pc', '-f', 'matroska', path.join(state.workDir, 'vmaf-reference.mkv')], {}, 'reference_failed', 'could not prepare the VMAF reference', 'fix the reported ffmpeg decode or filter error, then run again');
 }
 
 async function prepareScaledSources(state) {
-  const args = ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.input];
+  const args = ['-v', 'error', '-xerror', '-nostdin', '-threads', '1', '-filter_threads', '1', '-i', state.inputPath];
   for (let fps = state.config.minFps; fps <= state.config.maxFps; fps += 1) {
     args.push('-map', '0:v:0', '-vf', `fps=${fps},scale=${state.config.gifSize}:${state.config.gifSize}:flags=lanczos,format=bgra`, '-an', '-c:v', 'rawvideo', '-pix_fmt', 'bgra', '-f', 'nut', path.join(state.workDir, `source-f${fps}.nut`));
   }
@@ -66,8 +66,9 @@ async function evaluateColorTask(state, item) {
       fs.rmSync(raw, { force: true });
       const bytes = fs.statSync(target).size;
       if (bytes < state.config.maxBytes) {
-        const score = await shared.scoreCandidate(state.manager, state.commands, state.workDir, target, `f${fps}-c${colors}-d${dither}`, state.referenceFrames, fps, state.config.keepWork);
-        const candidate = { fps, colors, dither, bytes, score, path: target, digest: shared.sha256File(target) };
+        const digest = shared.sha256File(target);
+        const score = await state.scoreCandidate(target, `f${fps}-c${colors}-d${dither}`, fps, digest);
+        const candidate = { fps, colors, dither, bytes, score, path: target, digest };
         const previous = state.bestCandidate;
         state.bestCandidate = selectWinner(previous ? [previous, candidate] : [candidate]);
         if (!state.config.keepWork && previous && previous !== state.bestCandidate) fs.rmSync(previous.path, { force: true });
@@ -84,6 +85,7 @@ async function convert(state) {
   if (!state.json) process.stderr.write(`Searching ${state.config.minFps}-${state.config.maxFps} FPS, 4-256 colors, dithers 2-5 under ${state.config.maxBytes} bytes at ${state.config.gifSize}x${state.config.gifSize} with ${state.config.jobs} workers...\n`);
   await state.manager.runOldestBounded([prepareReference, prepareScaledSources], state.config.jobs, prepare => prepare(state));
   state.referenceFrames = await shared.referenceFrameCount(state);
+  state.scoreCandidate = shared.createCandidateScorer(state);
   state.bestCandidate = undefined;
   await state.manager.runOldestBounded(candidateTasks(state.config), state.config.jobs, item => evaluateColorTask(state, item));
   const winner = state.bestCandidate;

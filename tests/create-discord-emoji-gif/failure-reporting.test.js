@@ -68,3 +68,53 @@ for (const mode of ['exit', 'signal', 'launch']) {
     });
   }
 }
+
+test('repeated successful and failed preflights restore signal listeners', async () => {
+  const shared = require(base + '/shared');
+  const { runConverter } = require(base + '/converter-runner');
+  const original = shared.checkGifskiPreflight;
+  const signals = ['SIGHUP', 'SIGINT', 'SIGTERM'];
+  const before = signals.map(signal => process.listenerCount(signal));
+  try {
+    for (const fail of [false, true, false]) {
+      shared.checkGifskiPreflight = async () => {
+        if (fail) throw new shared.StartupError('probe_failed', 'fixture failure', 'retry');
+        return { commands: {}, failures: [], policy: { os: process.platform } };
+      };
+      const code = await runConverter({ argv: ['--preflight', '--json'], env: {}, backend: 'gifski', defaultScriptName: 'test', workPrefix: 'unused', convert: async () => assert.fail() });
+      assert.equal(code, fail ? 2 : 0);
+      assert.deepEqual(signals.map(signal => process.listenerCount(signal)), before);
+    }
+  } finally { shared.checkGifskiPreflight = original; }
+});
+
+test('interruption with duplicate score waiters prevents publication and cleans owned work', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gif-duplicate-cancel-'));
+  t.after(() => fs.rmSync(root, { recursive:true, force:true }));
+  const output = path.join(root,'output.gif');
+  fs.writeFileSync(output,'existing destination');
+  const result = spawnSync(process.execPath, ['-e', `
+    const fs=require('node:fs'),path=require('node:path');
+    const shared=require(${JSON.stringify(base + '/shared')});
+    const {runConverter}=require(${JSON.stringify(base + '/converter-runner')});
+    shared.validateInput=()=>{};shared.inspectInput=async()=>[];
+    shared.checkGifskiPreflight=async()=>({commands:{ffmpeg:'unused'}});
+    shared.preflightError=()=>null;
+    shared.validateOutput=()=>({output:${JSON.stringify(output)}});
+    runConverter({argv:['--json','input'],env:{TMPDIR:${JSON.stringify(root)}},backend:'gifski',defaultScriptName:'test',workPrefix:'work-',convert:async state=>{
+      state.referenceFrames=12;
+      const file=path.join(state.workDir,'candidate.gif');fs.writeFileSync(file,'candidate');
+      const run=state.manager.runOwned.bind(state.manager);let calls=0;
+      state.manager.runOwned=(task)=>{calls++;fs.writeFileSync(${JSON.stringify(root + '/calls')},String(calls));return run(task,process.execPath,['-e',"process.kill(process.ppid,'SIGTERM');setInterval(()=>{},1000)"],{stderr:'capture'});};
+      const score=shared.createCandidateScorer(state),digest=shared.sha256File(file);
+      await Promise.all([score(file,'first',6,digest),score(file,'duplicate',6,digest)]);
+      fs.writeFileSync(state.output,'must not publish');
+      return {};
+    }}).then(code=>process.exitCode=code);
+  `], { encoding:'utf8', timeout:10000 });
+  assert.equal(result.status,143,result.stderr);
+  assert.equal(result.stdout,'');
+  assert.equal(fs.readFileSync(output,'utf8'),'existing destination');
+  assert.equal(fs.readFileSync(path.join(root,'calls'),'utf8'),'1');
+  assert.equal(fs.readdirSync(root).filter(name=>name.startsWith('work-')).length,0);
+});
