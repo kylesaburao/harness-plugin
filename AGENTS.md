@@ -55,8 +55,10 @@ Use the quoted `<SKILL_DIR>` substitution placeholder in agent-facing bundled ex
 
 Keep the complete `## Bundled path authority` contract inline in every resource-bearing `SKILL.md`. Loading a shared contract would depend on the same path resolution it governs. `tests/inventory/bundled-path-authority.test.js` discovers the affected tracked skills and enforces the shared wording.
 
-New skill executables use Node.js by default. Use the oldest supported Node.js version that
-provides the required standard-library APIs, and document that minimum in the skill. Use
+New skill executables use Node.js by default. The repository-wide runtime floor is Node.js 24,
+the development runtime major: every skill declares that floor and uses only APIs it provides,
+so a new skill does not lower it and raises it only for a standard-library API that a newer
+major adds. Document the minimum in the skill. Use
 Bash, Python, or another runtime only when a concrete platform API, maintained library, or
 existing artifact makes Node materially worse, and document that reason in the skill. Do
 not rewrite an existing executable only to make its runtime match this default.

@@ -1,5 +1,6 @@
 # Planning scope qualification
 
+> **Dated record.** Commands and locations are as they were on the recorded date; raw evidence that the text says was kept under `.build/` or `evidence/` was not retained in the repository.
 Execution date: 2026-09-20. Evaluator: Codex executor.
 Repository baseline: `fbdb99013d5731f80ba31243af9b35faea40bba8`.
 Intended patch: planning scope, verified artifact delivery, scoped continuation, and shared activation wording.

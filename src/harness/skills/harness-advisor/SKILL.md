@@ -130,6 +130,10 @@ routes override defaults. Automatic consultation never changes this file.
 
 Mutations hold the existing exclusive `config.json.lock` directory from fresh
 read through atomic publication. Contention returns `config_busy` without saving.
+Acquisition failures return `config_lock_failed`. The lock is released only if it is
+still the one this run created; a release or ownership failure returns
+`config_lock_cleanup_failed` with the absolute lock path and a quoted recovery
+command, and the diagnostic says whether the configuration was saved.
 Retry explicitly after the writer finishes. Never steal an interrupted writer's
 lock; confirm no mutation is running before using the reported recovery command.
 `show` and `resolve` are read-only. Explicit preflight neither locks nor publishes

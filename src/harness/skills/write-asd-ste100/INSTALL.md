@@ -10,11 +10,12 @@ Run once, on macOS or Linux. `<SKILL_DIR>` is the exact loaded skill directory e
 
 Building the bundle needs the `pypdfium2` package and a network connection. macOS's system
 `python3` is not meant to receive `pip install`s, so create a virtual environment outside the
-installed plugin directory, which plugin updates can replace:
+installed plugin directory, which plugin updates can replace. The pinned version is the one
+the repository tests with; a newer `pypdfium2` also works when the pin is unavailable:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/pip install pypdfium2
+.venv/bin/pip install 'pypdfium2==5.14.0'
 .venv/bin/python "<SKILL_DIR>/scripts/initialize_references.py"
 ```
 

@@ -1,5 +1,6 @@
 # random-sampler qualification
 
+> **Dated record.** Paths, commands and floors are as they were on the recorded date: the skill then lived under `plugins/harness/` (now `src/harness/`), the gate ran as `node scripts/setup-tests.js` then `node scripts/run-tests.js` (now `npm run test:setup` and `npm test`), the Node.js floor was 22 (now 24), and the validator path was host-specific.
 Verified on macOS on 2026-09-13 with Node.js 26.5.0, Codex CLI 0.154.0,
 and Claude Code 2.1.270. Live samples are execution evidence, not a deterministic
 routing guarantee. No production routing changes were made to force these results.

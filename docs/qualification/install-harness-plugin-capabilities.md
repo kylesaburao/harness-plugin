@@ -1,5 +1,6 @@
 # Capability installer qualification
 
+> **Dated record.** Paths and commands are as they were on the recorded date: the plugin then lived under `plugins/harness/` (now `src/harness/`), and the validator and repository paths were host-specific.
 Date: 2026-09-13. Repository: `/Users/kyle/Documents/harness-plugin`.
 Host: macOS, `codex --version` reported `codex-cli 0.154.0`.
 Scope: Markdown installer and descriptions, ordinary temporary file operations,

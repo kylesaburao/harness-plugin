@@ -1,5 +1,6 @@
 # demonstrate-workflow qualification
 
+> **Dated record.** Commands are as they were on the recorded date (`node scripts/run-tests.js` is now `npm test`). The "unqualified" statements below were resolved by the maintainer; see the Resolution line in the invocation-control section.
 Implemented and verified on Codex CLI 0.154.0 using its default gpt-6-astra model. Claude is excluded by user instruction.
 
 ## Agreed invocation boundary

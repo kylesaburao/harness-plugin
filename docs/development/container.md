@@ -26,7 +26,7 @@ npm run build
 npm run test:setup
 ```
 
-This cold-start sequence installs the root toolchain, constructs `.build/harness/`, installs the backup skill's npm dependencies from the candidate's lockfile into `/home/node/.harness-plugin/back-up-directories/`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references. `setup-tests.js` itself does not install the root toolchain or build an artifact. Initial image build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
+This cold-start sequence installs the root toolchain, constructs `.build/harness/`, installs the backup skill's npm dependencies from the candidate's lockfile into `/home/node/.harness-plugin/back-up-directories/`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references. `setup-tests.js` itself does not install the root toolchain or build an artifact. Pull requests build this same image and run the complete gate inside it through the `gif` job of `verify.yml` (see [build.md](build.md)). Initial image build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
 
 Run a focused test or open a shell with the same source and dependency mounts:
 

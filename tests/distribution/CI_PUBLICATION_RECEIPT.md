@@ -1,5 +1,6 @@
 # CI-owned distribution implementation receipt
 
+> **Historical record.** Commands and links below are as they were on the recorded date. Since then, `tests/bump-version/derive-bump-level.test.js` was deleted with the script it covered and its pure-function cases moved into [release-policy.test.js](../bump-version/release-policy.test.js), and the publication fixture now runs [`scripts/publish-release.js`](../../scripts/publish-release.js) instead of shell extracted from the workflow.
 Recorded September 15, 2026. This records implementation and local verification before delivery; it is not a production release receipt. After these checks, the user separately authorized committing and pushing the implementation.
 
 ## Baseline and protected output
