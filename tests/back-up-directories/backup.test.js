@@ -465,6 +465,29 @@ test('createArchive writes output and untracks only after the caller installs it
   assert(context.temporaryPaths.has(destination));
 });
 
+// Every other createArchive test injects an archiveFactory double, so none of them
+// exercise the real archiver package. This test omits dependencies.archiveFactory,
+// which sends createArchive through loadArchiver() and the real ZipArchive, so an
+// archiver upgrade that breaks the actual integration fails here.
+test('createArchive with the real archiver produces a ZIP containing the source tree', async (t) => {
+  const root = await temporaryRoot(t);
+  const source = path.join(root, 'source');
+  await fsp.mkdir(path.join(source, 'sub'), { recursive: true });
+  await fsp.writeFile(path.join(source, 'a.txt'), 'hello world');
+  await fsp.writeFile(path.join(source, 'sub', 'b.txt'), 'nested');
+  const destination = path.join(root, '.backup-archive-real.tmp');
+  const context = new OperationContext();
+
+  await createArchive(source, destination, context);
+
+  const bytes = await fsp.readFile(destination);
+  assert.equal(bytes.subarray(0, 4).toString('hex'), '504b0304');
+  const text = bytes.toString('latin1');
+  assert(text.includes('a.txt'));
+  assert(text.includes('sub/b.txt'));
+  assert.deepEqual(context.cleanupSync(), []);
+});
+
 test('createArchive reports initial and Archiver progress while work is in flight', async (t) => {
   const root = await temporaryRoot(t);
   const destination = path.join(root, '.backup-archive-progress.tmp');

@@ -81,8 +81,7 @@ test('archive construction requests DEFLATE level 6', async (t) => {
   const archivePath = path.join(root, 'archive.zip');
   const context = new OperationContext();
   let options;
-  const archiveFactory = (format, suppliedOptions) => {
-    assert.equal(format, 'zip');
+  const archiveFactory = (suppliedOptions) => {
     options = suppliedOptions;
     return successfulArchiveFactory()();
   };

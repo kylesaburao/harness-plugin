@@ -19,7 +19,7 @@ const EXIT = Object.freeze({
   COPY: 5,
   INTERRUPTED: 130,
 });
-const MINIMUM_NODE = [20, 6, 0];
+const MINIMUM_NODE = [22, 12, 0];
 const MAX_FILENAME_BYTES = 255;
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
@@ -50,10 +50,14 @@ class StartupError extends Error {
 // archiver is the only dependency that needs installing, so it is resolved on
 // demand. A top-level require turned a missing install into a MODULE_NOT_FOUND
 // stack trace instead of an answerable diagnostic. Repeat calls are free:
-// require caches the module itself.
+// require caches the module itself. archiver is ESM-only as of 8.0.0; Node's
+// require(esm) support handles that, but the package has no default export
+// anymore, so this wraps ZipArchive in the zero-argument factory shape
+// createArchive expects.
 function loadArchiver() {
   try {
-    return require('archiver');
+    const { ZipArchive } = require('archiver');
+    return (options) => new ZipArchive(options);
   } catch (error) {
     if (error.code !== 'MODULE_NOT_FOUND') throw error;
     throw new StartupError(
@@ -80,7 +84,7 @@ function checkEnvironment() {
     throw new StartupError(
       'node_version_unsupported',
       `Node.js ${MINIMUM_NODE.join('.')} or newer is required, running ${process.version}`,
-      'install Node.js 20.6.0 or newer',
+      'install Node.js 22.12.0 or newer',
     );
   }
   loadArchiver();
@@ -640,7 +644,7 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
     }
     let archive;
     try {
-      archive = archiveFactory('zip', { zlib: { level: 6 } });
+      archive = archiveFactory({ zlib: { level: 6 } });
     } catch (error) {
       output.once('error', () => {});
       output.once('close', () => reject(error));

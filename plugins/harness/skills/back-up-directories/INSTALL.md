@@ -6,7 +6,7 @@ one npm dependency is not present yet.
 
 ## Install the dependency
 
-Run this once, with Node.js 20.6.0 or newer:
+Run this once, with Node.js 22.12.0 or newer:
 
 ```sh
 npm install --omit=dev --prefix <skill-directory>

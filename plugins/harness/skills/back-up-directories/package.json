@@ -12,13 +12,13 @@
   "type": "commonjs",
   "main": "scripts/backup.js",
   "engines": {
-    "node": ">=20.6.0"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "backup": "node scripts/backup.js",
     "preflight": "node scripts/backup.js --preflight --json"
   },
   "dependencies": {
-    "archiver": "^7.0.1"
+    "archiver": "^8.0.0"
   }
 }

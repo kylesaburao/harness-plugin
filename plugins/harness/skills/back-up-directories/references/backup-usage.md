@@ -1,6 +1,6 @@
 # ZIP backup utility
 
-Reference for the `back-up-directories` skill. Node.js 20.6.0 or newer is required. Install the one dependency once, from the skill directory:
+Reference for the `back-up-directories` skill. Node.js 22.12.0 or newer is required. Install the one dependency once, from the skill directory:
 
 ```sh
 npm install --omit=dev
