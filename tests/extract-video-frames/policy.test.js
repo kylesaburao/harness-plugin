@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const subject = require('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js');
+const descriptors = subject.descriptorMap(require('./pixel-formats.json'));
+const classify = stream => subject.classifyStream(stream, subject.pixelProperties(stream, descriptors));
 
 test('time syntax is exact to nanoseconds', () => {
   assert.equal(subject.parseTime('12.5', '--start'), 12500000000n);
@@ -37,24 +39,24 @@ test('output is a fixed sibling derived from the supplied path', () => {
 });
 
 test('strict HDR classification produces 10-bit HEIC through a 16-bit TIFF', () => {
-  const result = subject.classifyStream({ pix_fmt: 'yuva444p10le', color_primaries: 'bt2020', color_transfer: 'smpte2084', color_space: 'bt2020nc', color_range: 'tv' });
+  const result = classify({ pix_fmt: 'yuv420p10le', color_primaries: 'bt2020', color_transfer: 'smpte2084', color_space: 'bt2020nc', color_range: 'tv' });
   assert.equal(result.dynamicRange, 'hdr-pq');
   assert.equal(result.extension, 'heic');
   assert.equal(result.intermediateExtension, 'tiff');
-  assert.equal(result.intermediatePixelFormat, 'rgba64le');
+  assert.equal(result.intermediatePixelFormat, 'rgb48le');
   assert.equal(result.outputDepth, '10');
 });
 
 test('HLG is accepted only as tagged 10-bit BT.2020 HDR', () => {
-  const result = subject.classifyStream({ pix_fmt: 'yuv420p10le', color_primaries: 'bt2020', color_transfer: 'arib-std-b67', color_space: 'bt2020nc', color_range: 'tv' });
+  const result = classify({ pix_fmt: 'yuv420p10le', color_primaries: 'bt2020', color_transfer: 'arib-std-b67', color_space: 'bt2020nc', color_range: 'tv' });
   assert.equal(result.dynamicRange, 'hdr-hlg');
   assert.equal(result.outputColor, 'bt2100-hlg');
-  assert.throws(() => subject.classifyStream({ pix_fmt: 'yuv420p', color_primaries: 'bt2020', color_transfer: 'arib-std-b67', color_space: 'bt2020nc', color_range: 'tv' }), { code: 'color_metadata_ambiguous' });
+  assert.throws(() => classify({ pix_fmt: 'yuv420p', color_primaries: 'bt2020', color_transfer: 'arib-std-b67', color_space: 'bt2020nc', color_range: 'tv' }), { code: 'color_metadata_ambiguous' });
 });
 
 test('SDR preserves useful depth while normalizing to sRGB PNG', () => {
-  const eight = subject.classifyStream({ pix_fmt: 'yuv420p', color_primaries: 'bt709', color_transfer: 'bt709', color_space: 'bt709', color_range: 'tv' });
-  const ten = subject.classifyStream({ pix_fmt: 'yuv420p10le', color_primaries: 'bt709', color_transfer: 'bt709', color_space: 'bt709', color_range: 'tv' });
+  const eight = classify({ pix_fmt: 'yuv420p', color_primaries: 'bt709', color_transfer: 'bt709', color_space: 'bt709', color_range: 'tv' });
+  const ten = classify({ pix_fmt: 'yuv420p10le', color_primaries: 'bt709', color_transfer: 'bt709', color_space: 'bt709', color_range: 'tv' });
   assert.equal(eight.outputPixelFormat, 'rgb24');
   assert.equal(ten.outputPixelFormat, 'rgb48le');
   assert.match(subject.colorConversionFilter(eight), /format=gbrp,format=rgb24$/);
@@ -62,8 +64,8 @@ test('SDR preserves useful depth while normalizing to sRGB PNG', () => {
 });
 
 test('ambiguous color and Dolby Vision-only streams fail before work', () => {
-  assert.throws(() => subject.classifyStream({ pix_fmt: 'yuv420p', color_primaries: 'unknown', color_transfer: 'unknown', color_space: 'unknown', color_range: 'tv' }), { code: 'color_metadata_ambiguous' });
-  assert.throws(() => subject.classifyStream({ pix_fmt: 'yuv420p10le', codec_tag_string: 'dvh1', color_primaries: 'bt2020', color_transfer: 'bt709', color_space: 'bt2020nc', color_range: 'tv' }), { code: 'hdr_unsupported' });
+  assert.throws(() => classify({ pix_fmt: 'yuv420p', color_primaries: 'unknown', color_transfer: 'unknown', color_space: 'unknown', color_range: 'tv' }), { code: 'color_metadata_ambiguous' });
+  assert.throws(() => classify({ pix_fmt: 'yuv420p10le', codec_tag_string: 'dvh1', color_primaries: 'bt2020', color_transfer: 'bt709', color_space: 'bt2020nc', color_range: 'tv' }), { code: 'hdr_unsupported' });
 });
 
 test('non-orthogonal display rotation is rejected', () => {
@@ -237,19 +239,6 @@ test('representative decode accepts normal stdout progress', async () => {
   const args = subject.ffmpegArguments(fixtureState(), '/tmp/frames');
   assert.equal(args[args.indexOf('-progress') + 1], 'pipe:1');
   assert.ok(args.includes('-xerror'));
-});
-
-test('packed component depths and explicit metadata select the correct SDR path', () => {
-  const tags = { color_primaries: 'bt709', color_transfer: 'bt709', color_space: 'bt709', color_range: 'tv' };
-  for (const endian of ['le', 'be']) {
-    for (const [format, depth] of [['rgb48',16],['bgr48',16],['rgba64',16],['bgra64',16],['gray9',9],['gray10',10],['gray12',12],['gray14',14],['gray16',16],['x2rgb10',10],['x2bgr10',10],['yuv420p10',10]]) {
-      const result = subject.classifyStream({ ...tags, pix_fmt: format + endian });
-      assert.equal(result.bitDepth, depth, format + endian);
-      assert.equal(result.outputDepth, '16');
-    }
-  }
-  assert.equal(subject.classifyStream({ ...tags, pix_fmt: 'rgb24' }).bitDepth, 8);
-  assert.equal(subject.classifyStream({ ...tags, pix_fmt: 'rgb48be', bits_per_raw_sample: '12' }).bitDepth, 12);
 });
 
 test('omitted fractional end uses exact duration ticks', () => {

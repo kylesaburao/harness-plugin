@@ -30,6 +30,9 @@ Do not recreate or modify its FFmpeg commands.
   aspect ratio and interlacing are preserved. Exact right-angle rotations and axis
   flips are applied explicitly by FFmpeg. Scale, shear, perspective, and arbitrary
   rotations are rejected.
+- Source alpha and component depth come from FFprobe pixel-format descriptors. Missing
+  or unusable descriptors are rejected. SDR preserves alpha. HDR with alpha is rejected
+  during preparation because the native HEIC10 encoder drops transparency.
 - Color metadata must be complete and internally consistent. Ambiguous SDR or HDR,
   unsupported HDR conversion, and Dolby Vision without a usable PQ or HLG base layer
   are rejected instead of guessed, tone-mapped, or degraded.
@@ -98,7 +101,8 @@ use `{"error":{"code","condition","remedy"}}`. A capability preflight can includ
 A successful JSON run returns `{"result": ...}` with supplied and resolved input paths,
 selected stream, output directory, source and output color properties, PNG or HEIC
 encoding, alpha, dimensions, orientation, aspect ratios, requested window, actual first
-and last PTS, frame count, and structural checks. No field claims per-frame hashing or
+and last PTS, frame count, and structural checks. The first and last PNG checks verify
+alpha and component depth against the chosen output contract. No field claims per-frame hashing or
 complete image decoding.
 
 ## Platform status

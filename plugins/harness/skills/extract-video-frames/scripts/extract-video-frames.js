@@ -281,7 +281,8 @@ async function toolchainPreflight(manager, platform) {
     if (result.code !== 0 || !result.stdout.trim()) failures.push({ code: 'ffprobe_probe_failed', condition: 'ffprobe could not report its version', remedy: commandRemedy() });
   }
   if (failures.length) throw new DraftError('preflight_failed', `${failures.length} toolchain preflight check(s) failed`, commandRemedy(), EXIT.CANNOT_START, { failures });
-  return { platform, commands };
+  const pixelDescriptors = descriptorMap(await readJson(manager, commands.ffprobe, ['-v', 'error', '-show_pixel_formats', '-of', 'json'], 'ffprobe_probe_failed', 'ffprobe could not report pixel format descriptors', commandRemedy()));
+  return { platform, commands, pixelDescriptors };
 }
 
 async function readJson(manager, command, args, code, condition, remedy, exitCode = EXIT.CANNOT_START) {
@@ -290,20 +291,27 @@ async function readJson(manager, command, args, code, condition, remedy, exitCod
   try { return JSON.parse(result.stdout); } catch { throw new DraftError(code, `${condition}: output was not valid JSON`, remedy, exitCode, childDetails(code, result)); }
 }
 
-function sourceBitDepth(stream) {
-  const explicit = Number.parseInt(stream.bits_per_raw_sample || stream.bits_per_coded_sample, 10);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  const format = String(stream.pix_fmt || '');
-  if (/^(?:rgb48|bgr48|rgba64|bgra64)(?:le|be)$/.test(format)) return 16;
-  if (/^x2(?:rgb|bgr)10(?:le|be)$/.test(format)) return 10;
-  const gray = format.match(/^gray(9|10|12|14|16)(?:le|be)$/);
-  if (gray) return Number(gray[1]);
-  const match = format.match(/(?:p|f)(9|10|12|14|16|32)(?:le|be)?$/);
-  return match ? Number(match[1]) : 8;
+function descriptorMap(data) {
+  if (!Array.isArray(data?.pixel_formats) || !data.pixel_formats.length) throw new DraftError('ffprobe_probe_failed', 'ffprobe returned no pixel format descriptors', commandRemedy());
+  const descriptors = new Map();
+  for (const descriptor of data.pixel_formats) {
+    if (!descriptor || typeof descriptor.name !== 'string' || !descriptor.name || descriptors.has(descriptor.name)) throw new DraftError('ffprobe_probe_failed', 'ffprobe returned invalid or duplicate pixel format descriptor names', commandRemedy());
+    descriptors.set(descriptor.name, descriptor);
+  }
+  return descriptors;
 }
 
-function hasAlpha(stream) {
-  return /(?:^|[^a-z])(?:rgba|bgra|argb|abgr|yuva|gbrap|gray[a-z]*a)/.test(String(stream.pix_fmt || '')) || stream.alpha_mode === 1;
+function pixelProperties(stream, descriptors) {
+  const name = stream.pix_fmt;
+  const descriptor = descriptors?.get(name);
+  const components = descriptor?.components;
+  if (!descriptor || ![0, 1].includes(descriptor.flags?.alpha) ||
+      !Number.isInteger(descriptor.nb_components) || descriptor.nb_components < 1 ||
+      !Array.isArray(components) || components.length !== descriptor.nb_components ||
+      components.some((component, index) => component?.index !== index + 1 || !Number.isInteger(component.bit_depth) || component.bit_depth < 1 || component.bit_depth > 64)) {
+    throw new DraftError('pixel_format_unsupported', `missing or unusable pixel format descriptor: ${name || 'missing pix_fmt'}`, commandRemedy());
+  }
+  return { alpha: descriptor.flags.alpha === 1, bitDepth: Math.max(...components.map(component => component.bit_depth)) };
 }
 
 const DISPLAY_TRANSFORMS = new Map([
@@ -365,18 +373,17 @@ const SDR_PRIMARIES = new Set(['bt709', 'bt470m', 'bt470bg', 'smpte170m', 'smpte
 const SDR_TRANSFER = new Set(['bt709', 'iec61966-2-1', 'smpte170m', 'smpte240m', 'gamma22', 'gamma28']);
 const SDR_MATRIX = new Set(['bt709', 'bt470bg', 'smpte170m', 'smpte240m', 'rgb', 'gbr']);
 
-function classifyStream(stream) {
+function classifyStream(stream, { bitDepth, alpha }) {
   const primaries = stream.color_primaries;
   const transfer = stream.color_transfer;
   const matrix = stream.color_space;
   const range = stream.color_range;
-  const bitDepth = sourceBitDepth(stream);
-  const alpha = hasAlpha(stream);
   const hdr = transfer === 'smpte2084' || transfer === 'arib-std-b67';
   const dovi = /^(?:dvhe|dvh1)$/i.test(stream.codec_tag_string || '') || (stream.side_data_list || []).some(entry => /dovi|dolby vision/i.test(entry.side_data_type || ''));
   if (!primaries || !transfer || !matrix || !range || ['unknown', 'unspecified', 'reserved'].includes(primaries) || ['unknown', 'unspecified', 'reserved'].includes(transfer) || ['unknown', 'unspecified', 'reserved'].includes(matrix)) {
     throw new DraftError('color_metadata_ambiguous', 'video color metadata is missing or unspecified', 're-export the source with explicit color primaries, transfer, matrix, and range metadata');
   }
+  if (hdr && alpha) throw new DraftError('hdr_alpha_unsupported', `HDR alpha is unsupported by the native HEIC10 encoder: ${stream.pix_fmt}`, 'provide an opaque HDR source or an SDR export that preserves transparency');
   if (dovi && !hdr) throw new DraftError('hdr_unsupported', 'Dolby Vision input has no supported tagged PQ or HLG base layer', 'provide an HDR10 PQ or HLG base-layer export');
   if (hdr) {
     if (primaries !== 'bt2020' || !['bt2020nc', 'bt2020c'].includes(matrix) || bitDepth < 10) throw new DraftError('color_metadata_ambiguous', `HDR metadata is inconsistent: primaries=${primaries}, transfer=${transfer}, matrix=${matrix}, depth=${bitDepth}`, 're-export HDR with consistent BT.2020 PQ or HLG metadata at 10 bits or greater');
@@ -438,7 +445,7 @@ async function inspectInput(manager, state, options) {
   const metadata = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', state.paths.supplied], 'input_unusable', `ffprobe could not inspect input video: ${state.paths.supplied}`, 'confirm the file is a complete video ffmpeg can decode');
   const stream = selectVideoStream(metadata.streams);
   if (!stream.width || !stream.height) throw new DraftError('stream_unsupported', 'selected video stream has no valid dimensions', 're-export the source with a decodable video stream');
-  const color = classifyStream(stream);
+  const color = classifyStream(stream, pixelProperties(stream, state.pixelDescriptors));
   const transform = displayTransform(stream);
   const frameData = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-threads', '0', '-select_streams', String(stream.index), '-show_frames', '-show_entries', 'frame=best_effort_timestamp,duration,pkt_duration,color_range,color_space,color_primaries,color_transfer,pix_fmt', '-of', 'json', state.paths.supplied], 'input_unusable', 'ffprobe could not enumerate frame timestamps', 'repair or re-export the video with valid presentation timestamps');
   const timing = analyzePresentedFrames(frameData, color, { ...options, timeBase: stream.time_base });
@@ -542,7 +549,8 @@ async function representativeDecodePreflight(manager, state) {
 async function syntheticEncoderPreflight(manager, state) {
   const tiff = path.join(state.encoderDirectory, 'preflight-synthetic.tiff');
   const heic = path.join(state.encoderDirectory, 'preflight-synthetic.heic');
-  const color = classifyStream({ pix_fmt: 'yuv420p10le', color_primaries: 'bt2020', color_transfer: 'arib-std-b67', color_space: 'bt2020nc', color_range: 'tv' });
+  const stream = { pix_fmt: 'yuv420p10le', color_primaries: 'bt2020', color_transfer: 'arib-std-b67', color_space: 'bt2020nc', color_range: 'tv' };
+  const color = classifyStream(stream, pixelProperties(stream, state.pixelDescriptors));
   const originalMedia = state.media;
   state.media = { color, width: 64, height: 64 };
   try {
@@ -632,7 +640,12 @@ async function structuralChecks(manager, state, temporary) {
     const data = await readJson(manager, state.commands.ffprobe, ['-v', 'error', '-show_streams', '-of', 'json', path.join(temporary, file)], 'structural_check_failed', `ffprobe could not inspect extracted frame: ${file}`, 'repair the FFmpeg image encoder and run again', EXIT.FAILED);
     const stream = (data.streams || [])[0];
     if (!stream || stream.codec_name !== state.media.color.codec || stream.width !== state.media.width || stream.height !== state.media.height) throw new DraftError('structural_check_failed', `frame structure does not match ${state.media.color.codec} ${state.media.width}x${state.media.height}: ${file}`, 'repair the FFmpeg filter or image encoder and run again', EXIT.FAILED);
-    probes.push({ file, codec: stream.codec_name, pixelFormat: stream.pix_fmt, width: stream.width, height: stream.height });
+    let properties;
+    try { properties = pixelProperties(stream, state.pixelDescriptors); } catch (error) {
+      throw new DraftError('structural_check_failed', `cannot verify frame pixel properties: ${file}: ${error.condition}`, error.remedy, EXIT.FAILED);
+    }
+    if (properties.alpha !== state.media.color.alpha || properties.bitDepth !== Number(state.media.color.outputDepth)) throw new DraftError('structural_check_failed', `frame alpha/depth does not match alpha=${state.media.color.alpha}, depth=${state.media.color.outputDepth}: ${file} (${stream.pix_fmt})`, 'repair the FFmpeg filter or PNG encoder and run again', EXIT.FAILED);
+    probes.push({ file, codec: stream.codec_name, pixelFormat: stream.pix_fmt, width: stream.width, height: stream.height, ...properties });
   }
   return { files, probes };
 }
@@ -790,4 +803,4 @@ async function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then(code => { process.exitCode = code; }, error => { emitError(error, process.argv.includes('--json')); process.exitCode = EXIT.FAILED; });
 
-module.exports = { emitError, ProcessManager, analyzePresentedFrames, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };
+module.exports = { descriptorMap, pixelProperties, emitError, ProcessManager, analyzePresentedFrames, assertSourceUnchanged, boundedTail, classifyStream, codecArguments, colorConversionFilter, convertHdrFrames, decodeProbeArguments, derivePaths, displayRotation, ffmpegArguments, formatTime, identity, parseArguments, parseTime, prepare, publishDirectoryNoReplace, representativeDecodePreflight, resultPayload, selectVideoStream, structuralChecks, transformFromMatrix };

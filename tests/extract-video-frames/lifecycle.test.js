@@ -145,6 +145,7 @@ for (const kind of ['sdr', 'hdr', 'synthetic']) {
       assert.ok(compileIndex >= 0);
       if (input) assert.ok(calls.slice(0, compileIndex).some(call => call.args.includes('-show_frames')));
     }
+    assert.equal(calls.filter(call => call.args.includes('-show_pixel_formats')).length, 1);
     if (input) {
       const reports = calls.filter(call => call.args.includes('-show_frames'));
       assert.equal(reports.length, 1);
@@ -237,8 +238,8 @@ test('structural checks reject a wrong frame count', async t => {
   const root = temporaryRoot(t);
   fs.writeFileSync(path.join(root, 'frame-000001.png'), 'one');
   fs.writeFileSync(path.join(root, 'frame-000002.png'), 'two');
-  const manager = { run: async () => ({ code: 0, stdout: '{"streams":[{"codec_name":"png","width":320,"height":240}]}', stderr: '' }) };
-  const state = { commands: { ffprobe: '/fake/ffprobe' }, media: { expectedFrames: 2, width: 320, height: 240, color: { extension: 'png', codec: 'png' } } };
+  const manager = { run: async () => ({ code: 0, stdout: '{"streams":[{"codec_name":"png","pix_fmt":"rgb24","width":320,"height":240}]}', stderr: '' }) };
+  const state = { pixelDescriptors: subject.descriptorMap(require('./pixel-formats.json')), commands: { ffprobe: '/fake/ffprobe' }, media: { expectedFrames: 2, width: 320, height: 240, color: { extension: 'png', codec: 'png', alpha: false, outputDepth: '8' } } };
   assert.equal((await subject.structuralChecks(manager, state, root)).probes.length, 2);
   state.media.expectedFrames = 3;
   await assert.rejects(subject.structuralChecks(manager, state, root), { code: 'structural_check_failed' });
@@ -397,3 +398,52 @@ for (const format of ['rgb48be', 'rgba64be', 'gray16be', 'yuv420p']) {
     }
   });
 }
+
+for (const [transfer, dynamicRange] of [['smpte2084', 'hdr-pq'], ['arib-std-b67', 'hdr-hlg']]) {
+  test(`native ${dynamicRange} publishes verified HEIC10 frames`, { skip: process.platform !== 'darwin' || !realFfmpeg }, t => {
+    const root = temporaryRoot(t);
+    const input = path.join(root, 'hdr.mov');
+    const generated = spawnSync(realFfmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=64x64:r=2:d=1', '-c:v', 'libx265', '-pix_fmt', 'yuv420p10le', '-x265-params', `log-level=error:colorprim=bt2020:transfer=${transfer}:colormatrix=bt2020nc`, '-color_primaries', 'bt2020', '-color_trc', transfer, '-colorspace', 'bt2020nc', '-color_range', 'tv', input], { encoding: 'utf8' });
+    assert.equal(generated.status, 0, generated.stderr);
+    const result = spawnSync(process.execPath, [require.resolve('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js'), '--json', input], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout).result;
+    assert.equal(report.dynamicRange, dynamicRange);
+    assert.equal(report.output.depth, '10');
+    assert.equal(report.output.alpha, false);
+    assert.equal(report.frames, 2);
+    assert.deepEqual(fs.readdirSync(report.outputDirectory), ['frame-000001.heic', 'frame-000002.heic']);
+    assert.equal(report.checks.find(check => check.probes).probes.length, 2);
+  });
+}
+
+test('native HEIC10 encoder drops TIFF alpha and HDR alpha CLI rejects during preparation', { skip: process.platform !== 'darwin' || !realFfmpeg }, t => {
+  const root = temporaryRoot(t);
+  const tiff = path.join(root, 'alpha.tiff');
+  const heic = path.join(root, 'alpha.heic');
+  const encoder = path.join(root, 'encoder');
+  const generated = spawnSync(realFfmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=red@0.5:s=64x64,format=rgba64le', '-frames:v', '1', tiff], { encoding: 'utf8' });
+  assert.equal(generated.status, 0, generated.stderr);
+  const alpha = spawnSync('sips', ['-g', 'hasAlpha', tiff], { encoding: 'utf8' });
+  assert.equal(alpha.status, 0, alpha.stderr);
+  assert.match(alpha.stdout, /hasAlpha: yes/);
+  const compiled = spawnSync('swiftc', [path.resolve(__dirname, '../../plugins/harness/skills/extract-video-frames/scripts/tiff-to-heic.swift'), '-o', encoder], { encoding: 'utf8' });
+  assert.equal(compiled.status, 0, compiled.stderr);
+  for (const transfer of ['hlg', 'pq']) {
+    const encoded = spawnSync(encoder, ['--json', tiff, heic, transfer], { encoding: 'utf8' });
+    assert.equal(encoded.status, 0, encoded.stderr);
+    const inspected = spawnSync('sips', ['-g', 'hasAlpha', '-g', 'bitsPerSample', heic], { encoding: 'utf8' });
+    assert.equal(inspected.status, 0, inspected.stderr);
+    assert.match(inspected.stdout, /hasAlpha: no/, `native ${transfer} alpha support changed`);
+    assert.match(inspected.stdout, /bitsPerSample: 10/);
+    fs.rmSync(heic);
+  }
+  const input = path.join(root, 'alpha.mov');
+  const video = spawnSync(realFfmpeg, ['-v', 'error', '-loop', '1', '-i', tiff, '-vf', 'setparams=range=limited:color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc', '-frames:v', '2', '-c:v', 'prores_ks', '-profile:v', '4', '-pix_fmt', 'yuva444p10le', '-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc', '-color_range', 'pc', input], { encoding: 'utf8' });
+  assert.equal(video.status, 0, video.stderr);
+  const result = spawnSync(process.execPath, [require.resolve('../../plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js'), '--json', input], { encoding: 'utf8' });
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(JSON.parse(result.stderr).error.code, 'hdr_alpha_unsupported');
+  assert.equal(fs.existsSync(path.join(root, 'alpha-frames')), false);
+  assert.equal(fs.readdirSync(root).some(name => name.includes('.partial-')), false);
+});

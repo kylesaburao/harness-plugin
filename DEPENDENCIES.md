@@ -17,7 +17,7 @@ On macOS, run development commands and tests directly on the host. On Linux, inc
 | `pypdfium2` and the generated ASD reference bundle | Setup installs `pypdfium2` into `.venv` and initializes the bundle under `~/.harness-plugin/write-asd-ste100/bundles/`. Both are required by the full development gate. |
 | FFmpeg and matching `ffprobe` | GIF tests require working `libvmaf` with its built-in models, including `vmaf_v0.6.1`, plus the media capabilities described under plugin use below. Test fixtures additionally require `libx264` encoding. |
 | Both `gifski` and `gifsicle` | The full gate runs both converter preflights and backend tests. Installing only the default backend is insufficient for development. |
-| macOS **26.0 or newer**, Command Line Tools, and `ffmpeg-full` | Required for native frame-extraction execution and its platform-specific tests. Command Line Tools supply `swiftc` and the macOS SDK. The FFmpeg build needs `zscale`, PNG, TIFF, and `libx265` for frame-test fixtures. System `sw_vers`, `sips`, and `/usr/bin/osascript` must be available. |
+| macOS **26.0 or newer**, Command Line Tools, and `ffmpeg-full` | Required for native frame-extraction execution and its platform-specific tests. Command Line Tools supply `swiftc` and the macOS SDK. The FFmpeg build needs `zscale`, PNG, TIFF, `libx265`, and `prores_ks` for frame-test fixtures. System `sw_vers`, `sips`, and `/usr/bin/osascript` must be available. |
 | Network access and writable storage | Initial npm/pip installation and reference download need network access. Allow space for dependencies, generated references, temporary media, and test outputs. |
 
 Expose the intended `ffmpeg` and its matching `ffprobe` on `PATH` for GIF commands and tests. Frame extraction also searches the standard Homebrew `ffmpeg-full` installation paths. Homebrew is the documented provisioning route for `ffmpeg-full`, not an additional requirement when equivalent usable binaries are already installed.
@@ -80,7 +80,9 @@ FFmpeg, gifski, and gifsicle do not have a numeric minimum enforced by the conve
 
 For both GIF backends, FFmpeg needs `fps`, `scale`, `format`, `setpts`, and `libvmaf`, plus rawvideo, FFV1, GIF decoding, Matroska, and null output. The gifski path also needs YUV4MPEG pipe support. The gifsicle path adds `palettegen`, `paletteuse`, PNG/GIF encoding, PNG decoding, NUT, and image2 support. Input-specific codecs must also be available. `ffprobe` must support JSON output, stream selection, entry selection, and frame counting. The backend tools must expose the options checked by [shared.js](plugins/harness/skills/create-discord-emoji-gif/scripts/node/shared.js).
 
-For frame extraction, FFmpeg additionally needs `select`, `transpose`, `hflip`, `vflip`, image2 output, and the RGB/RGBA pixel formats checked by [extract-video-frames.js](plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js). `libx264` and `libx265` are development fixture dependencies, not universal prerequisites for converting an existing supported input.
+Frame extraction requires FFprobe pixel-format descriptors (`-show_pixel_formats -of json`) for authoritative alpha and component depth. The native HEIC10 path rejects HDR inputs with alpha.
+
+For frame extraction, FFmpeg additionally needs `select`, `transpose`, `hflip`, `vflip`, image2 output, and the RGB/RGBA pixel formats checked by [extract-video-frames.js](plugins/harness/skills/extract-video-frames/scripts/extract-video-frames.js). `libx264`, `libx265`, and `prores_ks` are development fixture dependencies, not universal prerequisites for converting an existing supported input.
 
 ### Initialization and upgrades
 
