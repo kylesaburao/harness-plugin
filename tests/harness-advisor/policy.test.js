@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../../plugins/harness/skills');
 const policy = fs.readFileSync(path.join(root, 'harness-advisor/SKILL.md'), 'utf8');
-const { blockFor } = require(path.join(root, 'install-harness-plugin-capabilities/scripts/install.js'));
+const activation = fs.readFileSync(path.join(root, 'install-harness-plugin-capabilities/references/activation-instructions.md'), 'utf8');
+const [codexBlock, claudeBlock] = [...activation.matchAll(/```markdown\n([\s\S]*?)```/g)].map(match => match[1]);
 
 // Retained public instruction contracts, not claims of live model enforcement.
 test('policy retains separate budgets, peer gate, and relevant model-neutral carryover', () => {
@@ -26,11 +27,11 @@ test('context policy preserves relevance, actual capacity, explicit budgets, and
 });
 
 test('Claude activation suppresses Harness on native presence including native errors', () => {
-  const block = blockFor('claude');
+  const block = claudeBlock;
   for (const phrase of ['server tool', 'Managed Agents', 'do not load, invoke, or otherwise use',
     'Native errors do not enable Harness fallback', 'Only when native Advisor is unavailable',
     'explicit native-only request', 'Do not use both']) assert.ok(block.includes(phrase), phrase);
-  assert.ok(!blockFor('codex').includes('native'));
+  assert.ok(!codexBlock.includes('native'));
 });
 
 test('Codex dispatch uses an ordinary fresh agent and distinguishes instructions from permissions', () => {

@@ -19,7 +19,7 @@ See [DEPENDENCIES.md](DEPENDENCIES.md) for the authoritative runtime, tool, and 
 | `diagnose-environment` | Bisect a failure that lives in the machine (PATH, shims, stale caches) rather than the code. |
 | `extract-video-frames` | Extract every full-resolution SDR or HDR video frame, optionally within an inclusive time window. |
 | `inspect-development-environment` | Produce an evidence-backed inventory of the current dev environment. |
-| `install-harness-plugin-capabilities` | Install or repair Harness host integration, including the Claude native-first Advisor gate and fallback support. |
+| `install-harness-plugin-capabilities` | Install or repair Advisor integration and final-plan guidance for Codex and Claude Code through agent file edits. |
 | `record-decision` | Capture a consequential technical decision, its constraints, and its reversibility. |
 | `demonstrate-workflow` | Turn completed session work or a new demonstration into a reusable skill through explicit invocation. |
 | `research-precedent` | Research whether a proposed approach has precedent, internally or in the wider industry. |
@@ -59,12 +59,16 @@ Some skills generate data on first use and store it under `~/.harness-plugin/`. 
 ## Using Advisor
 
 After plugin installation, use `install-harness-plugin-capabilities` for each
-host you want to configure. Codex gets a small managed `AGENTS.md` block under
-`CODEX_HOME` (default `~/.codex`). Claude Code gets a managed `CLAUDE.md` gate
-under `CLAUDE_CONFIG_DIR` (default
-`~/.claude`). Existing user content and settings are preserved. Start a new host
-session after installation, and rerun the installer to update integration. Neither
-CLI is needed for installation. Legacy role files remain untouched.
+host you want to configure. This instruction-only skill has the agent copy the
+bundled `final-plan-context.md` into the host's user directory and contextually
+patch Advisor activation and a Final plans pointer into the effective user
+instructions. Codex uses `CODEX_HOME` (default `~/.codex`) and normally
+`AGENTS.md`, with `AGENTS.override.md` taking precedence when nonempty. Claude
+Code uses `CLAUDE_CONFIG_DIR` (default `~/.claude`) and normally `CLAUDE.md`.
+Both hosts receive final-plan guidance, independently of Advisor availability.
+Existing unrelated instructions, settings, Advisor routing, and legacy role files
+are preserved. Start a new host session after installation, and invoke the skill
+again to update integration. No dedicated runtime, package, or host CLI is needed.
 
 Claude sessions with native Advisor use it exclusively and do not load the
 Harness Advisor Skill, including after native execution errors. Claude fallback
