@@ -25,6 +25,8 @@ codex plugin add harness@harness-plugin
 
 Pushing to `main` bumps the patch version automatically. To bump minor or major instead, add `[bump:minor]` or `[bump:major]` to a commit subject.
 
+Only changes that reach an install count. A push bumps the version if it touched `plugins/`, `.claude-plugin/`, or `.agents/plugins/`; a push that only edits docs, `tests/`, or repo tooling leaves the version alone. When a push does mix the two, a `[bump:minor]` or `[bump:major]` tag anywhere in it is still honored.
+
 To bump by hand:
 
 ```sh
