@@ -9,9 +9,12 @@ const { spawnSync } = require('node:child_process');
 
 const {
   assertTestedInventory,
+  deriveBumpLevel,
+  deriveFromRange,
   findReleaseAnchor,
   findReleaseByRunId,
   inspectPublication,
+  isRelevantPath,
   releaseRange,
   testedInventory,
   validateCommittedRelease,
@@ -184,6 +187,78 @@ function policyCode(callback)
   }
   return null;
 }
+
+function relevant(subject, paths = ['src/harness/skills/example/SKILL.md'])
+{
+  return { subject, paths };
+}
+
+function rangeOf(entries)
+{
+  return {
+    subjects: entries.map((entry) => entry.subject),
+    paths: entries.flatMap((entry) => entry.paths),
+  };
+}
+
+test('bump tags preserve patch default and highest severity', () =>
+{
+  assert.equal(deriveBumpLevel(['ordinary change']), 'patch');
+  assert.equal(deriveBumpLevel(['docs [bump:minor]', 'ordinary change']), 'minor');
+  assert.equal(deriveBumpLevel(['minor [bump:minor]', 'major [bump:major]']), 'major');
+});
+
+test('eligibility and level use separate complete-range streams', () =>
+{
+  assert.equal(deriveFromRange(rangeOf([])), 'none');
+  assert.equal(deriveFromRange(rangeOf([
+    relevant('docs [bump:major]', ['README.md']),
+  ])), 'none');
+  assert.equal(deriveFromRange(rangeOf([
+    relevant('docs [bump:major]', ['README.md']),
+    relevant('source change'),
+  ])), 'major');
+});
+
+test('the exact conservative release-input set is eligible', () =>
+{
+  for (const repositoryPath of [
+    'src/harness/skills/example/SKILL.md',
+    'src/harness/shared/node/example.ts',
+    '.claude-plugin/marketplace.json',
+    '.agents/plugins/marketplace.json',
+    'scripts/build.js',
+    'scripts/artifact-paths.js',
+    'tsconfig.json',
+    'package.json',
+    'package-lock.json',
+    '.gitattributes',
+    '.github/workflows/bump-version.yml',
+  ])
+  {
+    assert.equal(isRelevantPath(repositoryPath), true, repositoryPath);
+  }
+});
+
+test('similar names and development-only paths are not eligible', () =>
+{
+  for (const repositoryPath of [
+    'src/harness-other/file.ts',
+    '.claude-plugin-notes/file',
+    '.agents/plugins-other/file',
+    'package.json.notes',
+    'scripts/build.js.bak',
+    'scripts/release-policy.js',
+    '.github/workflows/verify.yml',
+    '.githooks/pre-commit',
+    'tests/bump-version/release-policy.test.js',
+    'README.md',
+    'dist/harness/skills/example/SKILL.md',
+  ])
+  {
+    assert.equal(isRelevantPath(repositoryPath), false, repositoryPath);
+  }
+});
 
 test('the checked-in 3.1.9 commit remains a valid trailerless legacy anchor', () =>
 {
