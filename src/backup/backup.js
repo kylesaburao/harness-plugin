@@ -91,6 +91,67 @@ async function validateDirectory(configuredPath, label, accessMode) {
   };
 }
 
+async function inspectProspectiveDirectory(configuredPath, label) {
+  try {
+    return { exists: true, canonicalPath: await fsp.realpath(configuredPath) };
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw new Error(`${label} cannot be created or accessed: ${configuredPath} (${error.code || error.message})`);
+    }
+  }
+
+  const missingComponents = [];
+  let ancestor = configuredPath;
+  while (true) {
+    missingComponents.unshift(path.basename(ancestor));
+    ancestor = path.dirname(ancestor);
+    try {
+      const canonicalAncestor = await fsp.realpath(ancestor);
+      return {
+        exists: false,
+        canonicalPath: path.join(canonicalAncestor, ...missingComponents),
+      };
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        throw new Error(`${label} cannot be created or accessed: ${configuredPath} (${error.code || error.message})`);
+      }
+    }
+  }
+}
+
+function assertOutputOutsideSource(source, outputPath, configuredPath) {
+  if (isWithin(source.canonicalPath, outputPath)) {
+    throw new Error(`outputDirectory must not resolve to sourceDirectory or one of its subdirectories: ${configuredPath} -> ${outputPath}`);
+  }
+}
+
+async function validateOutputDirectory(configuredPath, source) {
+  const prospective = await inspectProspectiveDirectory(configuredPath, 'outputDirectory');
+  assertOutputOutsideSource(source, prospective.canonicalPath, configuredPath);
+
+  if (prospective.exists) {
+    let details;
+    try {
+      details = await fsp.stat(prospective.canonicalPath);
+    } catch (error) {
+      throw new Error(`outputDirectory cannot be accessed: ${configuredPath} (${error.code || error.message})`);
+    }
+    if (!details.isDirectory()) {
+      throw new Error(`outputDirectory conflicts with an existing non-directory: ${configuredPath} (EEXIST)`);
+    }
+  } else {
+    try {
+      await fsp.mkdir(configuredPath, { recursive: true });
+    } catch (error) {
+      throw new Error(`Cannot create outputDirectory: ${configuredPath} (${error.code || error.message})`);
+    }
+  }
+
+  const output = await validateDirectory(configuredPath, 'outputDirectory', fs.constants.W_OK | fs.constants.X_OK);
+  assertOutputOutsideSource(source, output.canonicalPath, configuredPath);
+  return output;
+}
+
 async function assertDirectoryUnchanged(directory) {
   let canonicalPath;
   let details;
@@ -265,13 +326,10 @@ async function readAndValidate(configPath, now = new Date()) {
     : os.tmpdir();
   const targetConfigured = config.targetDirectories.map((directory) => resolveConfigPath(directory, configDirectory));
   const source = await validateDirectory(sourceConfigured, 'sourceDirectory', fs.constants.R_OK | fs.constants.X_OK);
-  const output = await validateDirectory(outputConfigured, 'outputDirectory', fs.constants.W_OK | fs.constants.X_OK);
+  const output = await validateOutputDirectory(outputConfigured, source);
   const targets = await Promise.all(targetConfigured.map((directory, index) =>
     validateDirectory(directory, `targetDirectories[${index}]`, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK)));
 
-  if (isWithin(source.canonicalPath, output.canonicalPath)) {
-    throw new Error(`outputDirectory must not resolve to sourceDirectory or one of its subdirectories: ${output.configuredPath} -> ${output.canonicalPath}`);
-  }
   for (const target of targets) {
     if (isWithin(source.canonicalPath, target.canonicalPath)) {
       throw new Error(`${target.label} must not resolve to sourceDirectory or one of its subdirectories: ${target.configuredPath} -> ${target.canonicalPath}`);
@@ -515,6 +573,8 @@ function archiveWarningMessage(error) {
 function createArchive(sourceDirectory, archivePath, context, dependencies = {}) {
   const archiveFactory = dependencies.archiveFactory || archiver;
   const outputFactory = dependencies.outputFactory || ((file) => fs.createWriteStream(file, { flags: 'wx' }));
+  const onProgress = dependencies.onProgress;
+  const progressIntervalMs = dependencies.progressIntervalMs || 5_000;
   context.track(archivePath);
   return new Promise((resolve, reject) => {
     let output;
@@ -535,10 +595,28 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
     let failure = null;
     let settled = false;
     let unregister = () => {};
+    let progressTimer;
+    let progress = { entries: 0, processedBytes: 0, outputBytes: 0 };
+
+    const reportProgress = () => {
+      if (!onProgress) return;
+      try {
+        onProgress(progress);
+      } catch {}
+    };
+    const updateProgress = (details) => {
+      progress = {
+        entries: details.entries.processed,
+        processedBytes: details.fs.processedBytes,
+        outputBytes: typeof archive.pointer === 'function' ? archive.pointer() : 0,
+      };
+    };
 
     const settle = () => {
       if (settled) return;
       settled = true;
+      clearInterval(progressTimer);
+      if (!failure) reportProgress();
       unregister();
       failure ? reject(failure) : resolve();
     };
@@ -553,6 +631,7 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
     output.once('error', abort);
     archive.once('error', abort);
     archive.on('warning', (error) => abort(new Error(archiveWarningMessage(error))));
+    archive.on('progress', updateProgress);
     unregister = context.onAbort((error) => {
       abort(error);
       return closed;
@@ -561,6 +640,11 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
     try {
       archive.pipe(output);
       archive.directory(sourceDirectory, false);
+      if (onProgress) {
+        reportProgress();
+        progressTimer = setInterval(reportProgress, progressIntervalMs);
+        progressTimer.unref?.();
+      }
       Promise.resolve(archive.finalize()).catch(abort);
     } catch (error) {
       abort(error);
@@ -594,12 +678,15 @@ async function copyAtomically(source, target, context, dependencies = {}) {
 async function execute(plan, context, dependencies = {}) {
   const temporaryArchive = shortTempPath(plan.output.canonicalPath, 'archive');
   const removeFile = dependencies.removeFile || fsp.rm;
+  const onStage = dependencies.onStage || (() => {});
   let replicationSource = temporaryArchive;
   try {
     context.throwIfInterrupted();
     await assertDirectoryUnchanged(plan.source);
     await assertDirectoryUnchanged(plan.output);
+    onStage({ phase: 'archive-start' });
     await createArchive(plan.source.canonicalPath, temporaryArchive, context, dependencies.archive);
+    onStage({ phase: 'archive-complete' });
     context.throwIfInterrupted();
     await assertDirectoryUnchanged(plan.source);
     await assertDirectoryUnchanged(plan.output);
@@ -619,8 +706,9 @@ async function execute(plan, context, dependencies = {}) {
   const copied = [];
   let replicationFailure = null;
   try {
-    for (const target of plan.copyTargets) {
+    for (const [index, target] of plan.copyTargets.entries()) {
       try {
+        onStage({ phase: 'copy-start', destination: target.destination, index, total: plan.copyTargets.length });
         await copyAtomically(replicationSource, target, context, dependencies.copy);
         copied.push(target.destination);
       } catch (error) {
@@ -700,6 +788,7 @@ async function main() {
       console.log('\nCANCELLED — No files were changed.');
       return;
     }
+    console.log('\nPreparing backup...');
     try {
       context.throwIfInterrupted();
       runLock = await acquireRunLock(lockPath);
@@ -710,7 +799,25 @@ async function main() {
       if (!error.exitCode) error.exitCode = EXIT.VALIDATION;
       throw error;
     }
-    const copied = await execute(plan, context);
+    const copied = await execute(plan, context, {
+      onStage(status) {
+        if (status.phase === 'archive-start') console.log('Creating archive...');
+        if (status.phase === 'archive-complete') console.log('Archive created.');
+        if (status.phase === 'copy-start') {
+          console.log(`Replicating copy ${status.index + 1} of ${status.total}: ${status.destination}`);
+        }
+      },
+      archive: {
+        onProgress(progress) {
+          const entryLabel = progress.entries === 1 ? 'entry' : 'entries';
+          console.log(
+            `${INDENT_PREFIX}${progress.entries} ${entryLabel}, ` +
+            `${formatBytes(BigInt(progress.processedBytes))} read, ` +
+            `${formatBytes(BigInt(progress.outputBytes))} written`,
+          );
+        },
+      },
+    });
     console.log('\nBackup complete');
     console.log('===============');
     if (plan.retainArchive) {
