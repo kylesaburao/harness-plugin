@@ -14,7 +14,6 @@ const {
   EXIT,
   InterruptedError,
   OperationContext,
-  acquireDirectoryLocks,
   acquireRunLock,
   assertDirectoryUnchanged,
   backupFilename,
@@ -404,7 +403,7 @@ test('readAndValidate rejects output file conflicts and reports directory creati
   }));
   t.mock.method(fsp, 'mkdir', async (directory, options) => {
     assert.equal(directory, failedOutput);
-    assert.deepEqual(options, { recursive: true });
+    assert.deepEqual(options, { recursive: true, mode: 0o700 });
     const error = new Error('permission denied');
     error.code = 'EACCES';
     throw error;
@@ -809,7 +808,7 @@ test('run lock path honors an absolute override and rejects a relative override'
   );
 });
 
-test('resolved singleton lock paths conflict and the compatibility export is releasable', async (t) => {
+test('resolved singleton lock paths conflict', async (t) => {
   const root = await temporaryRoot(t);
   const lockPath = path.join(root, '.backup-tool.lock');
   const resolved = resolveRunLockPath({ BACKUP_LOCK_PATH: lockPath }, '/unused-home');
@@ -817,18 +816,6 @@ test('resolved singleton lock paths conflict and the compatibility export is rel
 
   await assert.rejects(acquireRunLock(resolved), /Another backup run may already be active/);
   assert.deepEqual(await first.release(), []);
-
-  const originalLockPath = process.env.BACKUP_LOCK_PATH;
-  process.env.BACKUP_LOCK_PATH = lockPath;
-  try {
-    const compatible = await acquireDirectoryLocks({ ignored: true });
-    assert.equal(typeof compatible.release, 'function');
-    assert.equal(typeof compatible.releaseSync, 'function');
-    assert.deepEqual(await compatible.release(), []);
-  } finally {
-    if (originalLockPath === undefined) delete process.env.BACKUP_LOCK_PATH;
-    else process.env.BACKUP_LOCK_PATH = originalLockPath;
-  }
 });
 
 test('run lock leaves stale ownership decisions to the local operator', async (t) => {
@@ -908,7 +895,7 @@ test('CLI cancellation leaves backup directories untouched', async (t) => {
   assert.equal(result.exitCode, 0, result.stderr);
   assert.match(result.stdout, /Targets \(1\)\n-----------\n1\. .*source_Backup_.*\.zip\n   Action             will be created/);
   assert.match(result.stdout, /Existing contents  39 B\n   Matching backups   10 B in 1 backup/);
-  assert.match(result.stdout, /Proceed\? \[y\/N\] \nCANCELLED — No files were changed\./);
+  assert.match(result.stdout, /Proceed\? \[y\/N\] \nCANCELLED — No archive or replicated copy was created\./);
   assert.equal(await fsp.readFile(existingTemporary, 'utf8'), 'must remain untouched');
   assert.deepEqual(await fsp.readdir(output), []);
   assert.deepEqual((await fsp.readdir(target)).sort(), [
@@ -944,10 +931,24 @@ test('CLI creates a real ZIP, reports completion, and releases its lock', async 
   const entries = await fsp.readdir(output);
   assert.equal(entries.length, 1);
   assert.match(entries[0], /^source_Backup_[A-Z][a-z]+\d{2}\d{4}\.zip$/);
+  const archivePath = path.join(output, entries[0]);
   const header = Buffer.alloc(4);
-  const handle = await fsp.open(path.join(output, entries[0]), 'r');
+  const handle = await fsp.open(archivePath, 'r');
   await handle.read(header, 0, 4, 0);
   await handle.close();
   assert.equal(header.toString('hex'), '504b0304');
+  if (process.platform !== 'win32') assert.equal((await fsp.stat(archivePath)).mode & 0o777, 0o600);
+  const extraction = path.join(root, 'extracted');
+  await fsp.mkdir(extraction);
+  const unzip = spawn('unzip', ['-qq', archivePath, '-d', extraction], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let unzipError = '';
+  unzip.stderr.setEncoding('utf8');
+  unzip.stderr.on('data', (chunk) => { unzipError += chunk; });
+  const unzipExit = await new Promise((resolve, reject) => {
+    unzip.once('error', reject);
+    unzip.once('close', resolve);
+  });
+  assert.equal(unzipExit, 0, unzipError);
+  assert.equal(await fsp.readFile(path.join(extraction, 'hello.txt'), 'utf8'), 'hello from the backup');
   await assert.rejects(fsp.access(lockPath), { code: 'ENOENT' });
 });
