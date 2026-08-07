@@ -1,3 +1,4 @@
+generated-backups/
 node_modules/
 backup-config.local.json
 

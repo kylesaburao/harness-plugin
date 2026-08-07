@@ -254,6 +254,45 @@ test('readAndValidate resolves relative paths and plans aliases without duplicat
   assert.equal(plan.previewTargets[1].storage, plan.previewTargets[2].storage);
 });
 
+test('readAndValidate recursively creates and validates a missing output directory', async (t) => {
+  const root = await temporaryRoot(t);
+  const { source, target } = await makeDirectories(root, ['source', 'target']);
+  const output = path.join(root, 'missing', 'parents', 'output');
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: output,
+    targetDirectories: [target],
+  }));
+
+  const plan = await readAndValidate(config, FIXED_DATE);
+  const details = await fsp.stat(output, { bigint: true });
+
+  assert(details.isDirectory());
+  assert.equal(plan.output.configuredPath, output);
+  assert.equal(plan.output.canonicalPath, await fsp.realpath(output));
+  assert.equal(plan.output.identity, `${details.dev}:${details.ino}`);
+});
+
+test('readAndValidate creates a missing output that is also a target', async (t) => {
+  const root = await temporaryRoot(t);
+  const { source } = await makeDirectories(root, ['source']);
+  const output = path.join(root, 'new', 'output');
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: output,
+    targetDirectories: [output],
+  }));
+
+  const plan = await readAndValidate(config, FIXED_DATE);
+
+  assert.equal(plan.retainArchive, true);
+  assert.equal(plan.archiveExists, false);
+  assert.deepEqual(plan.copyTargets, []);
+  assert.match(plan.previewTargets[0].action, /shared with outputDirectory/);
+});
+
 test('readAndValidate recognizes an existing retained archive', async (t) => {
   const root = await temporaryRoot(t);
   const { source, output } = await makeDirectories(root, ['source', 'output']);
@@ -292,6 +331,28 @@ test('readAndValidate rejects non-directories and output or target paths inside 
   }));
   await assert.rejects(readAndValidate(nestedConfig), /outputDirectory must not resolve to sourceDirectory/);
 
+  const missingNestedOutput = path.join(source, 'missing', 'output');
+  const missingNestedConfig = path.join(root, 'missing-nested-config.json');
+  await fsp.writeFile(missingNestedConfig, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: missingNestedOutput,
+    targetDirectories: [target],
+  }));
+  await assert.rejects(readAndValidate(missingNestedConfig), /outputDirectory must not resolve to sourceDirectory/);
+  await assert.rejects(fsp.access(missingNestedOutput), { code: 'ENOENT' });
+
+  const sourceAlias = path.join(root, 'source-alias');
+  await fsp.symlink(source, sourceAlias, 'dir');
+  const aliasedMissingOutput = path.join(sourceAlias, 'aliased-missing-output');
+  const aliasedConfig = path.join(root, 'aliased-config.json');
+  await fsp.writeFile(aliasedConfig, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: aliasedMissingOutput,
+    targetDirectories: [target],
+  }));
+  await assert.rejects(readAndValidate(aliasedConfig), /outputDirectory must not resolve to sourceDirectory/);
+  await assert.rejects(fsp.access(aliasedMissingOutput), { code: 'ENOENT' });
+
   for (const [index, targetDirectory] of [source, nestedOutput].entries()) {
     const nestedTargetConfig = path.join(root, `nested-target-config-${index}.json`);
     await fsp.writeFile(nestedTargetConfig, JSON.stringify({
@@ -300,6 +361,59 @@ test('readAndValidate rejects non-directories and output or target paths inside 
     }));
     await assert.rejects(readAndValidate(nestedTargetConfig), /targetDirectories\[0\] must not resolve to sourceDirectory/);
   }
+});
+
+test('readAndValidate rejects output file conflicts and reports directory creation failures', async (t) => {
+  const root = await temporaryRoot(t);
+  const { source, target } = await makeDirectories(root, ['source', 'target']);
+  const conflictingOutput = path.join(root, 'conflicting-output');
+  await fsp.writeFile(conflictingOutput, 'not a directory');
+  const fileConfig = path.join(root, 'file-config.json');
+  await fsp.writeFile(fileConfig, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: conflictingOutput,
+    targetDirectories: [target],
+  }));
+
+  await assert.rejects(
+    readAndValidate(fileConfig),
+    (error) => error.message.includes(conflictingOutput) && error.message.includes('EEXIST'),
+  );
+
+  const conflictingParent = path.join(root, 'conflicting-parent');
+  await fsp.writeFile(conflictingParent, 'not a directory');
+  const conflictOutput = path.join(conflictingParent, 'output');
+  const conflictConfig = path.join(root, 'conflict-config.json');
+  await fsp.writeFile(conflictConfig, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: conflictOutput,
+    targetDirectories: [target],
+  }));
+
+  await assert.rejects(
+    readAndValidate(conflictConfig),
+    (error) => error.message.includes(conflictOutput) && error.message.includes('ENOTDIR'),
+  );
+
+  const failedOutput = path.join(root, 'cannot-create', 'output');
+  const failedConfig = path.join(root, 'failed-config.json');
+  await fsp.writeFile(failedConfig, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: failedOutput,
+    targetDirectories: [target],
+  }));
+  t.mock.method(fsp, 'mkdir', async (directory, options) => {
+    assert.equal(directory, failedOutput);
+    assert.deepEqual(options, { recursive: true });
+    const error = new Error('permission denied');
+    error.code = 'EACCES';
+    throw error;
+  });
+
+  await assert.rejects(
+    readAndValidate(failedConfig),
+    (error) => error.message.includes(failedOutput) && error.message.includes('EACCES'),
+  );
 });
 
 test('readAndValidate rejects a directory where a destination file must go', async (t) => {
@@ -420,6 +534,33 @@ test('createArchive writes output and untracks only after the caller installs it
 
   assert.equal(await fsp.readFile(destination, 'utf8'), 'archive bytes');
   assert(context.temporaryPaths.has(destination));
+});
+
+test('createArchive reports initial and Archiver progress while work is in flight', async (t) => {
+  const root = await temporaryRoot(t);
+  const destination = path.join(root, '.backup-archive-progress.tmp');
+  const context = new OperationContext();
+  const reports = [];
+  const archiveFactory = () => {
+    const archive = successfulArchiveFactory('archive bytes')();
+    archive.pointer = () => 7;
+    archive.finalize = async () => {
+      archive.emit('progress', {
+        entries: { processed: 2, total: 3 },
+        fs: { processedBytes: 11, totalBytes: 13 },
+      });
+      archive.output.end('archive bytes');
+    };
+    return archive;
+  };
+
+  await createArchive(root, destination, context, {
+    archiveFactory,
+    onProgress: (progress) => reports.push(progress),
+  });
+
+  assert.deepEqual(reports[0], { entries: 0, processedBytes: 0, outputBytes: 0 });
+  assert.deepEqual(reports.at(-1), { entries: 2, processedBytes: 11, outputBytes: 7 });
 });
 
 test('createArchive treats warnings as failures and includes the omitted entry', async (t) => {
@@ -780,7 +921,8 @@ test('CLI cancellation leaves backup directories untouched', async (t) => {
 
 test('CLI creates a real ZIP, reports completion, and releases its lock', async (t) => {
   const root = await temporaryRoot(t, 'backup-cli-success-');
-  const { source, output } = await makeDirectories(root, ['source', 'output']);
+  const { source } = await makeDirectories(root, ['source']);
+  const output = path.join(root, 'new', 'output');
   await fsp.writeFile(path.join(source, 'hello.txt'), 'hello from the backup');
   const config = path.join(root, 'config.json');
   await fsp.writeFile(config, JSON.stringify({
@@ -794,6 +936,9 @@ test('CLI creates a real ZIP, reports completion, and releases its lock', async 
 
   assert.equal(result.exitCode, 0, result.stderr);
   assert.match(result.stdout, /Backup preview\n==============/);
+  assert.match(result.stdout, /Proceed\? \[y\/N\] \nPreparing backup\.\.\.\nCreating archive\.\.\./);
+  assert.match(result.stdout, /0 entries, 0 B read, 0 B written/);
+  assert.match(result.stdout, /Archive created\./);
   assert.match(result.stdout, /Backup complete\n===============/);
   assert.match(result.stdout, /Replicated copies \(0\)/);
   const entries = await fsp.readdir(output);
