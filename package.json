@@ -21,7 +21,7 @@
     "wake-desktop": "node --env-file=.env src/wake-desktop/wake-desktop.js",
     "backup": "node src/backup/backup.js",
     "test": "node --test",
-    "test:backup:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/backup/backup.js test/backup/backup.test.js"
+    "test:backup:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/backup/backup.js test/backup/*.test.js"
   },
   "dependencies": {
     "archiver": "^7.0.1",
