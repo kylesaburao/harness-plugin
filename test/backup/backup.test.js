@@ -17,13 +17,11 @@ const {
   acquireRunLock,
   assertDirectoryUnchanged,
   backupFilename,
-  backupFilenamePattern,
   cleanupStartupArtifacts,
   copyAtomically,
   createArchive,
   execute,
   formatBytes,
-  measureDirectoryStorage,
   readAndValidate,
   resolveRunLockPath,
   shortTempPath,
@@ -112,70 +110,6 @@ test('backupFilename truncates long UTF-8 names on character boundaries with a s
   assert(!first.includes('�'));
 });
 
-test('backupFilenamePattern matches every filename produced by the backup naming scheme', () => {
-  const pattern = backupFilenamePattern();
-
-  assert(pattern.test('Project.[1]_Backup_January012024.zip'));
-  assert(pattern.test('Project.[1]_Backup_December312099.zip'));
-  assert(pattern.test('Other_Backup_January012024.zip'));
-  assert(pattern.test('long-name-a1b2c3d4e5f6_Backup_March032024.zip'));
-  assert(!pattern.test('_Backup_January012024.zip'));
-  assert(!pattern.test('Project.[1]_Backup_January322024.zip'));
-  assert(!pattern.test('Project.[1]_Backup_Jan012024.zip'));
-  assert(!pattern.test('Project.[1]_Backup_January012024.zip.tmp'));
-});
-
-test('measureDirectoryStorage totals nested files but counts matching backups at the target root', async (t) => {
-  const root = await temporaryRoot(t);
-  const nested = path.join(root, 'nested');
-  await fsp.mkdir(nested);
-  await Promise.all([
-    fsp.writeFile(path.join(root, 'other-source_Backup_January012025.zip'), 'backup'),
-    fsp.writeFile(path.join(root, 'another-file.zip'), 'other'),
-    fsp.writeFile(path.join(nested, 'source_Backup_February022025.zip'), 'nested backup'),
-  ]);
-  const directory = await directoryDetails(root, 'targetDirectories[0]');
-
-  const storage = await measureDirectoryStorage(
-    directory,
-    backupFilenamePattern(),
-  );
-
-  assert.deepEqual(storage, { totalBytes: 24n, backupBytes: 6n, backupCount: 1 });
-});
-
-test('measureDirectoryStorage stats entries when directory types are unknown', async (t) => {
-  const root = await temporaryRoot(t);
-  const nested = path.join(root, 'nested');
-  await fsp.mkdir(nested);
-  await Promise.all([
-    fsp.writeFile(path.join(root, 'source_Backup_January012025.zip'), 'backup'),
-    fsp.writeFile(path.join(root, 'another-file.zip'), 'other'),
-    fsp.writeFile(path.join(nested, 'contents.txt'), 'nested contents'),
-  ]);
-  await fsp.symlink(path.join(root, 'another-file.zip'), path.join(root, 'file-link'));
-  const directory = await directoryDetails(root, 'targetDirectories[0]');
-  const originalReaddir = fsp.readdir;
-  t.mock.method(fsp, 'readdir', async (...args) => {
-    const entries = await originalReaddir(...args);
-    if (!args[1]?.withFileTypes) return entries;
-    return entries.map((entry) => ({
-      name: entry.name,
-      isFile: () => false,
-      isDirectory: () => false,
-      isSymbolicLink: () => false,
-      isBlockDevice: () => false,
-      isCharacterDevice: () => false,
-      isFIFO: () => false,
-      isSocket: () => false,
-    }));
-  });
-
-  const storage = await measureDirectoryStorage(directory, backupFilenamePattern());
-
-  assert.deepEqual(storage, { totalBytes: 26n, backupBytes: 6n, backupCount: 1 });
-});
-
 test('formatBytes presents byte counts with binary units', () => {
   assert.equal(formatBytes(0n), '0 B');
   assert.equal(formatBytes(1023n), '1023 B');
@@ -245,12 +179,48 @@ test('readAndValidate resolves relative paths and plans aliases without duplicat
   assert.match(plan.previewTargets[0].action, /shared with outputDirectory/);
   assert.equal(plan.previewTargets[1].action, 'will be overwritten');
   assert.match(plan.previewTargets[2].action, /shared with targetDirectories\[1\]/);
-  assert.deepEqual(plan.previewTargets[1].storage, {
-    totalBytes: BigInt(Buffer.byteLength('old backup')),
-    backupBytes: BigInt(Buffer.byteLength('old backup')),
-    backupCount: 1,
+  assert.equal('storage' in plan.previewTargets[1], false);
+});
+
+test('readAndValidate accepts a target root with an unreadable descendant', async (t) => {
+  const root = await temporaryRoot(t);
+  const { source, output, target } = await makeDirectories(root, ['source', 'output', 'target']);
+  const inaccessible = path.join(target, 'unrelated-private-directory');
+  await fsp.mkdir(inaccessible, { mode: 0o700 });
+  await fsp.chmod(inaccessible, 0o000);
+  t.after(() => fsp.chmod(inaccessible, 0o700).catch(() => {}));
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: output,
+    targetDirectories: [target],
+  }));
+
+  const plan = await readAndValidate(config, FIXED_DATE);
+
+  assert.equal(plan.copyTargets.length, 1);
+});
+
+test('readAndValidate rejects an output root without read access during preflight', async (t) => {
+  const root = await temporaryRoot(t);
+  const { source, output, target } = await makeDirectories(root, ['source', 'output', 'target']);
+  const config = path.join(root, 'config.json');
+  await fsp.writeFile(config, JSON.stringify({
+    sourceDirectory: source,
+    outputDirectory: output,
+    targetDirectories: [target],
+  }));
+  const originalAccess = fsp.access;
+  t.mock.method(fsp, 'access', async (candidate, mode) => {
+    if (candidate === await fsp.realpath(output) && mode === (fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK)) {
+      const error = new Error('permission denied');
+      error.code = 'EACCES';
+      throw error;
+    }
+    return originalAccess(candidate, mode);
   });
-  assert.equal(plan.previewTargets[1].storage, plan.previewTargets[2].storage);
+
+  await assert.rejects(readAndValidate(config, FIXED_DATE), /outputDirectory must be readable, writable, and searchable/);
 });
 
 test('readAndValidate recursively creates and validates a missing output directory', async (t) => {
@@ -894,7 +864,7 @@ test('CLI cancellation leaves backup directories untouched', async (t) => {
 
   assert.equal(result.exitCode, 0, result.stderr);
   assert.match(result.stdout, /Targets \(1\)\n-----------\n1\. .*source_Backup_.*\.zip\n   Action             will be created/);
-  assert.match(result.stdout, /Existing contents  39 B\n   Matching backups   10 B in 1 backup/);
+  assert.doesNotMatch(result.stdout, /Existing contents|Matching backups/);
   assert.match(result.stdout, /Proceed\? \[y\/N\] \nCANCELLED — No archive or replicated copy was created\./);
   assert.equal(await fsp.readFile(existingTemporary, 'utf8'), 'must remain untouched');
   assert.deepEqual(await fsp.readdir(output), []);

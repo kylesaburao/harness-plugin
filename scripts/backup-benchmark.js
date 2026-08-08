@@ -11,10 +11,7 @@ const archiver = require('archiver');
 
 const {
   OperationContext,
-  backupFilenamePattern,
-  copyAtomically,
   createArchive,
-  measureDirectoryStorage,
 } = require('../src/backup/backup');
 
 const SCRIPT = path.resolve(__dirname, '../src/backup/backup.js');
@@ -76,26 +73,6 @@ async function createCorpus(directory, corpus) {
   }
 }
 
-async function directoryDetails(directory, label) {
-  const canonicalPath = await fsp.realpath(directory);
-  const details = await fsp.stat(canonicalPath, { bigint: true });
-  return { label, configuredPath: directory, canonicalPath, identity: `${details.dev}:${details.ino}` };
-}
-
-async function timedMeasurement(directory, concurrency) {
-  const start = process.hrtime.bigint();
-  const cpuStart = process.cpuUsage();
-  const value = await measureDirectoryStorage(directory, backupFilenamePattern(), { concurrency });
-  return {
-    concurrency,
-    wallMs: elapsedMilliseconds(start),
-    cpuMs: cpuMilliseconds(process.cpuUsage(cpuStart)),
-    totalBytes: value.totalBytes.toString(),
-    backupBytes: value.backupBytes.toString(),
-    backupCount: value.backupCount,
-  };
-}
-
 async function compressionTrial(sourceDirectory, targetDirectory, level) {
   const archivePath = path.join(targetDirectory, `.compression-level-${level}-${crypto.randomUUID()}.zip`);
   const context = new OperationContext();
@@ -153,7 +130,6 @@ async function runPair(source, target, runRoot) {
   const archiveDetails = await fsp.stat(archivePath);
   const zipTest = await run('unzip', ['-tqq', archivePath]);
   if (zipTest.exitCode !== 0) throw new Error(`${pairId} produced an invalid ZIP: ${zipTest.stderr.trim()}`);
-  const measuredDirectory = await directoryDetails(targetDirectory, target.name);
   const compressionTrials = [
     await compressionTrial(source.sourceDirectory, targetDirectory, 6),
     await compressionTrial(source.sourceDirectory, targetDirectory, 9),
@@ -174,62 +150,7 @@ async function runPair(source, target, runRoot) {
     uploadObservation: target.type === 'google-drive'
       ? { completedAfterCliMs: null, method: 'not observable by the CLI; record provider confirmation manually' }
       : { completedAfterCliMs: 0, method: 'local filesystem completion' },
-    metadataMeasurements: [
-      await timedMeasurement(measuredDirectory, 1),
-      await timedMeasurement(measuredDirectory, 8),
-    ],
   };
-}
-
-async function copyTrial(archivePath, targets, parallel) {
-  const trialTargets = [];
-  for (const target of targets) {
-    const directoryPath = path.join(target.workspace, `copy-trial-${parallel ? 'parallel' : 'serial'}-${crypto.randomUUID()}`);
-    await fsp.mkdir(directoryPath, { mode: 0o700 });
-    const directory = await directoryDetails(directoryPath, target.name);
-    trialTargets.push({
-      root: directoryPath,
-      target: { directory, destination: path.join(directoryPath, 'benchmark.zip') },
-    });
-  }
-  const context = new OperationContext();
-  const start = process.hrtime.bigint();
-  const cpuStart = process.cpuUsage();
-  try {
-    if (parallel) {
-      await Promise.all(trialTargets.map(({ target }) => copyAtomically(archivePath, target, context)));
-    } else {
-      for (const { target } of trialTargets) await copyAtomically(archivePath, target, context);
-    }
-    return { wallMs: elapsedMilliseconds(start), cpuMs: cpuMilliseconds(process.cpuUsage(cpuStart)) };
-  } finally {
-    await Promise.allSettled(trialTargets.map(({ root }) => fsp.rm(root, { recursive: true, force: true })));
-    await context.cleanup();
-  }
-}
-
-async function evaluateParallelCopies(source, targets, runRoot) {
-  if (targets.length < 2) return null;
-  const archivePath = path.join(runRoot, `copy-source-${crypto.randomUUID()}.zip`);
-  const context = new OperationContext();
-  await createArchive(source.sourceDirectory, archivePath, context);
-  try {
-    const serial = await copyTrial(archivePath, targets, false);
-    const parallel = await copyTrial(archivePath, targets, true);
-    const improvementPercent = ((serial.wallMs - parallel.wallMs) / serial.wallMs) * 100;
-    return {
-      source: source.name,
-      targets: targets.map((target) => ({ name: target.name, type: target.type })),
-      serial,
-      parallel,
-      improvementPercent,
-      meaningfulBenefit: improvementPercent >= 10,
-      decisionThresholdPercent: 10,
-    };
-  } finally {
-    await fsp.rm(archivePath, { force: true });
-    context.untrack(archivePath);
-  }
 }
 
 async function validateManifest(manifest) {
@@ -270,7 +191,6 @@ async function main() {
     corpus: manifest.corpus,
     unavailableLocations: [],
     pairs: [],
-    parallelCopyEvaluations: [],
     notes: [
       'Synthetic cloud corpora are generated and therefore cached. Use a pre-evicted corpus and mark hydration cold for a cold Google Drive trial.',
       'Google Drive upload completion is provider state and is not treated as complete at CLI return without a separate observation.',
@@ -306,8 +226,6 @@ async function main() {
       for (const target of available) {
         result.pairs.push(await runPair(source, target, runRoot));
       }
-      const evaluation = await evaluateParallelCopies(source, available, runRoot);
-      if (evaluation) result.parallelCopyEvaluations.push(evaluation);
     }
     await fsp.writeFile(resultsPath, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
   } finally {

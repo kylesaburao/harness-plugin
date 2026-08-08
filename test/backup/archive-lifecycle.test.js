@@ -101,6 +101,38 @@ test('createArchive handles warning followed by close exactly once', async (t) =
   );
 });
 
+test('createArchive rejects a premature output close and keeps its temporary path tracked', async (t) => {
+  const root = await temporaryRoot(t);
+  const destination = path.join(root, 'archive.zip');
+  const archiveFactory = () => archiveDouble((archive) => {
+    archive.finalize = async () => { archive.output.destroy(); };
+  });
+  const context = new OperationContext();
+
+  await assert.rejects(
+    createArchive(root, destination, context, { archiveFactory }),
+    /closed before finishing/,
+  );
+  assert(context.temporaryPaths.has(destination));
+});
+
+test('createArchive rejects a finalization failure that arrives after output close', async (t) => {
+  const root = await temporaryRoot(t);
+  const destination = path.join(root, 'archive.zip');
+  const archiveFactory = () => archiveDouble((archive) => {
+    archive.finalize = async () => {
+      archive.output.end('archive');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      throw new Error('finalization failed late');
+    };
+  });
+
+  await assert.rejects(
+    createArchive(root, destination, new OperationContext(), { archiveFactory }),
+    /finalization failed late/,
+  );
+});
+
 for (const stage of ['outputFactory', 'archiveFactory', 'pipe', 'finalize']) {
   test(`createArchive handles a synchronous ${stage} failure`, async (t) => {
     const root = await temporaryRoot(t);

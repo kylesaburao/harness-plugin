@@ -18,12 +18,9 @@ const EXIT = Object.freeze({
   INTERRUPTED: 130,
 });
 const MAX_FILENAME_BYTES = 255;
-const BACKUP_MONTH_PATTERN = '(?:January|February|March|April|May|June|July|August|September|October|November|December)';
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
 const RUN_LOCK_FILENAME = '.backup-tool.lock';
-const STORAGE_MEASUREMENT_CONCURRENCY = 8;
-const COPY_CONCURRENCY = 2;
 const INDENT_PREFIX = '  ';
 const LIST_DETAIL_PREFIX = '   ';
 
@@ -79,7 +76,7 @@ async function validateDirectory(configuredPath, label, accessMode) {
     await fsp.access(canonicalPath, accessMode);
   } catch (error) {
     const requirement = accessMode & fs.constants.W_OK && accessMode & fs.constants.R_OK
-      ? 'readable, writable, and searchable so storage can be measured and files can be created and renamed'
+      ? 'readable, writable, and searchable so stale temporary files can be removed and files can be created and renamed'
       : accessMode & fs.constants.W_OK
         ? 'writable and searchable so files can be created and renamed'
       : 'readable and searchable so its contents can be enumerated';
@@ -149,7 +146,11 @@ async function validateOutputDirectory(configuredPath, source) {
     }
   }
 
-  const output = await validateDirectory(configuredPath, 'outputDirectory', fs.constants.W_OK | fs.constants.X_OK);
+  const output = await validateDirectory(
+    configuredPath,
+    'outputDirectory',
+    fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK,
+  );
   assertOutputOutsideSource(source, output.canonicalPath, configuredPath);
   return { ...output, createdDuringPreflight: !prospective.exists };
 }
@@ -201,10 +202,6 @@ function backupFilename(sourceDirectory, now = new Date()) {
   return `${truncateUtf8(name, prefixBudget)}${marker}${suffix}`;
 }
 
-function backupFilenamePattern() {
-  return new RegExp(`^.+_Backup_${BACKUP_MONTH_PATTERN}(?:0[1-9]|[12][0-9]|3[01])[0-9]{4}\\.zip$`);
-}
-
 function direntTypeIsUnknown(entry) {
   return !entry.isFile() &&
     !entry.isDirectory() &&
@@ -213,105 +210,6 @@ function direntTypeIsUnknown(entry) {
     !entry.isCharacterDevice() &&
     !entry.isFIFO() &&
     !entry.isSocket();
-}
-
-function createBoundedQueue(concurrency) {
-  let active = 0;
-  const pending = [];
-
-  const advance = () => {
-    while (active < concurrency && pending.length > 0) {
-      const { operation, resolve, reject } = pending.shift();
-      active += 1;
-      Promise.resolve()
-        .then(operation)
-        .then(resolve, reject)
-        .finally(() => {
-          active -= 1;
-          advance();
-        });
-    }
-  };
-
-  return (operation) => new Promise((resolve, reject) => {
-    pending.push({ operation, resolve, reject });
-    advance();
-  });
-}
-
-async function mapWithConcurrency(items, concurrency, operation) {
-  const results = new Array(items.length);
-  let nextIndex = 0;
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await operation(items[index], index);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
-async function measureDirectoryStorage(directory, backupPattern, dependencies = {}) {
-  const concurrency = dependencies.concurrency || STORAGE_MEASUREMENT_CONCURRENCY;
-  const runFilesystemOperation = dependencies.runFilesystemOperation || createBoundedQueue(concurrency);
-  let totalBytes = 0n;
-  let backupBytes = 0n;
-  let backupCount = 0;
-
-  async function visit(currentDirectory, countBackups) {
-    let entries;
-    try {
-      entries = await runFilesystemOperation(() => fsp.readdir(currentDirectory, { withFileTypes: true }));
-    } catch (error) {
-      throw new Error(`Cannot measure storage used in ${directory.label}: ${directory.configuredPath} (${error.code || error.message})`);
-    }
-
-    const measurements = await mapWithConcurrency(entries, concurrency, async (entry) => {
-      const entryPath = path.join(currentDirectory, entry.name);
-      let isDirectory = entry.isDirectory();
-      let isFile = entry.isFile();
-      let details;
-
-      if (!isDirectory && !isFile && direntTypeIsUnknown(entry)) {
-        try {
-          details = await runFilesystemOperation(() => fsp.lstat(entryPath, { bigint: true }));
-        } catch (error) {
-          throw new Error(`Cannot inspect entry ${entryPath}: ${error.code || error.message}`);
-        }
-        isDirectory = details.isDirectory();
-        isFile = details.isFile();
-      }
-
-      if (isDirectory) {
-        return visit(entryPath, false);
-      }
-      if (!isFile) return null;
-
-      if (!details) {
-        try {
-          details = await runFilesystemOperation(() => fsp.stat(entryPath, { bigint: true }));
-        } catch (error) {
-          throw new Error(`Cannot measure file ${entryPath}: ${error.code || error.message}`);
-        }
-      }
-      return {
-        totalBytes: details.size,
-        backupBytes: countBackups && backupPattern.test(entry.name) ? details.size : 0n,
-        backupCount: countBackups && backupPattern.test(entry.name) ? 1 : 0,
-      };
-    });
-    for (const measurement of measurements) {
-      if (!measurement) continue;
-      totalBytes += measurement.totalBytes || 0n;
-      backupBytes += measurement.backupBytes || 0n;
-      backupCount += measurement.backupCount || 0;
-    }
-  }
-
-  await visit(directory.canonicalPath, true);
-  return { totalBytes, backupBytes, backupCount };
 }
 
 function formatBytes(bytes) {
@@ -384,29 +282,22 @@ async function readAndValidate(configPath, now = new Date()) {
   }
 
   const filename = backupFilename(source.canonicalPath, now);
-  const filenamePattern = backupFilenamePattern();
   const archivePath = path.join(output.canonicalPath, filename);
   const retainArchive = targets.some((target) => target.identity === output.identity);
   const archiveExists = retainArchive ? await pathKind(archivePath, 'Archive output path') : false;
   const seen = new Map([[output.identity, 'outputDirectory']]);
   const previewTargets = [];
   const copyTargets = [];
-  const storageByIdentity = new Map();
   for (const target of targets) {
     const destination = path.join(target.canonicalPath, filename);
-    let storage = storageByIdentity.get(target.identity);
-    if (!storage) {
-      storage = await measureDirectoryStorage(target, filenamePattern);
-      storageByIdentity.set(target.identity, storage);
-    }
     const sharedWith = seen.get(target.identity);
     if (sharedWith) {
-      previewTargets.push({ directory: target, destination, action: `shared with ${sharedWith}; no additional copy`, storage });
+      previewTargets.push({ directory: target, destination, action: `shared with ${sharedWith}; no additional copy` });
       continue;
     }
     seen.set(target.identity, target.label);
     const exists = await pathKind(destination, 'Destination');
-    const item = { directory: target, destination, action: exists ? 'will be overwritten' : 'will be created', storage };
+    const item = { directory: target, destination, action: exists ? 'will be overwritten' : 'will be created' };
     previewTargets.push(item);
     copyTargets.push(item);
   }
@@ -441,9 +332,6 @@ function printPreview(plan) {
   plan.previewTargets.forEach((target, index) => {
     console.log(`${index + 1}. ${target.destination}`);
     console.log(`${LIST_DETAIL_PREFIX}Action             ${target.action}`);
-    const backupLabel = target.storage.backupCount === 1 ? 'backup' : 'backups';
-    console.log(`${LIST_DETAIL_PREFIX}Existing contents  ${formatBytes(target.storage.totalBytes)}`);
-    console.log(`${LIST_DETAIL_PREFIX}Matching backups   ${formatBytes(target.storage.backupBytes)} in ${target.storage.backupCount} ${backupLabel}`);
     if (index < plan.previewTargets.length - 1) console.log('');
   });
 }
@@ -639,12 +527,16 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
     try {
       archive = archiveFactory('zip', { zlib: { level: 6 } });
     } catch (error) {
+      output.once('error', () => {});
       output.once('close', () => reject(error));
       output.destroy();
       return;
     }
     let failure = null;
     let settled = false;
+    let finalizationSucceeded = false;
+    let outputFinished = output.writableFinished;
+    let outputClosed = output.closed;
     let unregister = () => {};
     let progressTimer;
     let progress = { entries: 0, processedBytes: 0, outputBytes: 0 };
@@ -665,6 +557,7 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
 
     const settle = () => {
       if (settled) return;
+      if (!failure && !(finalizationSucceeded && outputFinished && outputClosed)) return;
       settled = true;
       clearInterval(progressTimer);
       if (!failure) reportProgress();
@@ -677,8 +570,21 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
       if (!output.destroyed) output.destroy();
       if (output.closed) queueMicrotask(settle);
     };
+    const onOutputFinish = () => {
+      outputFinished = true;
+      settle();
+    };
+    const onOutputClose = () => {
+      outputClosed = true;
+      if (!outputFinished && !failure) {
+        abort(new Error(`Archive output closed before finishing: ${archivePath}`));
+        return;
+      }
+      settle();
+    };
     const closed = new Promise((resolveClosed) => output.once('close', resolveClosed));
-    output.once('close', settle);
+    output.once('finish', onOutputFinish);
+    output.once('close', onOutputClose);
     output.once('error', abort);
     archive.once('error', abort);
     archive.on('warning', (error) => abort(new Error(archiveWarningMessage(error))));
@@ -696,7 +602,13 @@ function createArchive(sourceDirectory, archivePath, context, dependencies = {})
         progressTimer = setInterval(reportProgress, progressIntervalMs);
         progressTimer.unref?.();
       }
-      Promise.resolve(archive.finalize()).catch(abort);
+      Promise.resolve(archive.finalize()).then(
+        () => {
+          finalizationSucceeded = true;
+          settle();
+        },
+        abort,
+      );
     } catch (error) {
       abort(error);
     }
@@ -707,14 +619,9 @@ async function copyAtomically(source, target, context, dependencies = {}) {
   const temporary = shortTempPath(target.directory.canonicalPath, 'copy');
   const controller = new AbortController();
   const unregister = context.onAbort(() => controller.abort());
-  const externalSignal = dependencies.signal;
-  const abortFromExternalSignal = () => controller.abort(externalSignal.reason);
-  if (externalSignal?.aborted) abortFromExternalSignal();
-  else externalSignal?.addEventListener('abort', abortFromExternalSignal, { once: true });
   context.track(temporary);
   try {
     context.throwIfInterrupted();
-    externalSignal?.throwIfAborted();
     await assertDirectoryUnchanged(target.directory);
     const input = (dependencies.createReadStream || fs.createReadStream)(source);
     const output = (dependencies.createWriteStream || fs.createWriteStream)(temporary, { flags: 'wx', mode: 0o600 });
@@ -722,7 +629,6 @@ async function copyAtomically(source, target, context, dependencies = {}) {
     context.throwIfInterrupted();
     await assertDirectoryUnchanged(target.directory);
     context.throwIfInterrupted();
-    externalSignal?.throwIfAborted();
     await fsp.rename(temporary, target.destination);
     context.untrack(temporary);
   } catch (error) {
@@ -730,7 +636,6 @@ async function copyAtomically(source, target, context, dependencies = {}) {
     throw error;
   } finally {
     unregister();
-    externalSignal?.removeEventListener('abort', abortFromExternalSignal);
   }
 }
 
@@ -763,36 +668,24 @@ async function execute(plan, context, dependencies = {}) {
     throw error;
   }
 
-  const copied = new Array(plan.copyTargets.length);
+  const copied = [];
   let replicationFailure = null;
   try {
-    const controller = new AbortController();
-    const concurrency = Math.min(dependencies.copyConcurrency || COPY_CONCURRENCY, plan.copyTargets.length);
-    let nextIndex = 0;
-    const workers = Array.from({ length: concurrency }, async () => {
-      while (!replicationFailure && nextIndex < plan.copyTargets.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        const target = plan.copyTargets[index];
-        try {
-          onStage({ phase: 'copy-start', destination: target.destination, index, total: plan.copyTargets.length });
-          await copyAtomically(replicationSource, target, context, { ...dependencies.copy, signal: controller.signal });
-          copied[index] = target.destination;
-        } catch (error) {
-          if (!replicationFailure && !context.interruption) {
-            error.message = `Failed to copy archive to ${target.destination}: ${error.message}`;
-            error.exitCode = EXIT.COPY;
-            replicationFailure = error;
-            controller.abort(error);
-          }
-          return;
-        }
+    for (const [index, target] of plan.copyTargets.entries()) {
+      context.throwIfInterrupted();
+      onStage({ phase: 'copy-start', destination: target.destination, index, total: plan.copyTargets.length });
+      try {
+        await copyAtomically(replicationSource, target, context, dependencies.copy);
+        copied.push(target.destination);
+      } catch (error) {
+        context.throwIfInterrupted();
+        error.message = `Failed to copy archive to ${target.destination}: ${error.message}`;
+        error.exitCode = EXIT.COPY;
+        replicationFailure = error;
+        throw error;
       }
-    });
-    await Promise.allSettled(workers);
-    context.throwIfInterrupted();
-    if (replicationFailure) throw replicationFailure;
-    return copied.filter(Boolean);
+    }
+    return copied;
   } catch (error) {
     if (!replicationFailure) replicationFailure = error;
     throw error;
@@ -936,14 +829,12 @@ module.exports = {
   OperationContext,
   assertDirectoryUnchanged,
   backupFilename,
-  backupFilenamePattern,
   copyAtomically,
   cleanupStartupArtifacts,
   acquireRunLock,
   createArchive,
   execute,
   formatBytes,
-  measureDirectoryStorage,
   readAndValidate,
   resolveRunLockPath,
   shortTempPath,
