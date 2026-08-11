@@ -1,0 +1,17 @@
+{
+  "name": "harness",
+  "version": "0.1.0",
+  "description": "Shared Agent Skills, packaged for Claude Code and Codex from one canonical implementation.",
+  "author": {
+    "name": "Kyle Saburao"
+  },
+  "homepage": "https://github.com/kylesaburao/harness-plugin",
+  "repository": "https://github.com/kylesaburao/harness-plugin",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Harness",
+    "shortDescription": "Shared Agent Skills for Claude Code and Codex",
+    "category": "Developer Tools"
+  }
+}
