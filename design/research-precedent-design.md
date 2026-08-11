@@ -90,6 +90,12 @@ plugins/harness/skills/research-precedent/
 No `scripts/`, no `tests/`, no `README.md`, no `INSTALL.md` in the first version.
 See D3.
 
+**As shipped:** three references, not four. `enterprise-context.md` was folded into
+`methodology.md`, since instruction-context extraction, capability discovery, and the
+public-safe abstraction are steps of the search procedure and read better next to the
+abstraction ladder. `methodology.md` absorbed the material and still came in at 196
+lines.
+
 ### D2. What goes where
 
 | Prompt section | Destination |
