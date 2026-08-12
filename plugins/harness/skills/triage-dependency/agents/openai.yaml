@@ -1,0 +1,6 @@
+interface:
+  display_name: "Dependency Triage"
+  short_description: "Decide whether a dependency belongs"
+  default_prompt: "Use $triage-dependency to decide whether this dependency belongs."
+policy:
+  allow_implicit_invocation: true

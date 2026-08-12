@@ -1,0 +1,6 @@
+interface:
+  display_name: "Source Brief"
+  short_description: "Brief a source, separating claim from evidence"
+  default_prompt: "Use $brief-source to brief this source."
+policy:
+  allow_implicit_invocation: true
