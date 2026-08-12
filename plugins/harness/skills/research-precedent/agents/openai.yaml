@@ -1,0 +1,6 @@
+interface:
+  display_name: "Precedent Research"
+  short_description: "Check a proposed approach against historical precedent"
+  default_prompt: "Use $research-precedent to check this approach against prior art."
+policy:
+  allow_implicit_invocation: true
