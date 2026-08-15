@@ -42,7 +42,7 @@ The backup tests need that skill's dependency installed first (`npm install --om
 
 The same reasoning applies to anything else that only exists to develop the code. If it never runs for someone who installed the plugin, it does not belong under `plugins/harness/`.
 
-Prefer no dependencies. `wake-desktop` was rewritten to build its Wake-on-LAN packet with `node:dgram` and probe with the system `ping` specifically so it runs from a plugin cache directory with nothing installed. Add a dependency only when the standard library genuinely cannot do the job, as with `archiver` in `back-up-directories`, and give that skill an `INSTALL.md`.
+Prefer no dependencies. `wake-desktop` builds its Wake-on-LAN packet with `node:dgram` and probes with the system `ping` so it runs from a plugin cache directory with nothing installed. Add a dependency only when the standard library genuinely cannot do the job, as with `archiver` in `back-up-directories`, and give that skill an `INSTALL.md`.
 
 ### Preflight contract
 
@@ -56,11 +56,7 @@ Every script a skill runs must let a calling agent find out whether it can work,
 - A normal run performs the same preflight before touching anything, so the probe and the real run cannot disagree.
 - The `SKILL.md` tells the agent to relay a preflight diagnosis verbatim instead of diagnosing independently, matching how `write-asd-ste100` handles its reference-bundle errors.
 
-The diagnostic shape comes from `plugins/harness/skills/write-asd-ste100/scripts/ste_data.py`, which already reported a code, the failed condition, and an initialization command.
-
-## Provenance
-
-The `back-up-directories`, `convert-video-to-gif`, and `wake-desktop` skills came from the separate `kylesaburao/utils` repository, merged in with its history intact. That repository is no longer the home of this code.
+The diagnostic shape matches `plugins/harness/skills/write-asd-ste100/scripts/ste_data.py`, which reports a code, the failed condition, and an initialization command.
 
 ## Versioning
 
