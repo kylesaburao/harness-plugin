@@ -49,26 +49,19 @@ class StartupError extends Error {
 
 // archiver is the only dependency that needs installing, so it is resolved on
 // demand. A top-level require turned a missing install into a MODULE_NOT_FOUND
-// stack trace instead of an answerable diagnostic.
-let archiverModule = null;
-
-function installCommand() {
-  return `npm install --omit=dev --prefix ${path.resolve(__dirname, '..')}`;
-}
-
+// stack trace instead of an answerable diagnostic. Repeat calls are free:
+// require caches the module itself.
 function loadArchiver() {
-  if (archiverModule) return archiverModule;
   try {
-    archiverModule = require('archiver');
+    return require('archiver');
   } catch (error) {
     if (error.code !== 'MODULE_NOT_FOUND') throw error;
     throw new StartupError(
       'dependency_missing',
       'the archiver package is not installed, so no ZIP can be written',
-      installCommand(),
+      `npm install --omit=dev --prefix ${path.resolve(__dirname, '..')}`,
     );
   }
-  return archiverModule;
 }
 
 function nodeVersionAtLeast(version, minimum) {
@@ -95,12 +88,11 @@ function checkEnvironment() {
 
 let jsonOutput = false;
 
-function fail(message, exitCode) {
+// The caller knows which failure this is, so it names the code and the remedy.
+// Deriving them from exitCode reported archive, copy, and interruption failures
+// as usage_error.
+function fail(message, exitCode, code = 'run_failed', remedy = '') {
   if (jsonOutput) {
-    const code = exitCode === EXIT.VALIDATION ? 'config_invalid' : 'usage_error';
-    const remedy = exitCode === EXIT.VALIDATION
-      ? 'correct the configuration file, then run --preflight again'
-      : 'run with --help to see the accepted arguments';
     console.error(JSON.stringify({ error: { code, condition: message, remedy } }));
   } else {
     console.error(`Error: ${message}`);
@@ -134,7 +126,10 @@ Exit status: 0 success, 2 or 3 nothing started, 4 or 5 the run failed, 130 inter
 which creates the output directory if it is missing.`);
 }
 
-function reportReady(details) {
+// checkEnvironment has already passed by the time this runs, so the environment
+// half of the report is the same every time and only the plan varies.
+function reportReady(plan = {}) {
+  const details = { status: 'ready', node: process.version, archiver: true, ...plan };
   if (jsonOutput) {
     console.log(JSON.stringify(details));
     return;
@@ -891,11 +886,16 @@ async function main() {
 
   if (!options.configPath) {
     if (options.preflightOnly) {
-      reportReady({ status: 'ready', node: process.version, archiver: true });
+      reportReady();
       return;
     }
     if (!jsonOutput) usage();
-    fail('Provide exactly one configuration file path.', EXIT.USAGE);
+    fail(
+      'Provide exactly one configuration file path.',
+      EXIT.USAGE,
+      'usage_error',
+      'run with --help to see the accepted arguments',
+    );
     return;
   }
 
@@ -906,15 +906,17 @@ async function main() {
     plan = await readAndValidate(path.resolve(options.configPath));
     if (!options.preflightOnly || !jsonOutput) printPreview(plan);
   } catch (error) {
-    fail(error.message, EXIT.VALIDATION);
+    fail(
+      error.message,
+      EXIT.VALIDATION,
+      'config_invalid',
+      'correct the configuration file, then run --preflight again',
+    );
     return;
   }
 
   if (options.preflightOnly) {
     reportReady({
-      status: 'ready',
-      node: process.version,
-      archiver: true,
       source: plan.source.canonicalPath,
       output: plan.output.canonicalPath,
       targets: plan.targets.map((target) => target.canonicalPath),
@@ -1005,7 +1007,11 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((error) => fail(`Unexpected failure: ${error.message}`, error.exitCode || EXIT.ARCHIVE));
+  main().catch((error) => fail(
+    `Unexpected failure: ${error.message}`,
+    error.exitCode || EXIT.ARCHIVE,
+    'internal_error',
+  ));
 }
 
 module.exports = {

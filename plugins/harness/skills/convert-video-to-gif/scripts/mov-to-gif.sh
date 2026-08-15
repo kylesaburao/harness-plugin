@@ -39,11 +39,10 @@ json_escape() {
   printf '%s' "$text"
 }
 
-# Cannot start: the caller has to change an argument or the machine.
-fail() {
+report_error() {
   local code=$1
   local condition=$2
-  local remedy=${3:-}
+  local remedy=$3
 
   if (( json_output == 1 )); then
     printf '{"error":{"code":"%s","condition":"%s","remedy":"%s"}}\n' \
@@ -52,20 +51,17 @@ fail() {
     printf 'ERROR [%s]: %s\n' "$code" "$condition" >&2
     [[ -z "$remedy" ]] || printf 'Remedy: %s\n' "$remedy" >&2
   fi
+}
+
+# Cannot start: the caller has to change an argument or the machine.
+fail() {
+  report_error "$1" "$2" "${3:-}"
   exit 2
 }
 
-# The conversion started and could not finish.
+# The conversion started and could not finish, so there is nothing to remedy.
 die() {
-  local code=$1
-  local condition=$2
-
-  if (( json_output == 1 )); then
-    printf '{"error":{"code":"%s","condition":"%s","remedy":""}}\n' \
-      "$(json_escape "$code")" "$(json_escape "$condition")" >&2
-  else
-    printf 'ERROR [%s]: %s\n' "$code" "$condition" >&2
-  fi
+  report_error "$1" "$2" ''
   exit 1
 }
 
@@ -200,10 +196,11 @@ report_preflight_ready() {
   fi
 }
 
+# The listing flag is always the plural of the capability kind: -filters, -encoders.
 check_ffmpeg_capabilities() {
   local kind=$1
-  local flag=$2
-  shift 2
+  local flag="-${kind}s"
+  shift
   local listing=''
   local capability
 
@@ -241,11 +238,11 @@ preflight() {
   done
 
   if command -v ffmpeg >/dev/null 2>&1; then
-    check_ffmpeg_capabilities filter -filters fps scale format palettegen paletteuse setpts libvmaf
-    check_ffmpeg_capabilities encoder -encoders rawvideo ffv1 gif png
-    check_ffmpeg_capabilities decoder -decoders rawvideo ffv1 gif png
-    check_ffmpeg_capabilities muxer -muxers nut matroska gif image2 null
-    check_ffmpeg_capabilities demuxer -demuxers nut matroska gif image2
+    check_ffmpeg_capabilities filter fps scale format palettegen paletteuse setpts libvmaf
+    check_ffmpeg_capabilities encoder rawvideo ffv1 gif png
+    check_ffmpeg_capabilities decoder rawvideo ffv1 gif png
+    check_ffmpeg_capabilities muxer nut matroska gif image2 null
+    check_ffmpeg_capabilities demuxer nut matroska gif image2
   fi
 
   (( ${#failure_codes[@]} == 0 )) || report_preflight_failures
