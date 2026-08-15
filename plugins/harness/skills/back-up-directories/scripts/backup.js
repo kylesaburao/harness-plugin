@@ -8,8 +8,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const readline = require('node:readline/promises');
 const { pipeline } = require('node:stream/promises');
-const archiver = require('archiver');
 
+// Exit status contract, shared with the other scripts in this plugin. Status 0
+// is success and 2 or 3 both mean the backup never started, so nothing was
+// written. The finer-grained values predate the contract and stay as they are.
 const EXIT = Object.freeze({
   USAGE: 2,
   VALIDATION: 3,
@@ -17,6 +19,7 @@ const EXIT = Object.freeze({
   COPY: 5,
   INTERRUPTED: 130,
 });
+const MINIMUM_NODE = [20, 6, 0];
 const MAX_FILENAME_BYTES = 255;
 const UUID_V4_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const TEMPORARY_FILE_PATTERN = new RegExp(`^\\.backup-(?:archive|copy)-${UUID_V4_PATTERN}\\.tmp$`, 'i');
@@ -33,13 +36,155 @@ class InterruptedError extends Error {
   }
 }
 
+class StartupError extends Error {
+  constructor(code, condition, remedy, exitCode = EXIT.USAGE) {
+    super(condition);
+    this.name = 'StartupError';
+    this.code = code;
+    this.condition = condition;
+    this.remedy = remedy;
+    this.exitCode = exitCode;
+  }
+}
+
+// archiver is the only dependency that needs installing, so it is resolved on
+// demand. A top-level require turned a missing install into a MODULE_NOT_FOUND
+// stack trace instead of an answerable diagnostic.
+let archiverModule = null;
+
+function installCommand() {
+  return `npm install --omit=dev --prefix ${path.resolve(__dirname, '..')}`;
+}
+
+function loadArchiver() {
+  if (archiverModule) return archiverModule;
+  try {
+    archiverModule = require('archiver');
+  } catch (error) {
+    if (error.code !== 'MODULE_NOT_FOUND') throw error;
+    throw new StartupError(
+      'dependency_missing',
+      'the archiver package is not installed, so no ZIP can be written',
+      installCommand(),
+    );
+  }
+  return archiverModule;
+}
+
+function nodeVersionAtLeast(version, minimum) {
+  const parts = version.replace(/^v/, '').split('.').map(Number);
+  for (let index = 0; index < minimum.length; index += 1) {
+    const part = parts[index] || 0;
+    if (part > minimum[index]) return true;
+    if (part < minimum[index]) return false;
+  }
+  return true;
+}
+
+// Environment checks only. Configuration validation stays in readAndValidate.
+function checkEnvironment() {
+  if (!nodeVersionAtLeast(process.version, MINIMUM_NODE)) {
+    throw new StartupError(
+      'node_version_unsupported',
+      `Node.js ${MINIMUM_NODE.join('.')} or newer is required, running ${process.version}`,
+      'install Node.js 20.6.0 or newer',
+    );
+  }
+  loadArchiver();
+}
+
+let jsonOutput = false;
+
 function fail(message, exitCode) {
-  console.error(`Error: ${message}`);
+  if (jsonOutput) {
+    const code = exitCode === EXIT.VALIDATION ? 'config_invalid' : 'usage_error';
+    const remedy = exitCode === EXIT.VALIDATION
+      ? 'correct the configuration file, then run --preflight again'
+      : 'run with --help to see the accepted arguments';
+    console.error(JSON.stringify({ error: { code, condition: message, remedy } }));
+  } else {
+    console.error(`Error: ${message}`);
+  }
   process.exitCode = exitCode;
 }
 
+function failStartup(error) {
+  if (jsonOutput) {
+    console.error(JSON.stringify({
+      error: { code: error.code, condition: error.condition, remedy: error.remedy },
+    }));
+  } else {
+    console.error(`ERROR [${error.code}]: ${error.condition}`);
+    if (error.remedy) console.error(`Remedy: ${error.remedy}`);
+  }
+  process.exitCode = error.exitCode;
+}
+
 function usage() {
-  console.error('Usage: node src/backup/backup.js <backup-config.local.json>');
+  console.error(`Usage: node scripts/backup.js [OPTIONS] <backup-config.local.json>
+
+Options:
+  --preflight   Check the environment and configuration, back nothing up, exit
+  --json        Report readiness and startup errors as JSON
+  -h, --help    Print this message
+
+Exit status: 0 success, 2 or 3 nothing started, 4 or 5 the run failed, 130 interrupted.
+
+--preflight with a configuration file runs the same validation as a real run,
+which creates the output directory if it is missing.`);
+}
+
+function reportReady(details) {
+  if (jsonOutput) {
+    console.log(JSON.stringify(details));
+    return;
+  }
+  console.log(`READY: Node ${details.node}, archiver installed`);
+  if (details.source) {
+    console.log(`Source:  ${details.source}`);
+    console.log(`Output:  ${details.output}`);
+    for (const target of details.targets) console.log(`Target:  ${target}`);
+    console.log(`Archive: ${details.filename}`);
+  }
+}
+
+function parseArguments(argv) {
+  const options = { configPath: null, preflightOnly: false, json: false, help: false };
+  const positional = [];
+
+  for (const argument of argv) {
+    switch (argument) {
+      case '--preflight':
+        options.preflightOnly = true;
+        break;
+      case '--json':
+        options.json = true;
+        break;
+      case '-h':
+      case '--help':
+        options.help = true;
+        break;
+      default:
+        if (argument.startsWith('-')) {
+          throw new StartupError(
+            'usage_error',
+            `unknown option: ${argument}`,
+            'run with --help to see the accepted arguments',
+          );
+        }
+        positional.push(argument);
+    }
+  }
+
+  if (positional.length > 1) {
+    throw new StartupError(
+      'usage_error',
+      'more than one configuration file path was given',
+      'pass exactly one configuration file path',
+    );
+  }
+  options.configPath = positional[0] || null;
+  return options;
 }
 
 function resolveConfigPath(value, configDirectory) {
@@ -510,7 +655,7 @@ function archiveWarningMessage(error) {
 }
 
 function createArchive(sourceDirectory, archivePath, context, dependencies = {}) {
-  const archiveFactory = dependencies.archiveFactory || archiver;
+  const archiveFactory = dependencies.archiveFactory || loadArchiver();
   const outputFactory = dependencies.outputFactory || ((file) => fs.createWriteStream(file, { flags: 'wx', mode: 0o600 }));
   const onProgress = dependencies.onProgress;
   const progressIntervalMs = dependencies.progressIntervalMs || 5_000;
@@ -722,9 +867,34 @@ function reportCleanupRetries(failures) {
 }
 
 async function main() {
-  const argument = process.argv[2];
-  if (!argument || process.argv.length !== 3) {
+  let options;
+  try {
+    options = parseArguments(process.argv.slice(2));
+  } catch (error) {
+    jsonOutput = process.argv.includes('--json');
+    failStartup(error);
+    return;
+  }
+  jsonOutput = options.json;
+
+  if (options.help) {
     usage();
+    return;
+  }
+
+  try {
+    checkEnvironment();
+  } catch (error) {
+    failStartup(error);
+    return;
+  }
+
+  if (!options.configPath) {
+    if (options.preflightOnly) {
+      reportReady({ status: 'ready', node: process.version, archiver: true });
+      return;
+    }
+    if (!jsonOutput) usage();
     fail('Provide exactly one configuration file path.', EXIT.USAGE);
     return;
   }
@@ -733,10 +903,25 @@ async function main() {
   let lockPath;
   try {
     lockPath = resolveRunLockPath();
-    plan = await readAndValidate(path.resolve(argument));
-    printPreview(plan);
+    plan = await readAndValidate(path.resolve(options.configPath));
+    if (!options.preflightOnly || !jsonOutput) printPreview(plan);
   } catch (error) {
     fail(error.message, EXIT.VALIDATION);
+    return;
+  }
+
+  if (options.preflightOnly) {
+    reportReady({
+      status: 'ready',
+      node: process.version,
+      archiver: true,
+      source: plan.source.canonicalPath,
+      output: plan.output.canonicalPath,
+      targets: plan.targets.map((target) => target.canonicalPath),
+      filename: plan.filename,
+      runLock: lockPath,
+      outputDirectoryCreated: plan.output.createdDuringPreflight,
+    });
     return;
   }
 
@@ -826,6 +1011,9 @@ if (require.main === module) {
 module.exports = {
   EXIT,
   InterruptedError,
+  StartupError,
+  nodeVersionAtLeast,
+  parseArguments,
   OperationContext,
   assertDirectoryUnchanged,
   backupFilename,

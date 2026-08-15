@@ -12,9 +12,9 @@ const archiver = require('archiver');
 const {
   OperationContext,
   createArchive,
-} = require('../src/backup/backup');
+} = require('./backup.js');
 
-const SCRIPT = path.resolve(__dirname, '../src/backup/backup.js');
+const SCRIPT = path.resolve(__dirname, 'backup.js');
 const LOCATION_TYPES = new Set(['local-ssd', 'external-disk', 'google-drive']);
 
 function usage() {

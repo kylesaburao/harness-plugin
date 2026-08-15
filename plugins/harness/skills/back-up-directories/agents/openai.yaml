@@ -1,0 +1,6 @@
+interface:
+  display_name: "Directory Backup"
+  short_description: "Archive a directory to dated ZIP copies"
+  default_prompt: "Use $back-up-directories to archive this folder to my backup destinations."
+policy:
+  allow_implicit_invocation: true

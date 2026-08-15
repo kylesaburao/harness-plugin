@@ -2,7 +2,7 @@
 
 The benchmark harness creates an isolated UUID-named workspace under every configured storage root, generates the same deterministic corpus in each workspace, runs every available source-to-target pairing through the real backup CLI, validates each ZIP, records its size and POSIX mode, and removes its temporary workspaces. It records unavailable hardware instead of substituting a local directory for another storage type.
 
-Copy [`backup-manifest.example.json`](backup-manifest.example.json) to an ignored local manifest, replace the placeholder roots, and run:
+Copy [`backup-manifest.example.json`](../references/backup-manifest.example.json) to an ignored local manifest, replace the placeholder roots, and run:
 
 ```sh
 node scripts/backup-benchmark.js benchmark/backup-manifest.local.json benchmark/backup-results.local.json
