@@ -9,8 +9,8 @@ const { spawn } = require('node:child_process');
 const { EventEmitter } = require('node:events');
 const test = require('node:test');
 
-const { OperationContext, copyAtomically, execute } = require('../scripts/backup.js');
-const SCRIPT = path.resolve(__dirname, '../scripts/backup.js');
+const { OperationContext, copyAtomically, execute } = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
+const SCRIPT = path.resolve(__dirname, '../../plugins/harness/skills/back-up-directories/scripts/backup.js');
 
 async function temporaryRoot(t) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'backup-interruption-'));

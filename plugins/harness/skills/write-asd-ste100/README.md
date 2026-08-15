@@ -257,10 +257,11 @@ See `references/software-terminology-schema.md` for the complete format, the ent
 
 ## Tests
 
-Run the complete test suite:
+The tests are not distributed with the plugin. They live in `tests/write-asd-ste100/` at the
+repository root. Run them from a clone of the repository:
 
 ```sh
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests/write-asd-ste100 -v
 ```
 
 Unit tests use synthetic dictionary records. They do not reproduce the ASD word list. Dictionary integration tests run only when a valid local generated bundle exists.
@@ -285,18 +286,19 @@ write-asd-ste100/
 │   ├── project-terminology-schema.md
 │   ├── source-config.json
 │   └── writing-rules.md
-├── scripts/
-│   ├── build_dictionary.py
-│   ├── extract_dictionary.py
-│   ├── initialize_references.py
-│   ├── ste_check.py
-│   ├── ste_data.py
-│   ├── ste_lookup.py
-│   ├── validate_dictionary.py
-│   └── validate_references.py
-└── tests/
-    └── test_ste_tools.py
+└── scripts/
+    ├── build_dictionary.py
+    ├── extract_dictionary.py
+    ├── initialize_references.py
+    ├── ste_check.py
+    ├── ste_data.py
+    ├── ste_lookup.py
+    ├── validate_dictionary.py
+    └── validate_references.py
 ```
+
+The test suite lives outside the plugin, at `tests/write-asd-ste100/test_ste_tools.py` in
+the repository, so it is not copied into a plugin install.
 
 ## Scope limits
 
