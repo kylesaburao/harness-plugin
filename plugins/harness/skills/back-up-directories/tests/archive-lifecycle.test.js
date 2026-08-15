@@ -8,7 +8,7 @@ const { EventEmitter } = require('node:events');
 const { Writable } = require('node:stream');
 const test = require('node:test');
 
-const { OperationContext, createArchive } = require('../../src/backup/backup');
+const { OperationContext, createArchive } = require('../scripts/backup.js');
 
 async function temporaryRoot(t) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'backup-archive-lifecycle-'));

@@ -1,32 +1,27 @@
 {
-  "name": "utils",
+  "name": "back-up-directories",
   "version": "1.0.0",
-  "description": "",
-  "homepage": "https://github.com/nekeinno/utils#readme",
-  "bugs": {
-    "url": "https://github.com/nekeinno/utils/issues"
-  },
+  "description": "Interactive ZIP backup utility, packaged as an Agent Skill.",
+  "homepage": "https://github.com/kylesaburao/harness-plugin",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nekeinno/utils.git"
+    "url": "git+https://github.com/kylesaburao/harness-plugin.git"
   },
-  "license": "ISC",
-  "author": "",
+  "license": "MIT",
+  "private": true,
   "type": "commonjs",
-  "main": "src/backup/backup.js",
+  "main": "scripts/backup.js",
   "engines": {
     "node": ">=20.6.0"
   },
   "scripts": {
-    "wake-desktop": "node --env-file=.env src/wake-desktop/wake-desktop.js",
-    "backup": "node src/backup/backup.js",
-    "mov-to-gif": "bash src/mov-to-gif/mov-to-gif.sh",
-    "test": "node --test",
-    "test:backup:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/backup/backup.js test/backup/*.test.js"
+    "backup": "node scripts/backup.js",
+    "preflight": "node scripts/backup.js --preflight --json",
+    "benchmark": "node scripts/backup-benchmark.js",
+    "test": "node --test tests/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=scripts/backup.js tests/*.test.js"
   },
   "dependencies": {
-    "archiver": "^7.0.1",
-    "ping": "^0.4.4",
-    "wakeonlan": "^0.1.0"
+    "archiver": "^7.0.1"
   }
 }
