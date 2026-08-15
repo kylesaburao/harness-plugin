@@ -21,11 +21,26 @@ plugins/harness/skills/<skill>/
   SKILL.md
   scripts/      executables the skill runs
   references/   long-form docs the skill reads on demand
-  tests/        tests for those scripts
   package.json  only when the skill has npm dependencies
 ```
 
 The no-dual-copy rule applies here too. A script has one home, under the skill that runs it, and other things point at that path rather than keeping a second copy.
+
+## Tests
+
+Tests live at the repository root, in `tests/<skill-name>/`, never inside the skill.
+
+Installing a plugin copies the whole plugin directory into the harness's plugin cache, and neither Claude Code nor Codex supports excluding files from that copy. Anything under `plugins/harness/` is therefore shipped to every install. Keeping tests outside that tree is the only mechanism that keeps them out, and it costs nothing: tests reach their subject by relative path, and they run from a clone, where both trees exist.
+
+```sh
+node --test tests/back-up-directories/*.test.js
+node --test tests/wake-desktop/*.test.js
+python3 -m unittest discover -s tests/write-asd-ste100 -v
+```
+
+The backup tests need that skill's dependency installed first (`npm install --omit=dev --prefix plugins/harness/skills/back-up-directories`). The others need nothing.
+
+The same reasoning applies to anything else that only exists to develop the code. If it never runs for someone who installed the plugin, it does not belong under `plugins/harness/`.
 
 Prefer no dependencies. `wake-desktop` was rewritten to build its Wake-on-LAN packet with `node:dgram` and probe with the system `ping` specifically so it runs from a plugin cache directory with nothing installed. Add a dependency only when the standard library genuinely cannot do the job, as with `archiver` in `back-up-directories`, and give that skill an `INSTALL.md`.
 

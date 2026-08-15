@@ -16,9 +16,7 @@
   },
   "scripts": {
     "backup": "node scripts/backup.js",
-    "preflight": "node scripts/backup.js --preflight --json",
-    "test": "node --test tests/*.test.js",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=scripts/backup.js tests/*.test.js"
+    "preflight": "node scripts/backup.js --preflight --json"
   },
   "dependencies": {
     "archiver": "^7.0.1"

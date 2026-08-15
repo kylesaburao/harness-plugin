@@ -39,9 +39,9 @@ node <skill-directory>/scripts/backup.js --preflight --json
 
 ## Run the tests
 
-Only needed when changing the utility, not to use it:
+The tests are not distributed with the plugin. They live in `tests/back-up-directories/` in
+the repository, and need only the dependency install above. From a clone of the repository:
 
 ```sh
-npm install --prefix <skill-directory>
-npm test --prefix <skill-directory>
+node --test tests/back-up-directories/*.test.js
 ```
