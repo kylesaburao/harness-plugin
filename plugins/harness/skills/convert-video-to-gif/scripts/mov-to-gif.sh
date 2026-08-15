@@ -8,13 +8,64 @@ readonly DEFAULT_MIN_FPS=15
 readonly DEFAULT_MAX_FPS=24
 readonly MAX_SIGNED_INTEGER=9223372036854775807
 
+# Exit status contract, shared with the other scripts in this plugin:
+#   0  success, or --preflight found a usable environment
+#   2  could not start: bad usage, missing dependency, unusable input
+#   1  the conversion ran and failed
+json_output=0
+preflight_only=0
+
 usage() {
-  printf 'Usage: %s INPUT_VIDEO [OUTPUT.gif]\n' "${0##*/}" >&2
-  printf 'Environment: MAX_BYTES, GIF_SIZE, MIN_FPS, MAX_FPS, JOBS, KEEP_WORK=1\n' >&2
+  printf 'Usage: %s [OPTIONS] INPUT_VIDEO [OUTPUT.gif]\n' "${0##*/}"
+  printf '\n'
+  printf 'Options:\n'
+  printf '  --preflight   Check the environment, convert nothing, then exit\n'
+  printf '  --json        Report readiness and errors as JSON\n'
+  printf '  -h, --help    Print this message\n'
+  printf '\n'
+  printf 'Environment: MAX_BYTES, GIF_SIZE, MIN_FPS, MAX_FPS, JOBS, KEEP_WORK=1\n'
+  printf '\n'
+  printf 'Exit status: 0 success, 2 cannot start, 1 conversion failed.\n'
 }
 
+json_escape() {
+  local text=$1
+
+  text=${text//\\/\\\\}
+  text=${text//\"/\\\"}
+  text=${text//$'\n'/\\n}
+  text=${text//$'\r'/\\r}
+  text=${text//$'\t'/\\t}
+  printf '%s' "$text"
+}
+
+# Cannot start: the caller has to change an argument or the machine.
+fail() {
+  local code=$1
+  local condition=$2
+  local remedy=${3:-}
+
+  if (( json_output == 1 )); then
+    printf '{"error":{"code":"%s","condition":"%s","remedy":"%s"}}\n' \
+      "$(json_escape "$code")" "$(json_escape "$condition")" "$(json_escape "$remedy")" >&2
+  else
+    printf 'ERROR [%s]: %s\n' "$code" "$condition" >&2
+    [[ -z "$remedy" ]] || printf 'Remedy: %s\n' "$remedy" >&2
+  fi
+  exit 2
+}
+
+# The conversion started and could not finish.
 die() {
-  printf 'Error: %s\n' "$*" >&2
+  local code=$1
+  local condition=$2
+
+  if (( json_output == 1 )); then
+    printf '{"error":{"code":"%s","condition":"%s","remedy":""}}\n' \
+      "$(json_escape "$code")" "$(json_escape "$condition")" >&2
+  else
+    printf 'ERROR [%s]: %s\n' "$code" "$condition" >&2
+  fi
   exit 1
 }
 
@@ -30,7 +81,9 @@ is_positive_integer() {
 }
 
 validate_positive_integer() {
-  is_positive_integer "$2" || die "$1 must be a positive integer no greater than $MAX_SIGNED_INTEGER"
+  is_positive_integer "$2" || fail config_invalid \
+    "$1 must be a positive integer no greater than $MAX_SIGNED_INTEGER, got '$2'" \
+    "unset $1 to take the default, or set it to a positive integer"
 }
 
 detect_logical_cpus() {
@@ -75,90 +128,127 @@ capability_list_contains() {
   return 1
 }
 
-preflight() {
-  local -a failures=()
-  local -a required_commands=(ffmpeg ffprobe gifsicle awk mktemp wc dirname cp mv rm)
-  local -a required_filters=(fps scale format palettegen paletteuse setpts libvmaf)
-  local -a required_encoders=(rawvideo ffv1 gif png)
-  local -a required_decoders=(rawvideo ffv1 gif png)
-  local -a required_muxers=(nut matroska gif image2 null)
-  local -a required_demuxers=(nut matroska gif image2)
+failure_codes=()
+failure_conditions=()
+failure_remedies=()
+
+record_failure() {
+  failure_codes[${#failure_codes[@]}]=$1
+  failure_conditions[${#failure_conditions[@]}]=$2
+  failure_remedies[${#failure_remedies[@]}]=$3
+}
+
+# Homebrew ships ffmpeg with libvmaf, which the search depends on.
+remedy_for_command() {
+  case $1 in
+    ffmpeg|ffprobe) printf 'brew install ffmpeg' ;;
+    gifsicle) printf 'brew install gifsicle' ;;
+    *) printf 'repair PATH so the base system %s is reachable' "$1" ;;
+  esac
+}
+
+report_preflight_failures() {
+  local index=0
+  local count=${#failure_codes[@]}
+
+  if (( json_output == 1 )); then
+    printf '{"error":{"code":"preflight_failed","condition":"%s preflight ' "$count" >&2
+    printf 'check(s) failed","remedy":"brew install ffmpeg gifsicle","failures":[' >&2
+    while (( index < count )); do
+      (( index == 0 )) || printf ',' >&2
+      printf '{"code":"%s","condition":"%s","remedy":"%s"}' \
+        "$(json_escape "${failure_codes[$index]}")" \
+        "$(json_escape "${failure_conditions[$index]}")" \
+        "$(json_escape "${failure_remedies[$index]}")" >&2
+      index=$(( index + 1 ))
+    done
+    printf ']}}\n' >&2
+  else
+    printf 'ERROR [preflight_failed]: %s preflight check(s) failed\n' "$count" >&2
+    while (( index < count )); do
+      printf '  [%s] %s\n' "${failure_codes[$index]}" "${failure_conditions[$index]}" >&2
+      printf '      Remedy: %s\n' "${failure_remedies[$index]}" >&2
+      index=$(( index + 1 ))
+    done
+  fi
+  exit 2
+}
+
+report_preflight_ready() {
+  local -a reported=(ffmpeg ffprobe gifsicle)
+  local index=0
   local command_name
+  local resolved
+
+  if (( json_output == 1 )); then
+    printf '{"status":"ready","os":"%s","commands":{' "$(json_escape "${OSTYPE:-unknown}")"
+    while (( index < ${#reported[@]} )); do
+      command_name=${reported[$index]}
+      resolved=$(command -v "$command_name")
+      (( index == 0 )) || printf ','
+      printf '"%s":"%s"' "$(json_escape "$command_name")" "$(json_escape "$resolved")"
+      index=$(( index + 1 ))
+    done
+    printf '}}\n'
+  else
+    printf 'READY: %s\n' "${OSTYPE:-unknown}"
+    while (( index < ${#reported[@]} )); do
+      command_name=${reported[$index]}
+      printf '%s: %s\n' "$command_name" "$(command -v "$command_name")"
+      index=$(( index + 1 ))
+    done
+  fi
+}
+
+check_ffmpeg_capabilities() {
+  local kind=$1
+  local flag=$2
+  shift 2
+  local listing=''
   local capability
-  local listing
+
+  if ! listing=$(ffmpeg -hide_banner "$flag" 2>&1); then
+    record_failure ffmpeg_probe_failed \
+      "ffmpeg could not report its available ${kind}s" \
+      'brew reinstall ffmpeg'
+    return
+  fi
+  for capability in "$@"; do
+    if ! capability_list_contains "$listing" "$capability"; then
+      record_failure ffmpeg_capability_missing \
+        "ffmpeg is missing required $kind: $capability" \
+        'install an ffmpeg build that includes it, for example brew install ffmpeg'
+    fi
+  done
+}
+
+preflight() {
+  local -a required_commands=(ffmpeg ffprobe gifsicle awk mktemp wc dirname cp mv rm)
+  local command_name
 
   if [[ ${OSTYPE:-} != darwin* ]]; then
-    failures[${#failures[@]}]="macOS is required, detected OSTYPE=${OSTYPE:-unknown}"
+    record_failure os_unsupported \
+      "macOS is required, detected OSTYPE=${OSTYPE:-unknown}" \
+      'run this skill on macOS; the search depends on macOS ffmpeg builds and /private/tmp'
   fi
 
   for command_name in "${required_commands[@]}"; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
-      failures[${#failures[@]}]="required command not found: $command_name"
+      record_failure command_missing \
+        "required command not found: $command_name" \
+        "$(remedy_for_command "$command_name")"
     fi
   done
 
   if command -v ffmpeg >/dev/null 2>&1; then
-    listing=''
-    if ! listing=$(ffmpeg -hide_banner -filters 2>&1); then
-      failures[${#failures[@]}]='ffmpeg could not report its available filters'
-    else
-      for capability in "${required_filters[@]}"; do
-        if ! capability_list_contains "$listing" "$capability"; then
-          failures[${#failures[@]}]="ffmpeg is missing required filter: $capability"
-        fi
-      done
-    fi
-
-    listing=''
-    if ! listing=$(ffmpeg -hide_banner -encoders 2>&1); then
-      failures[${#failures[@]}]='ffmpeg could not report its available encoders'
-    else
-      for capability in "${required_encoders[@]}"; do
-        if ! capability_list_contains "$listing" "$capability"; then
-          failures[${#failures[@]}]="ffmpeg is missing required encoder: $capability"
-        fi
-      done
-    fi
-
-    listing=''
-    if ! listing=$(ffmpeg -hide_banner -decoders 2>&1); then
-      failures[${#failures[@]}]='ffmpeg could not report its available decoders'
-    else
-      for capability in "${required_decoders[@]}"; do
-        if ! capability_list_contains "$listing" "$capability"; then
-          failures[${#failures[@]}]="ffmpeg is missing required decoder: $capability"
-        fi
-      done
-    fi
-
-    listing=''
-    if ! listing=$(ffmpeg -hide_banner -muxers 2>&1); then
-      failures[${#failures[@]}]='ffmpeg could not report its available muxers'
-    else
-      for capability in "${required_muxers[@]}"; do
-        if ! capability_list_contains "$listing" "$capability"; then
-          failures[${#failures[@]}]="ffmpeg is missing required muxer: $capability"
-        fi
-      done
-    fi
-
-    listing=''
-    if ! listing=$(ffmpeg -hide_banner -demuxers 2>&1); then
-      failures[${#failures[@]}]='ffmpeg could not report its available demuxers'
-    else
-      for capability in "${required_demuxers[@]}"; do
-        if ! capability_list_contains "$listing" "$capability"; then
-          failures[${#failures[@]}]="ffmpeg is missing required demuxer: $capability"
-        fi
-      done
-    fi
+    check_ffmpeg_capabilities filter -filters fps scale format palettegen paletteuse setpts libvmaf
+    check_ffmpeg_capabilities encoder -encoders rawvideo ffv1 gif png
+    check_ffmpeg_capabilities decoder -decoders rawvideo ffv1 gif png
+    check_ffmpeg_capabilities muxer -muxers nut matroska gif image2 null
+    check_ffmpeg_capabilities demuxer -demuxers nut matroska gif image2
   fi
 
-  if (( ${#failures[@]} > 0 )); then
-    printf 'Preflight failed:\n' >&2
-    printf '  - %s\n' "${failures[@]}" >&2
-    exit 1
-  fi
+  (( ${#failure_codes[@]} == 0 )) || report_preflight_failures
 }
 
 file_bytes() {
@@ -168,15 +258,58 @@ file_bytes() {
   printf '%s\n' "$bytes"
 }
 
-if (( $# < 1 || $# > 2 )); then
-  usage
-  exit 2
+positional=()
+while (( $# > 0 )); do
+  case $1 in
+    --preflight)
+      preflight_only=1
+      ;;
+    --json)
+      json_output=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while (( $# > 0 )); do
+        positional[${#positional[@]}]=$1
+        shift
+      done
+      break
+      ;;
+    -*)
+      (( json_output == 1 )) || usage >&2
+      fail usage_error "unknown option: $1" 'run with --help to see the accepted options'
+      ;;
+    *)
+      positional[${#positional[@]}]=$1
+      ;;
+  esac
+  shift
+done
+
+if (( preflight_only == 1 )); then
+  if (( ${#positional[@]} > 0 )); then
+    fail usage_error '--preflight takes no positional arguments' \
+      'run --preflight on its own, then run the conversion separately'
+  fi
+  preflight
+  report_preflight_ready
+  exit 0
 fi
 
-readonly input=$1
+if (( ${#positional[@]} < 1 || ${#positional[@]} > 2 )); then
+  (( json_output == 1 )) || usage >&2
+  fail usage_error 'expected INPUT_VIDEO and an optional OUTPUT.gif' \
+    'run: mov-to-gif.sh INPUT_VIDEO [OUTPUT.gif]'
+fi
+
+readonly input=${positional[0]}
 requested_output=''
-if (( $# == 2 )); then
-  requested_output=$2
+if (( ${#positional[@]} == 2 )); then
+  requested_output=${positional[1]}
 fi
 
 readonly max_bytes=${MAX_BYTES:-$DEFAULT_MAX_BYTES}
@@ -188,7 +321,9 @@ validate_positive_integer MAX_BYTES "$max_bytes"
 validate_positive_integer GIF_SIZE "$gif_size"
 validate_positive_integer MIN_FPS "$min_fps"
 validate_positive_integer MAX_FPS "$max_fps"
-(( min_fps <= max_fps )) || die 'MIN_FPS must not exceed MAX_FPS'
+(( min_fps <= max_fps )) || fail config_invalid \
+  "MIN_FPS ($min_fps) must not exceed MAX_FPS ($max_fps)" \
+  'set MIN_FPS at or below MAX_FPS, or unset both to take the defaults'
 
 readonly default_jobs=$(detect_logical_cpus)
 readonly jobs=${JOBS:-$default_jobs}
@@ -203,26 +338,38 @@ readonly output
 
 preflight
 
-[[ -f "$input" ]] || die "input is not a regular file: $input"
+[[ -f "$input" ]] || fail input_unusable "input is not a regular file: $input" \
+  'pass the path of an existing video file'
 if [[ -e "$output" || -L "$output" ]]; then
-  [[ ! "$input" -ef "$output" ]] || die 'input and output paths must differ'
+  [[ ! "$input" -ef "$output" ]] || fail output_unusable \
+    'input and output paths must differ' \
+    'pass an output path that is not the input file'
 fi
-[[ ! -d "$output" ]] || die "output path is a directory: $output"
+[[ ! -d "$output" ]] || fail output_unusable "output path is a directory: $output" \
+  'pass a file path ending in .gif, not a directory'
 
 output_dir=$(dirname "$output")
-[[ -d "$output_dir" ]] || die "output directory does not exist: $output_dir"
-[[ -w "$output_dir" ]] || die "output directory is not writable: $output_dir"
+[[ -d "$output_dir" ]] || fail output_unusable \
+  "output directory does not exist: $output_dir" \
+  "create it first: mkdir -p '$output_dir'"
+[[ -w "$output_dir" ]] || fail output_unusable \
+  "output directory is not writable: $output_dir" \
+  'choose an output path in a writable directory'
 readonly output_dir
 
 video_stream=''
 if ! video_stream=$(ffprobe -v error -select_streams v:0 \
   -show_entries stream=index -of csv=p=0 "$input"); then
-  die "ffprobe could not read input video: $input"
+  fail input_unusable "ffprobe could not read input video: $input" \
+    'confirm the file is a video ffmpeg can decode'
 fi
-[[ -n "$video_stream" ]] || die "input contains no video stream: $input"
+[[ -n "$video_stream" ]] || fail input_unusable \
+  "input contains no video stream: $input" \
+  'pass a file that contains video, not audio or still images only'
 if ! ffmpeg -v error -nostdin -threads 1 -filter_threads 1 \
   -i "$input" -map 0:v:0 -frames:v 1 -an -f null - >/dev/null; then
-  die "input video does not have a decodable first frame: $input"
+  fail input_unusable "input video does not have a decodable first frame: $input" \
+    'the file is truncated or corrupt, re-export it and try again'
 fi
 
 work_dir=$(mktemp -d "${TMPDIR:-/private/tmp}/mov-to-gif.XXXXXX")
@@ -481,7 +628,7 @@ evaluate_color_task() {
       score_candidate_worker "$candidate" "$log_file" "$score_file"
       score=$(<"$score_file")
       [[ "$score" =~ ^-?[0-9]+([.][0-9]+)?$ ]] \
-        || die "VMAF did not return a numeric score for f${fps}-c${colors}-d${scale}"
+        || die vmaf_nonnumeric "VMAF did not return a numeric score for f${fps}-c${colors}-d${scale}"
       printf '%s|%s|%s|%s|%s\n' \
         "$score" "$bytes" "$fps" "$colors" "$scale" >> "$result"
     fi
@@ -519,7 +666,7 @@ wait_for_oldest() {
   pending_count=$(( pending_count - 1 ))
 
   if (( status != 0 )); then
-    die "worker failed: $worker_task (status $status)"
+    die worker_failed "worker failed: $worker_task (status $status)"
   fi
 }
 
@@ -651,9 +798,9 @@ if ! selection=$(awk -F'|' '
   }
   END { if (found) print score "|" bytes "|" fps "|" colors "|" dither }
 ' "$all_results"); then
-  die 'candidate selection failed'
+  die selection_failed 'candidate selection failed'
 fi
-[[ -n "$selection" ]] || die "no candidate fit below $max_bytes bytes"
+[[ -n "$selection" ]] || die no_candidate "no candidate fit below $max_bytes bytes, raise MAX_BYTES or lower GIF_SIZE"
 IFS='|' read -r best_score best_bytes best_fps best_colors best_scale <<< "$selection"
 
 best_palette="$work_dir/palette-f${best_fps}-c${best_colors}.png"
@@ -667,13 +814,13 @@ fi
 
 regenerated_bytes=$(file_bytes "$best_file")
 (( regenerated_bytes == best_bytes )) \
-  || die "winner regeneration size mismatch: recorded $best_bytes, regenerated $regenerated_bytes"
+  || die regeneration_mismatch "winner regeneration size mismatch: recorded $best_bytes, regenerated $regenerated_bytes"
 regen_log="$work_dir/vmaf-winner-regenerated.log"
 regen_score_file="$work_dir/score-winner-regenerated.txt"
 score_candidate_parent winner-regenerated "$best_file" "$regen_log" "$regen_score_file"
 regenerated_score=$(<"$regen_score_file")
 [[ "$regenerated_score" == "$best_score" ]] \
-  || die "winner regeneration VMAF mismatch: recorded $best_score, regenerated $regenerated_score"
+  || die regeneration_mismatch "winner regeneration VMAF mismatch: recorded $best_score, regenerated $regenerated_score"
 
 output_tmp=$(mktemp "$output_dir/.mov-to-gif-output.XXXXXX")
 parent_run publish-copy cp "$best_file" "$output_tmp"
@@ -687,19 +834,19 @@ final_score_file="$work_dir/score-final.txt"
 
 parent_run_stdout final-probe "$probe_file" ffprobe -v error \
   -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$output_tmp"
-[[ "$(<"$probe_file")" == video ]] || die 'verification failed, output has no readable video stream'
+[[ "$(<"$probe_file")" == video ]] || die verification_failed 'verification failed, output has no readable video stream'
 
 parent_run_stdout final-dimensions "$dimensions_file" ffprobe -v error \
   -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$output_tmp"
 dimensions=$(<"$dimensions_file")
 [[ "$dimensions" == "${gif_size}x${gif_size}" ]] \
-  || die "verification failed, expected ${gif_size}x${gif_size}, got $dimensions"
+  || die verification_failed "verification failed, expected ${gif_size}x${gif_size}, got $dimensions"
 
 parent_run_stdout final-frames "$frames_file" ffprobe -v error -count_frames \
   -select_streams v:0 -show_entries stream=nb_read_frames -of default=nw=1:nk=1 "$output_tmp"
 frame_count=$(<"$frames_file")
 [[ "$frame_count" =~ ^[0-9]+$ ]] && (( frame_count > 1 )) \
-  || die "verification failed, invalid frame count: ${frame_count:-missing}"
+  || die verification_failed "verification failed, invalid frame count: ${frame_count:-missing}"
 
 parent_run_stdout final-duration "$duration_file" ffprobe -v error \
   -show_entries format=duration -of default=nw=1:nk=1 "$output_tmp"
@@ -707,19 +854,19 @@ duration=$(<"$duration_file")
 if ! awk -v value="$duration" 'BEGIN {
   exit !(value ~ /^[0-9]+([.][0-9]+)?$/ && value > 0)
 }'; then
-  die "verification failed, invalid duration: ${duration:-missing}"
+  die verification_failed "verification failed, invalid duration: ${duration:-missing}"
 fi
 
 final_bytes=$(file_bytes "$output_tmp")
 (( final_bytes < max_bytes )) \
-  || die "verification failed, output is $final_bytes bytes"
+  || die verification_failed "verification failed, output is $final_bytes bytes"
 (( final_bytes == best_bytes )) \
-  || die "verification failed, expected $best_bytes bytes, got $final_bytes"
+  || die verification_failed "verification failed, expected $best_bytes bytes, got $final_bytes"
 
 score_candidate_parent final "$output_tmp" "$final_vmaf_log" "$final_score_file"
 final_score=$(<"$final_score_file")
 [[ "$final_score" == "$best_score" ]] \
-  || die "verification failed, expected VMAF $best_score, got $final_score"
+  || die verification_failed "verification failed, expected VMAF $best_score, got $final_score"
 
 mv -f -- "$output_tmp" "$output"
 output_tmp=''
