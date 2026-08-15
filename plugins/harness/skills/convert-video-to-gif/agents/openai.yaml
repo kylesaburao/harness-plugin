@@ -1,0 +1,6 @@
+interface:
+  display_name: "Video to GIF"
+  short_description: "Convert a video to a size-budgeted GIF on macOS"
+  default_prompt: "Use $convert-video-to-gif to turn this recording into a small looping GIF."
+policy:
+  allow_implicit_invocation: true
