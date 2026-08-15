@@ -8,7 +8,7 @@ const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 const test = require('node:test');
 
-const { EXIT, OperationContext, execute } = require('../scripts/backup.js');
+const { EXIT, OperationContext, execute } = require('../../plugins/harness/skills/back-up-directories/scripts/backup.js');
 
 async function temporaryRoot(t) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'backup-serial-copies-'));
