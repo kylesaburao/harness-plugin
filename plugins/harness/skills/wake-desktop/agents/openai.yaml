@@ -1,0 +1,6 @@
+interface:
+  display_name: "Wake Desktop"
+  short_description: "Wake a LAN machine with Wake-on-LAN"
+  default_prompt: "Use $wake-desktop to wake my desktop and wait until it responds."
+policy:
+  allow_implicit_invocation: true
