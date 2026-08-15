@@ -25,9 +25,9 @@ const {
   readAndValidate,
   resolveRunLockPath,
   shortTempPath,
-} = require('../../src/backup/backup');
+} = require('../scripts/backup.js');
 
-const SCRIPT = path.resolve(__dirname, '../../src/backup/backup.js');
+const SCRIPT = path.resolve(__dirname, '../scripts/backup.js');
 const FIXED_DATE = new Date(2026, 6, 11, 12);
 
 async function temporaryRoot(t, prefix = 'backup-test-') {

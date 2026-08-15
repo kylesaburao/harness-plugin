@@ -15,10 +15,10 @@ const {
   createArchive,
   execute,
   readAndValidate,
-} = require('../../src/backup/backup');
+} = require('../scripts/backup.js');
 
 const POSIX_PERMISSIONS = process.platform !== 'win32';
-const SCRIPT = path.resolve(__dirname, '../../src/backup/backup.js');
+const SCRIPT = path.resolve(__dirname, '../scripts/backup.js');
 
 async function temporaryRoot(t) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'backup-artifact-policy-'));

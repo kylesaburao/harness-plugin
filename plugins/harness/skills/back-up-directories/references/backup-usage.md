@@ -1,21 +1,27 @@
 # ZIP backup utility
 
-Node.js 20.6.0 or newer is required. Install dependencies once:
+Reference for the `back-up-directories` skill. Node.js 20.6.0 or newer is required. Install the one dependency once, from the skill directory:
 
 ```sh
-npm install
+npm install --omit=dev
 ```
 
-Copy the committed [`backup-config.json`](../../backup-config.json) template to the ignored local configuration, then edit the local copy:
+Copy the committed [`backup-config.json`](backup-config.json) template to an ignored local configuration, then edit the local copy:
 
 ```sh
-cp backup-config.json backup-config.local.json
+cp references/backup-config.json backup-config.local.json
+```
+
+Validate it without backing anything up:
+
+```sh
+node scripts/backup.js --preflight --json ./backup-config.local.json
 ```
 
 Run the backup with the local configuration:
 
 ```sh
-npm run backup -- ./backup-config.local.json
+node scripts/backup.js ./backup-config.local.json
 ```
 
 `sourceDirectory` and every `targetDirectories` entry are required. `outputDirectory` is optional and defaults to the operating system's temporary directory. Relative paths are resolved from the configuration file's directory; absolute paths are used as written. The source and every target directory must already exist. A missing output directory and any missing parents are created automatically during preflight. The source must be readable and searchable. The output directory and every target must be readable, writable, and searchable, because startup cleanup enumerates their root entries before writing.

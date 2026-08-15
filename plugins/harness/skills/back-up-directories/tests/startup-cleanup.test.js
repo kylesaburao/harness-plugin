@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { cleanupStartupArtifacts } = require('../../src/backup/backup');
+const { cleanupStartupArtifacts } = require('../scripts/backup.js');
 
 function unknownDirent(name) {
   return {
