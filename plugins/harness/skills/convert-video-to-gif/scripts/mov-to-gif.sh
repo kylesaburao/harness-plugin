@@ -606,6 +606,19 @@ evaluate_color_task() {
     -vf "palettegen=max_colors=${colors}:stats_mode=diff" \
     -frames:v 1 -c:v png -f image2 -update 1 -y "$palette"
 
+  worker_run ffmpeg -v error -nostdin -threads 1 -filter_complex_threads 1 \
+    -i "$work_dir/source-f${fps}.nut" -i "$palette" \
+    -filter_complex \
+      '[0:v]split=4[source2][source3][source4][source5];[1:v]split=4[palette2][palette3][palette4][palette5];[source2][palette2]paletteuse=dither=bayer:bayer_scale=2:diff_mode=rectangle[dither2];[source3][palette3]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle[dither3];[source4][palette4]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle[dither4];[source5][palette5]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle[dither5]' \
+    -map '[dither2]' -an -loop 0 -c:v gif -f gif -y \
+      "$work_dir/raw-f${fps}-c${colors}-d2.gif" \
+    -map '[dither3]' -an -loop 0 -c:v gif -f gif -y \
+      "$work_dir/raw-f${fps}-c${colors}-d3.gif" \
+    -map '[dither4]' -an -loop 0 -c:v gif -f gif -y \
+      "$work_dir/raw-f${fps}-c${colors}-d4.gif" \
+    -map '[dither5]' -an -loop 0 -c:v gif -f gif -y \
+      "$work_dir/raw-f${fps}-c${colors}-d5.gif"
+
   scale=2
   while (( scale <= 5 )); do
     raw="$work_dir/raw-f${fps}-c${colors}-d${scale}.gif"
@@ -613,10 +626,6 @@ evaluate_color_task() {
     log_file="$work_dir/vmaf-f${fps}-c${colors}-d${scale}.log"
     score_file="$work_dir/score-f${fps}-c${colors}-d${scale}.txt"
 
-    worker_run ffmpeg -v error -nostdin -threads 1 -filter_complex_threads 1 \
-      -i "$work_dir/source-f${fps}.nut" -i "$palette" \
-      -filter_complex "[0:v][1:v]paletteuse=dither=bayer:bayer_scale=${scale}:diff_mode=rectangle" \
-      -an -loop 0 -c:v gif -f gif -y "$raw"
     worker_run gifsicle -O3 "$raw" -o "$candidate"
     rm -f -- "$raw"
 
