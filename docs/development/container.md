@@ -26,7 +26,7 @@ npm run build
 npm run test:setup
 ```
 
-This cold-start sequence installs the root toolchain, constructs `.build/harness/`, installs the backup skill's npm dependencies from the candidate's lockfile into `/home/node/.harness-plugin/back-up-directories/`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references. `setup-tests.js` itself does not install the root toolchain or build an artifact. Pull requests build this same image and run the complete gate inside it through the `gif` job of `verify.yml` (see [build.md](build.md)). Initial image build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
+This cold-start sequence installs the root toolchain, constructs `.build/harness/`, installs the backup skill's npm dependencies from the candidate's lockfile into `/home/node/.harness-plugin/back-up-directories/`, installs the ASD-STE100 comment parser from the writer skill's lockfile into `/home/node/.harness-plugin/write-asd-ste100/`, creates the Python virtual environment, installs pypdfium2, and initializes ASD-STE100 references. `setup-tests.js` itself does not install the root toolchain or build an artifact. Pull requests build this same image and run the complete gate inside it through the `gif` job of `verify.yml` (see [build.md](build.md)). Initial image build and setup require network access. Run setup before every gate because the gate removes the Python environment after all test processes finish.
 
 Run a focused test or open a shell with the same source and dependency mounts:
 
@@ -45,7 +45,7 @@ The checkout is bind-mounted at `/workspace/harness-plugin`. Four named volumes 
 
 Before Docker receives that nested mount target, the launcher creates and validates `.build/harness/skills/back-up-directories/node_modules` as the invoking user. It rejects conflicting files or unexpected symlink traversal, so Docker cannot create a root-owned development artifact in the host checkout. The launcher may create ignored development directories but does not modify tracked `dist/`.
 
-The home volume stores backup dependencies and generated references under `/home/node/.harness-plugin/`, and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the four volumes. The source checkout is never mounted into that root container.
+The home volume stores backup dependencies, the ASD-STE100 comment parser, and generated references under `/home/node/.harness-plugin/`, and dependency caches. Commands use the invoking numeric UID/GID and `HOME=/home/node`. Setup initializes volume-root ownership in a temporary root container that mounts only the four volumes. The source checkout is never mounted into that root container.
 
 Image and volume names use a hash of the checkout's canonical path and invoking UID/GID. Independent checkouts and users have separate dependency state. Moving a checkout or changing UID/GID selects new names and leaves the old resources in Docker. Symlink paths to the same checkout reuse its state. `./scripts/dev image-name` prints this checkout's image name without contacting Docker; the CI `gif` job reads its build tag from it.
 

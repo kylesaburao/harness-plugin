@@ -14,7 +14,7 @@ npm run build
 npm run test:setup
 ```
 
-The root `npm ci` step is separate from test setup. `npm run build` creates or refreshes `.build/harness/`. Setup first checks that this selected artifact is fresh, then installs backup npm dependencies from its lockfile into `~/.harness-plugin/back-up-directories/`, creates `.venv`, installs `pypdfium2`, and initializes the existing user-level ASD-STE100 reference bundle. It does not build either artifact, install root dependencies, install host runtimes or media executables, compile the Swift helper, or modify the published distribution.
+The root `npm ci` step is separate from test setup. `npm run build` creates or refreshes `.build/harness/`. Setup first checks that this selected artifact is fresh, then installs backup npm dependencies from its lockfile into `~/.harness-plugin/back-up-directories/`, installs the ASD-STE100 comment parser from the writer skill's lockfile into `~/.harness-plugin/write-asd-ste100/` and probes it with that skill's helper, creates `.venv`, installs `pypdfium2`, and initializes the existing user-level ASD-STE100 reference bundle. It does not build either artifact, install root dependencies, install host runtimes or media executables, compile the Swift helper, or modify the published distribution.
 
 Use `npm run test:setup -- --check` to check prerequisites and selected-root dependency resolution without installing, initializing, or building. On Linux/WSL2, use [container setup](container.md), and keep Git operations on the host.
 
@@ -37,6 +37,8 @@ npm test -- --target distribution
 The runner's explicit target overrides any inherited test-target setting and propagates one authoritative `HARNESS_TEST_TARGET` value to every prerequisite, Node worker, GIF process, Python reporter, Python test, and relevant nested child. Direct focused commands default to `development`; to inspect the published artifact explicitly, set `HARNESS_TEST_TARGET=distribution`. Any other supplied value fails instead of falling back to source or another artifact.
 
 Backup's `archiver` dependency must resolve from `~/.harness-plugin/back-up-directories/node_modules/`, where the skill itself resolves it, and that directory's `package-lock.json` must match the selected artifact's. A dependency in the root, inside either artifact, or in a parent `node_modules` cannot satisfy that boundary. Setup skips the copy and `npm ci` when that directory already satisfies both conditions for the selected target. When the two targets' lockfiles differ, setup for one replaces the install for the other, so run setup for the target you are about to test. Setup writes this user-level directory in the real home, as it already does for the ASD-STE100 bundle, and every worktree shares it: run `npm run test:setup` in one worktree at a time, and not while another worktree runs the backup tests.
+
+The ASD-STE100 comment parser follows the same rules in `~/.harness-plugin/write-asd-ste100/`. Setup and `npm run test:setup -- --check` decide readiness by running the selected artifact's own `extract-js-comments.js --preflight`, which checks the Node.js floor, the user-level location, a byte match with the selected `package.json` and `package-lock.json`, the exact parser version, and a loadable `parse` export. Setup skips the copy and `npm ci` when that probe passes. Python tests that need the parser are skipped when it is not installed, so a focused run without setup reports skips rather than failures; the full gate's prerequisite check requires it. Python source-comment tests need Python 3.12 or newer, as CI provides.
 
 ## Full gate
 
@@ -97,9 +99,10 @@ node --test tests/run-tests/*.test.js
 node --test tests/git-hooks/*.test.js
 node --test tests/dev/*.test.js
 .venv/bin/python -m unittest discover -s tests/write-asd-ste100 -v
+node --test tests/write-asd-ste100/*.test.js
 ```
 
-Backup and Python checks require setup dependencies. Media checks also need their host tools. Use the container wrapper on Linux, with `sh -c` when wildcard expansion must happen inside the container.
+Backup, ASD-STE100, and Python checks require setup dependencies. Media checks also need their host tools. Use the container wrapper on Linux, with `sh -c` when wildcard expansion must happen inside the container.
 
 Inventory and documentation-link checks resolve public `dist/harness/...` links against the selected artifact while preserving the literal public destinations. They therefore cover source/candidate-only skills and headings without weakening path-escape, fragment, resource-classification, or published-shape checks. Installation tests copy the selected artifact without dependency/cache overlays and retain the ESM-parent, spaces/non-ASCII, CLI-help, and runtime smoke cases.
 
@@ -129,9 +132,10 @@ node tests/distribution/runtime-floor.js --backup   # back-up-directories, inclu
 node tests/distribution/runtime-floor.js --wake     # wake-desktop target management and validation
 node tests/distribution/runtime-floor.js --gif      # both GIF converters: help, usage error, missing-tool preflight
 node tests/distribution/runtime-floor.js --frames   # extract-video-frames: help, usage errors, platform preflight
+node tests/distribution/runtime-floor.js --ste-comments  # write-asd-ste100 comment helper, including the lockfile install
 ```
 
-Each mode uses a temporary home, and an isolated `PATH` where tool presence would otherwise vary by machine. Each mode asserts the unified JSON envelopes. The GIF and frame modes do not convert media. A local run on a newer Node.js checks only the script. The PR `floors` job builds the candidate on the `.nvmrc` runtime, switches to exactly 24.0.0, and runs every mode.
+Each mode uses a temporary home, and an isolated `PATH` where tool presence would otherwise vary by machine. Each mode asserts the unified JSON envelopes. The GIF and frame modes do not convert media. The `--ste-comments` mode needs no ASD reference bundle; it qualifies only JavaScript-family comment extraction. A local run on a newer Node.js checks only the script. The PR `floors` job builds the candidate on the `.nvmrc` runtime, switches to exactly 24.0.0, and runs every mode.
 
 ## Interpret results
 

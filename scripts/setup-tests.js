@@ -48,6 +48,29 @@ function backupInstallProblem(selected, home = undefined)
   return null;
 }
 
+// The selected artifact's own comment helper decides parser readiness, so setup
+// and the skill cannot disagree: Node.js floor, user-level location, lockfile
+// match with the selected artifact, exact version, and a loadable parse export.
+// Returns null when it is ready, otherwise the reason it is not.
+function steParserProblem(selected, home = undefined)
+{
+  const helper = path.join(selected, 'skills/write-asd-ste100/scripts/extract-js-comments.js');
+  if (!fs.existsSync(helper)) return `ASD-STE100 comment helper is missing from the selected artifact: ${helper}`;
+  const env = home === undefined ? process.env : { ...process.env, HOME: home };
+  const probe = spawnSync(process.execPath, [helper, '--preflight', '--json'], { env, encoding: 'utf8' });
+  if (probe.status === 0) return null;
+  let condition = (probe.stderr || '').trim() || `exit status ${probe.status}`;
+  try
+  {
+    condition = JSON.parse(probe.stderr).error.condition;
+  }
+  catch
+  {
+    // Keep the raw stderr when the probe did not print the JSON envelope.
+  }
+  return `ASD-STE100 comment parser is not ready: ${condition}`;
+}
+
 function checkPrerequisites(root, target = 'development', home = undefined)
 {
   const selected = artifactRoot(root, target);
@@ -71,6 +94,8 @@ function checkPrerequisites(root, target = 'development', home = undefined)
   {
     throw new Error('pypdfium2 is missing from the Python environment');
   }
+  const steProblem = steParserProblem(selected, home);
+  if (steProblem) throw new Error(steProblem);
 }
 
 function main(argv)
@@ -112,12 +137,18 @@ Examples:
   const root = path.resolve(__dirname, '..');
   if (!parsed.check)
   {
-    const backupReady = backupInstallProblem(artifactRoot(root, parsed.target)) === null;
+    const selected = artifactRoot(root, parsed.target);
+    const backupReady = backupInstallProblem(selected) === null;
     if (backupReady)
     {
       process.stdout.write(`Backup dependency already installed for ${parsed.target}; skipping npm ci\n`);
     }
-    return runCommandPlan(buildSetupPlan(root, parsed.target, undefined, { backupReady }), undefined, { summaryLabel: 'Test setup' });
+    const steParserReady = steParserProblem(selected) === null;
+    if (steParserReady)
+    {
+      process.stdout.write(`ASD-STE100 comment parser already installed for ${parsed.target}; skipping npm ci\n`);
+    }
+    return runCommandPlan(buildSetupPlan(root, parsed.target, undefined, { backupReady, steParserReady }), undefined, { summaryLabel: 'Test setup' });
   }
   try
   {
@@ -134,4 +165,4 @@ if (require.main === module)
 {
   process.exitCode = main(process.argv.slice(2));
 }
-module.exports = { backupInstallProblem, checkPrerequisites, main };
+module.exports = { backupInstallProblem, checkPrerequisites, main, steParserProblem };

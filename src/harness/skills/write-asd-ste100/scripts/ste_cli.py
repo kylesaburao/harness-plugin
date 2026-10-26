@@ -12,8 +12,12 @@ if TYPE_CHECKING:
 class InvocationError(Exception):
     code: str
     condition: str
-    inputs: list[dict[str, str]] | None = None
+    inputs: list[dict[str, Any]] | None = None
     remedy: str = "run python3 ste_check.py --help and correct the reported input"
+    # Further camelCase evidence fields reported beside code, condition, and remedy.
+    details: dict[str, Any] | None = None
+    # 2 means the work never started; 1 means extraction started and failed.
+    status: int = 2
 
 
 class Parser(argparse.ArgumentParser):
@@ -23,6 +27,8 @@ class Parser(argparse.ArgumentParser):
 
 def report_invocation_error(error: InvocationError, json_output: bool) -> None:
     details: dict[str, Any] = {"code": error.code, "condition": error.condition, "remedy": error.remedy}
+    if error.details:
+        details.update(error.details)
     if error.inputs is not None:
         details["inputs"] = error.inputs
     if json_output:
@@ -35,4 +41,3 @@ def report_invocation_error(error: InvocationError, json_output: bool) -> None:
         return
     print(f"ERROR [{error.code}]: {error.condition}", file=sys.stderr)
     print(f"Remedy: {error.remedy}", file=sys.stderr)
-

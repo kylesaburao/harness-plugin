@@ -133,7 +133,53 @@ function qualifyBackup() {
   assert.deepEqual(fs.readdirSync(path.join(home, 'output')), []);
   process.stdout.write(`Backup runtime floor passed on Node ${process.versions.node}: isolated generated plan, missing dependency, user-level lockfile install, preflight output creation, real archive and replication.\n`);
 }
-const MODES = new Set(['--backup', '--gif', '--frames', '--wake']);
+function qualifySteComments() {
+  // Only the JavaScript-family comment helper: no ASD reference bundle is needed.
+  fs.writeFileSync(path.join(home, 'package.json'), '{"type":"module"}\n');
+  const skill = path.join(home, 'writer installé');
+  fs.cpSync(path.join(plugin, 'skills/write-asd-ste100'), skill, {
+    recursive: true,
+    filter: source => !['node_modules', '__pycache__'].includes(path.basename(source)),
+  });
+  const helper = path.join(skill, 'scripts/extract-js-comments.js');
+  const execute = (args, input = '') => {
+    const result = spawnSync(process.execPath, [helper, ...args], { cwd: home, env, input, encoding: 'utf8', timeout: 15000 });
+    assert.ifError(result.error);
+    return result;
+  };
+  assert.match(execute(['--help']).stdout, /^Usage: /);
+  failure(execute(['--bogus', '--json']), 2, 'usage_error');
+  const missing = failure(execute(['--preflight', '--json']), 2, 'dependency_missing');
+  assert.ok(missing.remedy.includes(path.join(skill, 'package-lock.json')), missing.remedy);
+  const npmEnv = { ...env, PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`,
+    npm_config_cache: path.join(home, 'npm-cache') };
+  // The remedy installs from the copied skill's lockfile into ~/.harness-plugin/write-asd-ste100.
+  const installed = spawnSync('sh', ['-c', missing.remedy], { cwd: home, env: npmEnv, encoding: 'utf8', timeout: 120000 });
+  assert.ifError(installed.error);
+  assert.equal(installed.status, 0, installed.stderr);
+  assert.equal(fs.existsSync(path.join(skill, 'node_modules')), false);
+  const ready = JSON.parse(execute(['--preflight', '--json']).stdout);
+  assert.equal(ready.status, 'ready');
+  assert.equal(ready.dependencyRoot, path.join(home, '.harness-plugin/write-asd-ste100'));
+  const profile = overrides => ({ typescript: false, jsx: false, sourceType: 'unambiguous', declaration: false,
+    disallowAmbiguousJsxLike: false, ...overrides });
+  const files = [
+    { profile: profile(), text: "const s = '// no 😀'; /* yes */ x / 2; // yes\n" },
+    { profile: profile({ typescript: true }), text: 'const x = <number>y; // yes\nlet t = `${/* yes */ 1} // no`;\n' },
+    { profile: profile({ typescript: true, jsx: true }), text: 'const e = <a>// no {/* yes */}</a>;\n' },
+    { profile: profile({ typescript: true, sourceType: 'module', disallowAmbiguousJsxLike: true }), text: 'const x = <number>y;\n' },
+  ].map((file, id) => ({ id, path: `input-${id}`, ...file }));
+  const extracted = execute(['--json'], JSON.stringify({ protocolVersion: 1, files }));
+  assert.equal(extracted.status, 0, extracted.stderr);
+  const { result } = JSON.parse(extracted.stdout);
+  assert.equal(result.offsetEncoding, 'utf16');
+  assert.deepEqual(result.files.slice(0, 3).map((file, index) =>
+    file.comments.map(comment => files[index].text.slice(comment.start, comment.end))),
+    [['/* yes */', '// yes'], ['// yes', '/* yes */'], ['/* yes */']]);
+  assert.equal(result.files[3].error.reason, 'ReservedTypeAssertion');
+  process.stdout.write(`ASD-STE100 comment helper runtime floor passed on Node ${process.versions.node}: isolated ESM parent, missing dependency, user-level lockfile install, JavaScript, TypeScript and TSX extraction, and a structured parse error.\n`);
+}
+const MODES = new Set(['--backup', '--gif', '--frames', '--wake', '--ste-comments']);
 const selected = process.argv.slice(2);
 if (selected.length > 1 || (selected.length === 1 && !MODES.has(selected[0]))) {
   process.stderr.write(`Usage: runtime-floor.js [${[...MODES].join('|')}]\n`);
@@ -146,6 +192,7 @@ try {
   if (mode === '--backup') qualifyBackup();
   else if (mode === '--gif') qualifyGif();
   else if (mode === '--frames') qualifyFrames();
+  else if (mode === '--ste-comments') qualifySteComments();
   else if (mode === '--wake') {
     qualifyWakeDesktop();
     process.stdout.write(`Wake-desktop runtime floor passed on Node ${process.versions.node}: target management and wake validation.\n`);

@@ -31,6 +31,7 @@ test('isolated artifact runs beneath an ESM parent and installs backup dependenc
     'random-sampler/scripts/sample.mjs',
     'wake-desktop/scripts/manage-targets.js',
     'wake-desktop/scripts/wake-desktop.js',
+    'write-asd-ste100/scripts/extract-js-comments.js',
   ]) {
     const result = run(`skills/${cli}`, ['--help']);
     assert.equal(result.status, 0, `${cli}: ${result.stderr}`);
@@ -72,7 +73,13 @@ process.stdout.write('test-cli');
   assert.equal(Object.hasOwn(JSON.parse(advisor.stdout), 'workspace'), false);
   assert.equal(Object.hasOwn(JSON.parse(advisor.stdout), 'observations'), false);
   assert.equal(fs.readFileSync(calls, 'utf8'), '--version\n');
-  for (const name of ['skills/extract-video-frames/scripts/tiff-to-heic.swift', 'skills/write-asd-ste100/scripts/ste_check.py']) assert.ok(fs.statSync(path.join(plugin, name)).isFile());
+  for (const name of ['skills/extract-video-frames/scripts/tiff-to-heic.swift', 'skills/write-asd-ste100/scripts/ste_check.py',
+    'skills/write-asd-ste100/scripts/ste_source.py', 'skills/write-asd-ste100/package.json', 'skills/write-asd-ste100/package-lock.json']) assert.ok(fs.statSync(path.join(plugin, name)).isFile());
+  assert.equal(fs.existsSync(path.join(plugin, 'skills/write-asd-ste100/node_modules')), false);
+  // The comment helper runs as CommonJS beneath the ESM parent and reports its missing parser.
+  const parser = run('skills/write-asd-ste100/scripts/extract-js-comments.js', ['--preflight', '--json']);
+  assert.equal(parser.status, 2, parser.stderr);
+  assert.equal(JSON.parse(parser.stderr).error.code, 'dependency_missing');
   const python = spawnSync('python3', [path.join(plugin, 'skills/write-asd-ste100/scripts/ste_check.py'), '--help'], { cwd: root, env, encoding: 'utf8' });
   assert.equal(python.status, 0, python.stderr);
   // Install by running the diagnostic's remedy exactly as a user would.
